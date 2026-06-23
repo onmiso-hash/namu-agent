@@ -130,11 +130,11 @@ class Orchestrator:
         finished_at = datetime.now()
         elapsed = (finished_at - started_at).total_seconds()
 
-        (task_dir / "task.md").write_text(f"# Task\n\n{task}\n", encoding="utf-8")
+        (task_dir / "task.md").write_text(f"# Task\n\n{task}\n", encoding="utf-8", errors="replace")
 
         status = "SUCCESS" if success else "FAILURE"
         (task_dir / "result.md").write_text(
-            f"# Result — {status}\n\n{output}\n", encoding="utf-8"
+            f"# Result — {status}\n\n{output}\n", encoding="utf-8", errors="replace"
         )
 
         (task_dir / "log.md").write_text(
@@ -146,6 +146,7 @@ class Orchestrator:
             f"- elapsed : {elapsed:.2f}s\n"
             f"- success : {success}\n",
             encoding="utf-8",
+            errors="replace",
         )
 
     def _append_learning(
@@ -175,7 +176,7 @@ class Orchestrator:
             f"**판단:** 어댑터 `{adapter.name}` (priority={adapter.priority}) 자동 선택\n"
         )
 
-        content = cfg.LEARNINGS_PATH.read_text(encoding="utf-8")
+        content = cfg.LEARNINGS_PATH.read_text(encoding="utf-8", errors="replace")
 
         pos = content.find(section_marker)
         if pos == -1:
@@ -187,4 +188,4 @@ class Orchestrator:
             content = content[:insert_at] + entry + content[insert_at:]
 
         # append-only 원칙: 기존 내용을 삭제하지 않고 덧붙임
-        cfg.LEARNINGS_PATH.write_text(content, encoding="utf-8")
+        cfg.LEARNINGS_PATH.write_text(content, encoding="utf-8", errors="replace")

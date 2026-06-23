@@ -99,24 +99,31 @@ class ClaudeSubscriptionAdapter(AIAdapter):
         model = "claude-subscription"
         input_tokens = 0
         output_tokens = 0
+        error_msg: str | None = None
 
-        async for message in query(prompt=prompt, options=options):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        content_parts.append(block.text)
-                if message.model:
-                    model = message.model
-                if message.usage:
-                    input_tokens = message.usage.get("input_tokens", input_tokens)
-                    output_tokens = message.usage.get("output_tokens", output_tokens)
+        gen = query(prompt=prompt, options=options)
+        try:
+            async for message in gen:
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            content_parts.append(block.text)
+                    if message.model:
+                        model = message.model
+                    if message.usage:
+                        input_tokens = message.usage.get("input_tokens", input_tokens)
+                        output_tokens = message.usage.get("output_tokens", output_tokens)
 
-            elif isinstance(message, ResultMessage):
-                if message.is_error:
-                    errors = message.errors or []
-                    raise RuntimeError(
-                        f"claude-agent-sdk 오류: {'; '.join(errors) or 'unknown error'}"
-                    )
+                elif isinstance(message, ResultMessage):
+                    if message.is_error:
+                        errors = message.errors or []
+                        error_msg = "; ".join(errors) or "unknown error"
+                        break
+        finally:
+            await gen.aclose()
+
+        if error_msg:
+            raise RuntimeError(f"claude-agent-sdk 오류: {error_msg}")
 
         return GenerateResult(
             content="".join(content_parts),
