@@ -6,6 +6,7 @@ import config as cfg
 from adapters.base import AIAdapter, Message
 from adapters.claude_api import ClaudeAPIAdapter
 from adapters.claude_subscription import ClaudeSubscriptionAdapter
+from adapters.gemini_api import GeminiAPIAdapter
 from adapters.gpt_api import GPTAPIAdapter
 from adapters.ollama import OllamaAdapter
 
@@ -14,6 +15,7 @@ _REGISTRY: dict[str, type[AIAdapter]] = {
     "claude-subscription": ClaudeSubscriptionAdapter,
     "claude-api": ClaudeAPIAdapter,
     "gpt-api": GPTAPIAdapter,
+    "gemini-api": GeminiAPIAdapter,
 }
 
 

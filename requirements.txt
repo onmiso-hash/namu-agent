@@ -1,6 +1,7 @@
 # AI 어댑터
 anthropic>=0.40.0
 openai>=1.60.0
+google-genai>=1.0.0
 claude-agent-sdk>=0.2.107
 
 # 데이터 검증

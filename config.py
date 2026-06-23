@@ -12,6 +12,7 @@ ENABLED_ADAPTERS: list[str] = [
     "claude-subscription",   # 구독 계정 (priority 2)
     "claude-api",            # Claude API (priority 3)
     # "gpt-api",             # GPT API   (priority 3)
+    "gemini-api",            # Gemini API (priority 5 — 최저)
 ]
 
 # Claude API
@@ -21,6 +22,10 @@ CLAUDE_DEFAULT_MODEL: str = "claude-sonnet-4-6"
 # OpenAI API
 OPENAI_API_KEY: str = ""       # 환경변수 OPENAI_API_KEY 권장
 OPENAI_DEFAULT_MODEL: str = "gpt-4o"
+
+# Gemini API
+GEMINI_API_KEY: str = ""       # 환경변수 GEMINI_API_KEY 권장
+GEMINI_DEFAULT_MODEL: str = "gemini-2.5-flash"
 
 # Ollama
 OLLAMA_HOST: str = "http://localhost:11434"
