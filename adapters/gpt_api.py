@@ -16,8 +16,13 @@ class GPTAPIAdapter(AIAdapter):
 
     def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
         self._model = model or cfg.OPENAI_DEFAULT_MODEL
-        resolved_key = api_key or cfg.OPENAI_API_KEY or None
-        self._client = openai.OpenAI(api_key=resolved_key)
+        self._api_key = api_key or cfg.OPENAI_API_KEY or None
+        self._client: openai.OpenAI | None = None  # 지연 초기화 — 키 없이도 인스턴스 생성 가능
+
+    def _get_client(self) -> openai.OpenAI:
+        if self._client is None:
+            self._client = openai.OpenAI(api_key=self._api_key)
+        return self._client
 
     @property
     def name(self) -> str:
@@ -95,7 +100,7 @@ class GPTAPIAdapter(AIAdapter):
         }
         params.update(kwargs)
 
-        with self._client.chat.completions.stream(**params) as stream:
+        with self._get_client().chat.completions.stream(**params) as stream:
             completion = stream.get_final_completion()
 
         choice = completion.choices[0]
