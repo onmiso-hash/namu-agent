@@ -8,10 +8,10 @@ DB_PATH = BASE_DIR / "db" / "namu.sqlite"
 # 어댑터 우선순위 (낮을수록 먼저 선택)
 # AdapterType.priority 속성으로 자동 결정되므로 여기선 활성화 여부만 관리
 ENABLED_ADAPTERS: list[str] = [
-    # "ollama",               # 로컬 모델 (priority 1 — 최우선)
-    # "claude-subscription",  # 구독 계정 (priority 2)
-    "claude-api",             # Claude API (priority 3)
-    # "gpt-api",              # GPT API   (priority 3)
+    # "ollama",              # 로컬 모델 (priority 1 — 최우선)
+    "claude-subscription",   # 구독 계정 (priority 2)
+    "claude-api",            # Claude API (priority 3)
+    # "gpt-api",             # GPT API   (priority 3)
 ]
 
 # Claude API
