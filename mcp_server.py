@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from contextlib import closing
 
@@ -21,6 +22,22 @@ def _ensure_db() -> None:
 
 
 _ensure_db()
+
+
+def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
+    if tags is None or isinstance(tags, list):
+        return tags
+    # str 경로
+    stripped = tags.strip()
+    if not stripped:
+        return None
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, list):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return [tags]
 
 
 @mcp.tool()
@@ -83,7 +100,7 @@ def namu_record(
       tags: list of string tags (optional)
     Returns: the new entry's ULID (str)
     """
-    return record(task, outcome, reason, task_type, verified_by, tags)
+    return record(task, outcome, reason, task_type, verified_by, _normalize_tags(tags))
 
 
 if __name__ == "__main__":
