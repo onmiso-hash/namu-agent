@@ -1,6 +1,6 @@
 # 나만의 멀티에이전트 시스템 기획
 
-> 📅 시작: 2026-06-22 | 대화를 통해 점진적으로 채워나가는 문서
+> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-25 (MCP 서버 Claude Code 등록·검증 완료 — 로드맵 10번 종료) | 대화를 통해 점진적으로 채워나가는 문서
 
 ---
 
@@ -62,6 +62,18 @@
 | 2026-06-24 | verified_by 컬럼 | human/ai/unverified — append-only라 백필 불가, Human-in→on-the-loop 전환의 핵심 구분자 |
 | 2026-06-24 | SQLite FTS | 한글 부분검색 위해 **trigram 토크나이저**(3.34+ 내장) + 2글자 이하 LIKE 폴백. INSERT 트리거로 FTS 자동 동기화 |
 | 2026-06-24 | 구현 위치 | MCP 메모리 서버(4·5·6번) 실제 코딩은 HP 노트북 Claude Code에서 (실환경 sqlite3·WSL에서 검증하며) |
+| 2026-06-24 | recall 폴백 정책 | **옵션 A** 확정: query 매칭 0개일 때만 최신 N 폴백, limit 기본 작게(5). recall은 SessionStart 자동주입 후보라 토큰 효율 우선. append-only라 향후 변경 시 기존 데이터 영향 0(recall 함수 내부만 수정) → 대안 B(부족분 채우기)/하이브리드는 맥락 빈약 체감 시 |
+| 2026-06-24 | recall/search 정렬 | recall=최신순(id DESC, 맥락 로딩) / search=관련도순(bm25, 패턴 분석). search는 폴백 없음 + 전체 매칭 outcome 경향 요약(limit·filter 무시) |
+| 2026-06-24 | db.py conn 두 패턴 | **의도된 분리(통일 금지):** 읽기(recall/search)=conn 인자로 받음(`:memory:` 주입 단위테스트) / 쓰기(record/init_db/rebuild)=함수 내부서 conn 열고닫음(YAML-first→SQLite 트랜잭션 경계 완결) |
+| 2026-06-24 | .env 로딩 위치 | `main.py` 진입점 → **`config.py`로 일원화**. 모든 진입점이 import하는 공통 지점서 `load_dotenv(BASE_DIR/".env")` 경로 명시 로드 → mcp_server.py 직접 실행(Inspector/Claude Code)서도 machine=hp 정상 |
+| 2026-06-24 | MCP 경계 입력 정규화 | FastMCP가 `list[str]` 타입힌트로 JSON 문자열 tags를 단일원소 리스트로 코어션 → 이중인코딩 버그. db.py의 `list\|None` 계약 유지하고 **신뢰 경계인 mcp_server.py 래퍼(`_normalize_tags`)에서 정규화**. 책임 분리 원칙 |
+| 2026-06-24 | namu_record 기본값 | `verified_by` 기본 "ai"(MCP 래퍼) — db.py record 기본은 "human". 자동 기록은 ai, 사람 검증은 명시 |
+| 2026-06-24 | learnings.yaml git 추적 | source of truth라 git 추적 시작(커밋 `697f470`). append-only 원칙대로 버그수정 전 테스트 기록(machine=unknown 등)도 보존 — `verified_by`/`machine` 필터로 깨끗한 것만 쿼리 가능하므로 물리 삭제 불필요 |
+| 2026-06-24 | 문서 동기화 규칙 | plan.md=대화창서 갱신→다운→repo 커밋 / design.md=Claude Code·repo서 갱신→프로젝트는 repo본 받아 교체. **공통: 최종적으로 repo가 진실의 원천** |
+| 2026-06-25 | MCP 등록 스코프 | **local 확정(지금).** 등록은 "Claude Code 전용 글루"(플랫폼별)지 포터블 코어 아님 + 아직 MVP라 blast radius를 namu-agent로 좁혀 검증. 동기화돼야 할 것(learnings.yaml)은 등록과 무관하게 git으로 따로 흐름 |
+| 2026-06-25 | 스코프 승격 경로 | 도구 신뢰되면 → **user**(어느 프로젝트서든 namu_recall/record, config.py BASE_DIR 고정이라 중앙 learnings.yaml 하나를 바라봄 = NAMU "보편 기억" 비전) → 최종 **플러그인**(로드맵 13, `${CLAUDE_PLUGIN_ROOT}`로 다중 PC 포터블 배포). **project 스코프는 건너뜀**(OS별 python 경로 차 + 플러그인이 대체) |
+| 2026-06-25 | 등록 명령(HP) | `claude mcp add namu-memory --scope local --transport stdio -- "$(pwd)/.venv/bin/python" "$(pwd)/mcp_server.py"`. 절대경로가 `~/.claude.json [project: namu-agent]`에 박힘. NAMU_MACHINE은 config.py가 .env서 읽으니 `--env` 불필요, venv activate도 불필요(절대경로 파이썬 직접 호출) |
+| 2026-06-25 | plugin 시 챙길 점 | 지금은 코드(mcp_server.py)·노트(learnings.yaml)가 같은 repo라 BASE_DIR 고정으로 문제 0. **플러그인화 때만** 코드가 별도 설치폴더로 갈라지므로 그 단계서 learnings.yaml 경로를 env/`${CLAUDE_PROJECT_DIR}`로 분리(한 줄). 미리 당길 필요 없음 |
 
 ## 🏗️ 저장소 구조 (GitHub 기반)
 ```
@@ -163,6 +175,36 @@ github/
   - `.env`에 `NAMU_MACHINE=hp` 설정, 테스트 yaml은 비움(첫 진짜 기록부터 시작)
 - **다음 세션 시작점: db.py 읽기 계열(recall/search)** → 이후 mcp_server.py
 - 교훈: learnings.yaml은 git 동기화 대상(진실의 원천)이나 db/는 캐시라 gitignore. record는 반드시 yaml 먼저 쓰고 sqlite 나중(DB 실패해도 복구 가능)
+
+### 2026-06-24 (저녁 세션 2 — db.py 읽기 계열 + MCP 서버 구현·검증, HP)
+- **recall 폴백 정책 토론 → 옵션 A 확정:** B(부족분 채우기)는 맥락 풍부하나 SessionStart 자동주입 시 매 세션 무관한 최신 기록까지 토큰 누적 → A(0개일 때만 폴백)+limit 작게가 효율적. append-only라 나중에 쉽게 변경 가능
+- **db.py 읽기 계열 구현·검증 완료 (커밋 `d191a7d`):**
+  - `_fts_query` 헬퍼 공유(3자+ FTS5 MATCH/2자↓ LIKE, MATCH는 phrase 감싸 특수문자 방어)
+  - recall=최신순 정렬+0개일때 폴백 / search=bm25 정렬+폴백없음+전체매칭 outcome 경향요약
+  - `_row_to_dict`로 tags json.loads 복원, 검증 7케이스 전부 통과
+- **mcp_server.py 구현·검증 완료 (커밋 `573ae33`):** FastMCP로 `namu_recall`/`namu_record`/`namu_search` 3개 + stdio. per-call conn(스레드 안전), 모듈레벨 `_ensure_db()`(DB 없을때만 init+rebuild), docstring으로 도구 설명 노출. SDK 1.28 `@mcp.tool()` 인자없이 사용 OK
+- **MCP Inspector로 stdio 실호출 검증 (6-a 완료):** `mcp dev`/`.venv/bin/python mcp_server.py`로 STDIO 연결 → 도구 3개 노출·docstring 확인, record→ULID 반환, recall로 항목 확인
+- **검증 중 버그 2건 발견·수정:**
+  - `machine=unknown`: `.env`가 `main.py` 진입점에만 로드돼 mcp_server.py 직접실행 시 폴백 → `config.py`로 일원화 (커밋 `2d885b3`) → machine=hp 정상
+  - tags 이중인코딩: FastMCP가 JSON 문자열을 단일원소 리스트로 코어션 → MCP 래퍼 `_normalize_tags`로 경계 정규화 (커밋 `c5efc76`), 5케이스 검증
+- **잔정리 커밋:** requirements에 mcp[cli] (`9e5f57b`), learnings.yaml git 추적 시작 (`697f470`)
+- **NAMU가 자기 개발 교훈을 자기 메모리에 처음 기록** (machine=hp, verified_by=human 정상 항목 2건: .env 일원화 / tags 정규화)
+- 교훈: ① 환경 로딩은 진입점 아닌 공통 config에 (모든 경로 일관) ② 외부(AI 클라이언트) 경계서 타입 코어션 발생 → 신뢰 경계(MCP 래퍼)서 입력 정규화. 둘 다 "여러 AI가 같은 MCP 붙음" 가치 때문에 반복될 패턴
+- **다음 세션 시작점:** ① design.md 체크리스트 6번 [x] 반영 ② 6-b: Claude Code에 stdio 서버 등록(스코프 local/project/user 결정 — 시작 전 최신 등록방식 검색 확인)
+
+### 2026-06-25 (MCP 서버 Claude Code 등록·검증 — 6-b 완료, HP)
+- **등록 방식 최신 문서 재확인:** 공식 docs(code.claude.com/docs/en/mcp)로 교차검증. 스코프 3종 = local(`~/.claude.json`, 현재 프로젝트만, 비공유) / project(`.mcp.json`, git공유) / user(`~/.claude.json`, 전체 프로젝트). stdio 등록은 `claude mcp add [옵션] <이름> -- <명령> [인자]`, `--` 가 Claude 옵션/서버명령 구분자. (옛 이름: local=project, user=global — 지금 용어와 다름 주의)
+- **스코프 토론 → local 확정:** NAMU A/B/C 구분상 등록은 플랫폼별 글루(포터블 아님) + MVP 검증 단계라 namu-agent로 좁힘. 승격 경로 = local→user(보편 기억)→플러그인(포터블 배포). project는 OS별 python 경로 차 + 플러그인이 대체라 건너뜀
+- **learnings.yaml 위치 질문 정리:** 지금은 코드·노트가 같은 repo(BASE_DIR 고정)라 git clone 시 짝이 항상 맞음 → **고민 항목 아님 확정.** 플러그인화 때만 경로 분리(한 줄) 필요, 그때 챙김
+- **HP에서 등록·검증 완료:**
+  - `claude mcp add namu-memory --scope local --transport stdio -- "$(pwd)/.venv/bin/python" "$(pwd)/mcp_server.py"` → `~/.claude.json [project: namu-agent]`에 절대경로 등록
+  - `claude mcp list`/`get`: Scope=Local, Type=stdio, Status=✓Connected, Command/Args 일치
+  - **새 세션 `/mcp` 라이브 확인:** namu-memory ✓connected · 3 tools(recall/search/record) 노출
+  - **namu_recall 실호출 검증:** Claude Code가 도구 호출 → 최근 6건 정상 반환(최신순 id DESC, outcome success/partial/failure 혼재), machine=hp·tags 리스트 정상(이중인코딩 버그 안 남), recall이 맥락 요약까지 수행
+- **의미:** NAMU 자기개발 교훈(tags 정규화/.env 일원화)을 Claude Code가 작업 시작 시 꺼내볼 수 있게 됨 = C층(메모리 코어)이 실제 작업 루프에 처음 연결
+- **검증 범위:** record는 일부러 미호출(learnings.yaml = source of truth라 테스트 잡음 방지). 쓰기 경로는 추후 실제 기록 거리 생길 때 자연 검증
+- design.md 체크리스트 6번은 Claude Code가 repo서 6-a[x]/6-b[x]로 분리 갱신(커밋은 사용자 직접)
+- **다음 세션 시작점:** 로드맵 11번 — Claude Code 글루(SessionStart 훅=기억 자동주입 / Stop·PostToolUse 훅=자동기록). 열린 질문(자동 vs 수동 호출)부터 정리
 
 ## 🤖 AI 호출 방식 (어댑터 구조) — 확정
 ```
@@ -306,15 +348,18 @@ namu-agent/
 9. ✅ 아키텍처 방향 결정: 플러그인 + MCP 메모리 코어 (2026-06-24)
 
 ### 🎯 새 방향 작업 (우선순위순)
-10. 🔶 **MCP 메모리 서버 구현** — `namu_recall`/`namu_record`/`namu_search`
+10. ✅ **MCP 메모리 서버 구현 — 완료** — `namu_recall`/`namu_record`/`namu_search`
     - ✅ 설계 확정 (스키마·SQLite·FTS·entry 포맷, docs/mcp_memory_design.md 참조)
     - ✅ db.py 쓰기 계열 — init_db/record/rebuild_from_yaml, 검증 완료 (커밋 `08afc69`)
-    - 🔶 db.py 읽기 계열 — recall(맥락 로딩+폴백)/search(FTS+요약) ← **다음 시작점**
-    - ⬜ mcp_server.py — FastMCP 도구 3개 + stdio
-    - ⬜ MCP Inspector 테스트 → Claude Code stdio 등록
-11. ⬜ Claude Code 글루: SessionStart 훅(기억 주입) + Stop/PostToolUse 훅(자동 기록)
+    - ✅ db.py 읽기 계열 — recall(맥락 로딩+폴백)/search(FTS+요약), 검증 완료 (커밋 `d191a7d`)
+    - ✅ mcp_server.py — FastMCP 도구 3개 + stdio (커밋 `573ae33`)
+    - ✅ .env 일원화(`2d885b3`) + tags 경계 정규화(`c5efc76`) 버그수정
+    - ✅ MCP Inspector stdio 실호출 검증 (6-a)
+    - ✅ Claude Code에 stdio 서버 등록·라이브 검증 (6-b, local 스코프, namu_recall 실호출 통과)
+11. 🔶 **Claude Code 글루** — SessionStart 훅(기억 주입) + Stop/PostToolUse 훅(자동 기록) ← **다음 시작점**
 12. ⬜ CLAUDE.md + `/namu-task` 스킬 작성
 13. ⬜ 전체를 Claude Code 플러그인으로 패키징
+    - ⚠️ 이 단계서 코드(별도 설치폴더)·노트(git repo)가 갈라짐 → learnings.yaml 경로를 BASE_DIR 고정에서 env/`${CLAUDE_PROJECT_DIR}`로 분리(한 줄)
 14. ⬜ git pull 후 SQLite 자동 재생성 기능 구현
 15. ⬜ 삼성 노트북에서 git pull 후 동기화 테스트
 16. ⬜ (나중) agy용 글루 — Antigravity 방식 설정/훅

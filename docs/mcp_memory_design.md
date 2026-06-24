@@ -202,7 +202,9 @@ verified_by: human
    - [x] 쓰기 계열: `init_db` / `record`(yaml-first, reason 필수) / `rebuild_from_yaml` — 검증 완료, 커밋 `08afc69` (2026-06-24)
    - [x] 읽기 계열: `recall`(맥락 로딩+폴백) / `search`(FTS+LIKE 폴백+경향 요약) — 검증 완료, 커밋 `d191a7d` (2026-06-24)
 5. [x] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio — 검증 완료, 커밋 `573ae33` (2026-06-24)
-6. [ ] MCP Inspector 테스트 → Claude Code에 stdio 서버 등록
+6-a. [x] MCP Inspector stdio 실호출 검증 (완료)
+6-b. [x] Claude Code에 stdio 서버 등록 (local 스코프, namu-memory)
+     └ 세션 /mcp 라이브 호출(namu_recall) 검증은 사용자가 새 세션에서 확인
 7. [ ] git pull 후 SQLite 자동 재생성 배선
 
 **환경 확인 완료:** HP `sqlite3` 3.45.1 + FTS5/trigram OK / `python-ulid`,`PyYAML` 설치됨 / `.env`에 `NAMU_MACHINE=hp`
