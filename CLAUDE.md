@@ -18,6 +18,13 @@
 - `config.py` — 경로·API 키·활성 어댑터 설정
 - `memory/learnings.md` — append-only 학습 기록 (절대 삭제 금지)
 
+## 설계 문서
+
+- `docs/plan.md` — NAMU 전체 계획·결정 이력·로드맵
+- `docs/mcp_memory_design.md` — MCP 메모리 서버 상세 설계 (스키마, SQLite 테이블, 도구 명세)
+
+구현 작업 시 위 문서를 먼저 참조할 것.
+
 ## 어댑터 우선순위
 
 로컬(Ollama) → 구독(Claude.ai/ChatGPT Plus) → API
