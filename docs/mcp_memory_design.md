@@ -156,6 +156,10 @@ END;
 | `namu_recall` | `SELECT … ORDER BY id DESC LIMIT ?` (+ task_type 필터). ULID 정렬로 최신순 공짜 |
 | `namu_search` | `learnings_fts MATCH ?` → `learnings` 조인, `ORDER BY bm25()`. 2글자 이하 `LIKE` 폴백. `GROUP BY outcome COUNT(*)`로 성공/실패 경향 요약 |
 
+**db.py conn 처리 두 패턴 (의도된 분리 — 통일하지 말 것):**
+- **읽기 계열(`recall`, `search`)**: `conn`을 인자로 받음 → `:memory:` 주입으로 단위 테스트 용이 (검증 스크립트가 이 패턴 활용)
+- **쓰기 계열(`record`, `init_db`, `rebuild_from_yaml`)**: 함수 내부에서 conn을 열고 닫음 → YAML-first → SQLite 트랜잭션 경계를 함수 안에서 완결
+
 **재생성(rebuild) 방식:** git pull로 learnings.yaml 최신화 후 → `.db` 파일 통째 삭제 → `safe_load_all()` 로 파싱하며 전체 재INSERT (트리거가 FTS 자동 재구축). DELETE/UPDATE 트리거 불필요.
 
 ---
@@ -197,7 +201,7 @@ verified_by: human
 4. 🔶 `db.py` 구현
    - [x] 쓰기 계열: `init_db` / `record`(yaml-first, reason 필수) / `rebuild_from_yaml` — 검증 완료, 커밋 `08afc69` (2026-06-24)
    - [x] 읽기 계열: `recall`(맥락 로딩+폴백) / `search`(FTS+LIKE 폴백+경향 요약) — 검증 완료, 커밋 `d191a7d` (2026-06-24)
-5. [ ] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio
+5. [x] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio — 검증 완료, 커밋 (2026-06-24)
 6. [ ] MCP Inspector 테스트 → Claude Code에 stdio 서버 등록
 7. [ ] git pull 후 SQLite 자동 재생성 배선
 
