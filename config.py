@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
@@ -33,6 +34,13 @@ OLLAMA_DEFAULT_MODEL: str = "llama3"
 
 # 학습 기억
 LEARNINGS_PATH = BASE_DIR / "memory" / "learnings.md"
+LEARNINGS_YAML_PATH = BASE_DIR / "memory" / "learnings.yaml"
+
+# DB
+NAMU_DB_PATH = BASE_DIR / "db" / "namu.db"
+
+# 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
+NAMU_MACHINE: str = os.getenv("NAMU_MACHINE", "unknown")
 
 # 작업 기록
 TASKS_DIR = BASE_DIR / "tasks"
