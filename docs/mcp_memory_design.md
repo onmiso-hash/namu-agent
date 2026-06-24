@@ -201,7 +201,7 @@ verified_by: human
 4. 🔶 `db.py` 구현
    - [x] 쓰기 계열: `init_db` / `record`(yaml-first, reason 필수) / `rebuild_from_yaml` — 검증 완료, 커밋 `08afc69` (2026-06-24)
    - [x] 읽기 계열: `recall`(맥락 로딩+폴백) / `search`(FTS+LIKE 폴백+경향 요약) — 검증 완료, 커밋 `d191a7d` (2026-06-24)
-5. [x] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio — 검증 완료, 커밋 (2026-06-24)
+5. [x] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio — 검증 완료, 커밋 `573ae33` (2026-06-24)
 6. [ ] MCP Inspector 테스트 → Claude Code에 stdio 서버 등록
 7. [ ] git pull 후 SQLite 자동 재생성 배선
 
