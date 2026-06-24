@@ -221,3 +221,4 @@ __marimo__/
 tasks/
 db/
 *.bak
+*:Zone.Identifier
