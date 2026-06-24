@@ -1,10 +1,5 @@
 import argparse
 import sys
-from pathlib import Path
-
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).parent / ".env")
 
 from adapters.base import Message, Role
 from core.orchestrator import Orchestrator
