@@ -70,11 +70,13 @@ class Orchestrator:
                 result = adapter.generate(task, system=system, **kwargs)
         except Exception as exc:
             self._write_task_files(task_id, task, str(exc), adapter, started_at, success=False)
-            self._append_learning(task, str(exc), adapter, started_at, success=False)
+            # NOTE: learnings 자동기록 제거 → MCP 메모리 서버(namu_record)로 대체.
+            #       reason 필수 원칙상 자동기록은 부적합 (판단 주체가 명시 호출).
             raise
 
         self._write_task_files(task_id, task, result.content, adapter, started_at, success=True)
-        self._append_learning(task, result.content, adapter, started_at, success=True)
+        # NOTE: learnings 자동기록 제거 → MCP 메모리 서버(namu_record)로 대체.
+        #       reason 필수 원칙상 자동기록은 부적합 (판단 주체가 명시 호출).
         return result.content
 
     def select_adapter(self) -> AIAdapter | None:
@@ -149,6 +151,9 @@ class Orchestrator:
             errors="replace",
         )
 
+    # DEPRECATED: MCP 메모리 서버(namu_record)로 대체됨. run()에서 호출 제거.
+    #             옛 .md 포맷 파싱 참고용으로 정의만 보존.
+    #             신규 기록 포맷은 memory/learnings.yaml (YAML 멀티 문서) 사용 예정.
     def _append_learning(
         self,
         task: str,
