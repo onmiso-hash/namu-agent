@@ -220,3 +220,4 @@ __marimo__/
 # NAMU Agent
 tasks/
 db/
+*.bak
