@@ -142,3 +142,137 @@ def rebuild_from_yaml() -> int:
             )
 
     return len(docs)
+
+
+_COLS = (
+    "id", "timestamp", "task", "task_type", "outcome",
+    "reason", "machine", "verified_by", "tags",
+)
+
+
+def _row_to_dict(row: tuple) -> dict:
+    d = dict(zip(_COLS, row))
+    try:
+        d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+    except (json.JSONDecodeError, TypeError):
+        d["tags"] = []
+    return d
+
+
+def _fts_query(
+    conn: sqlite3.Connection,
+    query: str,
+    limit: int,
+    order: str,
+    outcome_filter: str | None = None,
+    task_type: str | None = None,
+) -> list[dict]:
+    q = query.strip()
+
+    if len(q) >= 3:
+        fts_term = '"' + q.replace('"', '""') + '"'
+        order_clause = "ORDER BY bm25(learnings_fts)" if order == "bm25" else "ORDER BY l.id DESC"
+        conds: list[str] = ["learnings_fts MATCH ?"]
+        params: list = [fts_term]
+        if outcome_filter:
+            conds.append("l.outcome = ?")
+            params.append(outcome_filter)
+        if task_type:
+            conds.append("l.task_type = ?")
+            params.append(task_type)
+        sql = (
+            "SELECT l.id, l.timestamp, l.task, l.task_type, l.outcome,"
+            " l.reason, l.machine, l.verified_by, l.tags"
+            " FROM learnings_fts"
+            " JOIN learnings l ON l.rowid = learnings_fts.rowid"
+            f" WHERE {' AND '.join(conds)}"
+            f" {order_clause}"
+            " LIMIT ?"
+        )
+        rows = conn.execute(sql, params + [limit]).fetchall()
+    else:
+        like_term = f"%{q}%"
+        conds = ["(task LIKE ? OR reason LIKE ? OR tags LIKE ?)"]
+        params = [like_term, like_term, like_term]
+        if outcome_filter:
+            conds.append("outcome = ?")
+            params.append(outcome_filter)
+        if task_type:
+            conds.append("task_type = ?")
+            params.append(task_type)
+        sql = (
+            "SELECT id, timestamp, task, task_type, outcome,"
+            " reason, machine, verified_by, tags"
+            " FROM learnings"
+            f" WHERE {' AND '.join(conds)}"
+            " ORDER BY id DESC"
+            " LIMIT ?"
+        )
+        rows = conn.execute(sql, params + [limit]).fetchall()
+
+    return [_row_to_dict(row) for row in rows]
+
+
+def recall(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    task_type: str | None = None,
+    limit: int = 5,
+) -> list[dict]:
+    def _latest(lim: int) -> list[dict]:
+        conds: list[str] = []
+        params: list = []
+        if task_type:
+            conds.append("task_type = ?")
+            params.append(task_type)
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        sql = (
+            "SELECT id, timestamp, task, task_type, outcome,"
+            " reason, machine, verified_by, tags"
+            f" FROM learnings {where} ORDER BY id DESC LIMIT ?"
+        )
+        return [_row_to_dict(r) for r in conn.execute(sql, params + [lim]).fetchall()]
+
+    q = (query or "").strip()
+    if not q:
+        return _latest(limit)
+
+    matches = _fts_query(conn, q, limit, order="recent", task_type=task_type)
+    return matches if matches else _latest(limit)
+
+
+def search(
+    conn: sqlite3.Connection,
+    query: str,
+    outcome_filter: str | None = None,
+    limit: int = 10,
+) -> dict:
+    results = _fts_query(conn, query, limit, order="bm25", outcome_filter=outcome_filter)
+
+    summary: dict[str, int] = {"success": 0, "failure": 0, "partial": 0}
+    q = query.strip()
+    if len(q) >= 3:
+        fts_term = '"' + q.replace('"', '""') + '"'
+        rows = conn.execute(
+            "SELECT l.outcome, COUNT(*)"
+            " FROM learnings_fts"
+            " JOIN learnings l ON l.rowid = learnings_fts.rowid"
+            " WHERE learnings_fts MATCH ?"
+            " GROUP BY l.outcome",
+            [fts_term],
+        ).fetchall()
+    else:
+        like_term = f"%{q}%"
+        rows = conn.execute(
+            "SELECT outcome, COUNT(*)"
+            " FROM learnings"
+            " WHERE (task LIKE ? OR reason LIKE ? OR tags LIKE ?)"
+            " GROUP BY outcome",
+            [like_term, like_term, like_term],
+        ).fetchall()
+
+    for outcome, count in rows:
+        if outcome in summary:
+            summary[outcome] = count
+
+    return {"results": results, "summary": summary}
