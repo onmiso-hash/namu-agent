@@ -1,6 +1,6 @@
 # NAMU MCP 메모리 서버 설계 메모
 
-> 📅 작성: 2026-06-24 | 갱신: 2026-06-24 (체크리스트 1·2·3 확정) | 구현용 청사진
+> 📅 작성: 2026-06-24 | 갱신: 2026-06-24 (db.py 쓰기계열 구현 검증 + entry 포맷 확정 + recall/search 역할 분리) | 구현용 청사진
 > 목표: NAMU의 메모리/학습 코어(C층)를 MCP 서버로 노출 → 어떤 AI(Claude Code/agy/Cursor)든 같은 기억 공유
 
 ---
@@ -15,33 +15,39 @@
 
 ## 🛠️ 노출할 도구 3개 (MVP)
 
-### 1. `namu_recall` — 과거 맥락 조회
-세션 시작 시 또는 작업 착수 전에 관련 기억을 불러온다.
+> **recall vs search 역할 분리 (2026-06-24 확정):** 둘 다 query를 받지만 목적이 다르다.
+> - **recall = 작업 시작 전 "맥락 로딩"** → 뭐라도 돌려줌(관련 부족하면 최신순 폴백)
+> - **search = 판단 중 "패턴 분석"** → 정확히 매칭되는 것만, 없으면 빈 결과 + 항상 경향 요약 첨부
+> - 내부 FTS 로직은 private 헬퍼(`_fts_query`)로 공유하되, 폴백·요약 동작으로 차별화
+
+### 1. `namu_recall` — 과거 맥락 조회 (작업 시작 전 맥락 로딩)
+세션 시작 시 또는 작업 착수 전에 관련 기억을 불러온다. "뭐라도 준다"가 핵심.
 
 | 항목 | 내용 |
 |------|------|
-| 입력 | `query`(str, 선택): 주제 키워드 / `limit`(int, 기본 10): 최대 개수 / `task_type`(str, 선택): 코드/문서/분석 등 필터 |
+| 입력 | `query`(str, 선택): 주제 키워드 / `task_type`(str, 선택): 필터 / `limit`(int, 기본 10) |
 | 출력 | 관련 learning 항목 리스트 (시각, 작업유형, 결과, **판단 이유**, 태그) |
-| 동작 | SQLite에서 관련도순 검색 → 없으면 learnings.md 최신 N개 폴백 |
+| 동작 | query 있으면 FTS 관련도순 → 결과 부족하면 최신순 폴백. query 없으면 `ORDER BY id DESC` 최신 N개 |
 
 ### 2. `namu_record` — 결과 + 이유 기록 (자가학습 핵심)
 작업이 끝나면 결과뿐 아니라 **판단 이유**까지 append-only로 저장.
 
 | 항목 | 내용 |
 |------|------|
-| 입력 | `task`(str): 무슨 작업 / `outcome`(str): 성공·실패·부분성공 / `reason`(str, 필수): **왜 그렇게 판단했나** / `task_type`(str) / `tags`(list, 선택) |
-| 출력 | 기록된 항목 ID + 확인 메시지 |
-| 동작 | learnings.md에 append (삭제·수정 금지) → SQLite에도 인덱싱 |
-| ⚠️ 원칙 | `reason` 없는 기록 거부. 이유 없는 데이터 → 엉뚱한 패턴 도출 위험 |
+| 입력 | `task`(str) / `outcome`(str): success/failure/partial / `reason`(str, **필수**) / `task_type`(str) / `verified_by`(str) / `tags`(list, 선택) |
+| 출력 | 기록된 항목 ID(ULID) |
+| 동작 | **learnings.yaml에 먼저 append** (삭제·수정 금지) → SQLite INSERT (트리거가 FTS 채움) |
+| 자동 채움 | `id`(ULID) / `timestamp`(UTC) / `machine`(.env) 은 서버가 생성, 호출자는 안 넘김 |
+| ⚠️ 원칙 | `reason` 빈 값이면 `ValueError`. 이유 없는 데이터 → 엉뚱한 패턴 도출 위험 |
 
-### 3. `namu_search` — 패턴 검색
-누적된 기록에서 패턴/유사 사례를 찾는다 (자가발전 기반).
+### 3. `namu_search` — 패턴 검색 (판단 중 분석적 조회)
+누적된 기록에서 패턴/유사 사례를 찾는다 (자가발전 기반). "정확한 것만 + 요약"이 핵심.
 
 | 항목 | 내용 |
 |------|------|
 | 입력 | `query`(str): 검색어 / `outcome_filter`(str, 선택): 성공/실패만 / `limit`(int) |
-| 출력 | 매칭 항목 + (가능하면) 간단한 빈도/경향 요약 |
-| 동작 | SQLite FTS(전문검색) 활용. 향후 임베딩 검색으로 확장 여지 |
+| 출력 | 매칭 항목 + **경향 요약**(`{success: N, failure: M, partial: K}`) |
+| 동작 | query 3자+ → FTS5 MATCH + bm25 정렬 / 2자 이하 → `LIKE` 폴백. 매칭 없으면 빈 결과(폴백 없음) |
 
 ---
 
@@ -52,12 +58,12 @@
    │  recall ───→ 과거 맥락 받아 작업 시작
    │  record ───→ 결과+이유 저장
    ▼
-[MCP 메모리 서버] ──→ learnings.md (append-only, git 동기화 = 진짜 기억)
+[MCP 메모리 서버] ──→ learnings.yaml (append-only, git 동기화 = 진짜 기억)
                  └─→ SQLite (로컬 캐시, 빠른 검색/패턴, gitignore)
 ```
 
-- **learnings.md** = source of truth, git으로 PC간 공유
-- **SQLite** = learnings.md를 인덱싱한 로컬 캐시. git pull 후 자동 재생성
+- **learnings.yaml** = source of truth, git으로 PC간 공유
+- **SQLite** = learnings.yaml를 인덱싱한 로컬 캐시. git pull 후 자동 재생성
 
 ---
 
@@ -146,24 +152,57 @@ END;
 
 | 도구 | 쿼리 방식 |
 |------|-----------|
-| `namu_record` | `learnings`에 INSERT (트리거가 FTS 채움) + learnings.md에 append |
+| `namu_record` | `learnings`에 INSERT (트리거가 FTS 채움) + learnings.yaml에 append |
 | `namu_recall` | `SELECT … ORDER BY id DESC LIMIT ?` (+ task_type 필터). ULID 정렬로 최신순 공짜 |
 | `namu_search` | `learnings_fts MATCH ?` → `learnings` 조인, `ORDER BY bm25()`. 2글자 이하 `LIKE` 폴백. `GROUP BY outcome COUNT(*)`로 성공/실패 경향 요약 |
 
-**재생성(rebuild) 방식:** git pull로 learnings.md 최신화 후 → `.db` 파일 통째 삭제 → md 파싱하며 전체 재INSERT (트리거가 FTS 자동 재구축). DELETE/UPDATE 트리거 불필요.
+**재생성(rebuild) 방식:** git pull로 learnings.yaml 최신화 후 → `.db` 파일 통째 삭제 → `safe_load_all()` 로 파싱하며 전체 재INSERT (트리거가 FTS 자동 재구축). DELETE/UPDATE 트리거 불필요.
 
 ---
 
-## ✅ 다음 세션 체크리스트
+## 📄 learnings.yaml entry 포맷 (확정 · 구현 검증됨)
+
+> source of truth. record가 쓰고 rebuild가 읽는 **짝**. YAML 멀티 문서(`---` 구분).
+> `yaml.safe_dump(allow_unicode=True)` 로 쓰고 `yaml.safe_load_all()` 로 읽는다.
+
+```yaml
+---
+id: 01KVW827WN0NYS6V0TF0PCJHQB
+machine: hp
+outcome: success
+reason: trigram 토크나이저가 한글 3글자 이상 부분검색을 네이티브 지원함. 2글자 이하는 LIKE 폴백 필요.
+tags:
+- sqlite
+- fts5
+- 한글검색
+task: SQLite FTS5 trigram 인덱스 설계
+task_type: code
+timestamp: '2026-06-24T07:21:12.341335+00:00'
+verified_by: human
+```
+
+- **id/timestamp/machine** = record 호출 시 서버가 자동 생성 (호출자 안 넘김)
+- **reason** = 한 줄이면 평문, 여러 줄이면 `|` 블록 스칼라로 자동 처리됨
+- **tags** = YAML 리스트. 한글 태그도 이스케이프 없이 저장됨 (`allow_unicode=True`)
+- **outcome** = success/failure/partial 중 하나만 (CHECK 제약)
+- ⚠️ 빈 문서(None)는 rebuild 시 필터링 (파일 끝 trailing `---` 대비)
+
+---
+
+## ✅ 진행 체크리스트
 
 1. [x] Python MCP SDK 최신 버전·설치법 확인 → `mcp[cli]>=1.28,<2`, FastMCP 사용 (2026-06-24)
 2. [x] learnings 항목 스키마 확정 → ULID + machine + verified_by 추가 (2026-06-24)
 3. [x] SQLite 테이블 설계 (FTS 포함) → trigram + LIKE 폴백, INSERT 트리거 동기화 (2026-06-24)
-4. [ ] `namu_recall` / `namu_record` / `namu_search` 구현
-5. [ ] stdio MCP 서버로 띄워서 Claude Code에 연결 테스트
-6. [ ] learnings.md ↔ SQLite 동기화(재생성) 로직
+4. 🔶 `db.py` 구현
+   - [x] 쓰기 계열: `init_db` / `record`(yaml-first, reason 필수) / `rebuild_from_yaml` — 검증 완료, 커밋 `08afc69` (2026-06-24)
+   - [ ] 읽기 계열: `recall`(맥락 로딩+폴백) / `search`(FTS+LIKE 폴백+경향 요약) ← **다음 세션 시작점**
+5. [ ] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio
+6. [ ] MCP Inspector 테스트 → Claude Code에 stdio 서버 등록
+7. [ ] git pull 후 SQLite 자동 재생성 배선
 
-**구현 전 확인:** 두 PC `sqlite3.sqlite_version` ≥ 3.34 & FTS5 활성 / `python-ulid` 설치
+**환경 확인 완료:** HP `sqlite3` 3.45.1 + FTS5/trigram OK / `python-ulid`,`PyYAML` 설치됨 / `.env`에 `NAMU_MACHINE=hp`
+**다음 PC(삼성) 설정 시:** `.env`에 `NAMU_MACHINE=samsung`
 
 ---
 
