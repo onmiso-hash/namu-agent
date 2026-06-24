@@ -1,0 +1,40 @@
+---
+id: 01KVWKT45CSK4QNCR331RHQDCA
+machine: unknown
+outcome: success
+reason: FastMCP @mcp.tool() 데코레이터 + per-call conn 전략으로 스레드 안전 확보
+tags:
+- mcp
+- fastmcp
+- sqlite
+task: mcp_server.py 구현
+task_type: code
+timestamp: '2026-06-24T10:46:29.292633+00:00'
+verified_by: ai
+---
+id: 01KVWPB9E6TZ78TCRXBR90M71D
+machine: hp
+outcome: success
+reason: load_dotenv를 main.py 진입점에만 두면 mcp_server.py로 직접 실행 시 .env가 로드되지 않아 machine이
+  unknown으로 폴백됨. 모든 진입점이 import하는 config.py에서 BASE_DIR 기준 경로로 로드하면 일관되게 해결.
+tags:
+- '["mcp", "dotenv", "config", "환경설정"]'
+task: MCP 메모리 서버 진입점별 .env 로딩 일원화
+task_type: code
+timestamp: '2026-06-24T11:30:48.902151+00:00'
+verified_by: human
+---
+id: 01KVWQQE3Z978J96SMPXTN6MC6
+machine: hp
+outcome: success
+reason: FastMCP가 list[str] 타입 힌트로 인해 JSON 문자열 tags를 단일 원소 리스트로 코어션함. db.py의 list|None
+  계약은 유지하고, 신뢰 경계인 mcp_server.py 래퍼에서 _normalize_tags로 정규화하는 것이 책임 분리상 맞음.
+tags:
+- 'mcp '
+- 'fastmcp '
+- pydantic
+- 타입정규화
+task: MCP 래퍼에서 외부 입력 tags 정규화
+task_type: code
+timestamp: '2026-06-24T11:54:55.487146+00:00'
+verified_by: human
