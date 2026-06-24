@@ -1,6 +1,6 @@
 # NAMU MCP 메모리 서버 설계 메모
 
-> 📅 작성: 2026-06-24 | 갱신: 2026-06-24 (db.py 쓰기계열 구현 검증 + entry 포맷 확정 + recall/search 역할 분리) | 구현용 청사진
+> 📅 작성: 2026-06-24 | 갱신: 2026-06-24 (db.py 읽기계열 recall/search 구현 완료) | 구현용 청사진
 > 목표: NAMU의 메모리/학습 코어(C층)를 MCP 서버로 노출 → 어떤 AI(Claude Code/agy/Cursor)든 같은 기억 공유
 
 ---
@@ -196,7 +196,7 @@ verified_by: human
 3. [x] SQLite 테이블 설계 (FTS 포함) → trigram + LIKE 폴백, INSERT 트리거 동기화 (2026-06-24)
 4. 🔶 `db.py` 구현
    - [x] 쓰기 계열: `init_db` / `record`(yaml-first, reason 필수) / `rebuild_from_yaml` — 검증 완료, 커밋 `08afc69` (2026-06-24)
-   - [ ] 읽기 계열: `recall`(맥락 로딩+폴백) / `search`(FTS+LIKE 폴백+경향 요약) ← **다음 세션 시작점**
+   - [x] 읽기 계열: `recall`(맥락 로딩+폴백) / `search`(FTS+LIKE 폴백+경향 요약) — 검증 완료, 커밋 `d191a7d` (2026-06-24)
 5. [ ] `mcp_server.py` — FastMCP로 도구 3개 노출 + stdio
 6. [ ] MCP Inspector 테스트 → Claude Code에 stdio 서버 등록
 7. [ ] git pull 후 SQLite 자동 재생성 배선
