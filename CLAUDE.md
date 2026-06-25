@@ -56,3 +56,8 @@
 - Python 3.12+
 - SQLite (내장)
 - GitHub (메모리 동기화)
+
+## 작업 오케스트레이션 규칙
+- 멀티스텝 구현 작업은 `/namu-task` 절차(.claude/skills/namu-task/SKILL.md)를 따른다.
+- 검수 fail 시 자동 재실행 금지 — 반드시 사용자 게이트(재실행/통과/중단)를 거친다.
+- recall/record는 오케스트레이터만 호출한다. 워커는 메모리에 직접 쓰지 않는다.

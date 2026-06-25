@@ -1,0 +1,8 @@
+# NAMU 워커 명단 — 누가 어느 소속(엔진)인지
+# 기본은 전부 native(= 메인 AI의 서브에이전트). 외부 엔진은 나중에 마법사가 채움.
+coder:
+  engine: native          # native | ollama | gemini_paid | claude_api (MVP는 native만)
+  agent: namu-coder       # native일 때 쓸 서브에이전트 이름
+reviewer:
+  engine: native
+  agent: namu-reviewer
