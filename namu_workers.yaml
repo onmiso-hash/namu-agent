@@ -1,3 +1,4 @@
+# 워커 2명: coder(native/namu-coder), reviewer(native/namu-reviewer)
 # NAMU 워커 명단 — 누가 어느 소속(엔진)인지
 # 기본은 전부 native(= 메인 AI의 서브에이전트). 외부 엔진은 나중에 마법사가 채움.
 coder:

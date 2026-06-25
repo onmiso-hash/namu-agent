@@ -1,6 +1,6 @@
 # 나만의 멀티에이전트 시스템 기획
 
-> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-25 (로드맵 11번 종료 — Claude Code 글루: SessionStart 기억 자동주입 훅 + CLAUDE.md 교훈 저장 규칙) | 대화를 통해 점진적으로 채워나가는 문서
+> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-26 (로드맵 12번 MVP 완료 — `/namu-task` 멀티에이전트 라우팅: 오케스트레이터 + coder/reviewer 서브에이전트 + 라이브 검증 통과) | 대화를 통해 점진적으로 채워나가는 문서
 
 ---
 
@@ -79,6 +79,11 @@
 | 2026-06-25 | 훅 설정 위치 | `.claude/settings.local.json`(gitignore, 로컬 전용). MCP local 스코프와 동일 논리 — PC별 절대경로(HP WSL `.venv/bin` vs 삼성 Win) 차로 repo 공유 불가, 플러그인화(13번) 때 플러그인으로 이전. `session_recall.py`는 경로 비의존이라 git 추적 |
 | 2026-06-25 | 훅 스펙 검증(공식 docs) | code.claude.com 교차확인: SessionStart는 stdout/`additionalContext`로 컨텍스트 주입(2.1.0부터 무음 주입), Stop은 매 응답 턴마다 발화, blocking 가능 이벤트=PreToolUse/UserPromptSubmit/Stop/SubagentStop. 훅은 세션 시작 시 스냅샷(핫적용 X)→`/hooks`에서 검토 |
 | 2026-06-25 | agy 확장점 사실확인 | (멀티에이전트 대비) **agy도 MCP 호스트**: `~/.gemini/config/mcp_config.json`(공유)·`.agents/mcp_config.json`(워크스페이스), `/mcp` 관리. **훅도 있음**: `hooks.json`, 이벤트 PreToolUse/PostInvocation/Stop+세션시작, Gemini CLI와 동일 포맷. **네이티브 서브에이전트**(`/agents`, `agy -p`). 단 MCP env var 버그(키 하드코딩 강제)·non-TTY stdout #76·훅 경로 버그(최근 수정) 존재 → agy 글루(16번) 착수 시 재검증 |
+| 2026-06-25 | **12번 전제검증(검색)** | Anthropic: `claude -p`(진짜 CLI 서브프로세스)=허용, OAuth 토큰 추출해 제3자 클라이언트에 주입=금지(2026-02 ToS 명문화, 04월 차단 시행). 단 `-p` 비대화형은 표준 구독풀 아닌 **별도 Agent SDK 크레딧**(고정·이월불가, API요율, 2026-05 도입) 소모 → Task/`/agents`/`-p` 세 경로가 **과금상 비대칭**. Gemini 무료 API=프롬프트 학습+사람 리뷰(코드보안 부적합), 유료는 학습 안 함, **Pro는 2026-04 무료티어서 제거**(유료 전용) |
+| 2026-06-25 | **워커 구성 확정** | 기본=메인 AI **네이티브 서브에이전트**(Claude Code=Claude, agy=Gemini, 같은 구독풀·비용0·보안OK·엔진무관). 검수도 같은 구독 안(무료 Gemini는 코드 학습돼 부적합, `-p`는 별도 크레딧이라 "구독 안 저렴" 아님). 이종 엔진(Ollama/유료Gemini)은 설치·실행 초기 **override**로 후순위. 워커 spawn 어댑터는 엔진차+과금·보안등급을 메타데이터로 흡수. **MVP는 native만** 구현, 이종 subprocess는 인터페이스 자리만 |
+| 2026-06-25 | 검수 게이트 | 검수 fail=**자동 재실행 금지**. 사용자에 판정 이유 보고 → ①재실행(횟수 입력)/②통과 처리(검수 오판단 시)/③중단. 사용자 통과 시 `verified_by`=human. 검수 워커도 AI라 오판 가능 → 사람 게이트가 가치, `verified_by` 컬럼과 자연 연결 |
+| 2026-06-25 | 워커 설정 위치 | `namu_workers.yaml`로 **분리**(config.py 상수와 성격 다른 사용자 선택값, override 마법사 표면 명확). 민감값(키)은 yaml에 안 박고 `.env` 참조. learnings 패턴과 동일 — 기본구성 git공유, override 로컬값은 후분리(13번 플러그인화 때) |
+| 2026-06-25 | 스킬/커맨드 통합 확인 | Claude Code 2.1.3서 `.claude/commands/`와 `.claude/skills/<name>/SKILL.md` **통합** — 둘 다 같은 `/슬래시` 생성, 신규는 skills 권장(supporting files·frontmatter 제어·동적 컨텍스트 주입). 서브에이전트=`.claude/agents/*.md`(frontmatter: name/description/model/tools, body=시스템 프롬프트), **Task 도구→Agent 도구 개명**, `model` 필드로 비용 라우팅(검수=haiku). 스코프 우선순위 session>project>user>plugin |
 
 ## 🏗️ 저장소 구조 (GitHub 기반)
 ```
@@ -220,6 +225,20 @@ github/
 - **라이브 검증 통과:** 새 세션에서 아무 요청 없이 과거 교훈 5건 자동주입 확인(outcome/reason/tags 정상). C층(메모리 코어)이 작업 루프에 자동 연결된 첫 순간
 - **커밋 `b5d4670` 푸시 완료** (`session_recall.py`, `CLAUDE.md`, `.gitignore`). `settings.local.json`은 gitignore라 제외(의도된 것)
 - **(논의) 멀티에이전트 워커 — 검토중·미확정:** agy 확장점 사실확인 완료(결정표 참조). 핵심 원칙 = 오케스트레이터-워커는 엔진 무관(Claude Code/agy 대칭), 실행 차이는 "워커 spawn 어댑터" 한 겹으로 흡수. 단 전제 일부 미검증(Anthropic CLI 래핑 차단 시점·Gemini 무료 API 약관) → 12/16번 본격화 때 검증 후 확정. 상세는 로드맵 하단 "🔭 검토중" 참조
+
+### 2026-06-25 (밤 세션 — 로드맵 12번 MVP: `/namu-task` 멀티에이전트 라우팅)
+- **전제 검증(검색 2건) 후 워커 구성 확정** — 상세는 결정 테이블 참조. 핵심: 검수도 같은 구독 안 네이티브 서브에이전트로(무료 Gemini는 코드 학습돼 부적합, `-p`는 별도 Agent SDK 크레딧이라 "구독 안 저렴" 아님). 이종 엔진은 override 후순위 → MVP는 native만. "어쩔 수 없이 같은 구독 안"이 보안·비용상 최적이란 결론
+- **최신 스펙 확인:** skills/commands 통합(2.1.3), 서브에이전트=`.claude/agents/*.md`+`model` 필드 비용 라우팅, Task→Agent 개명. 11번 훅 스펙 검증처럼 본격 구현 전 교차확인
+- **중요 기술 함의:** Claude Code 네이티브 서브에이전트(Agent 도구)는 같은 Claude 모델만 → "코딩=Claude, 검수=Ollama" 이종 혼합은 네이티브로 불가, bash subprocess 필요 = "워커 spawn 어댑터"의 진짜 이유. 사용자가 기본=native 택한 덕에 MVP서 이종 복잡도 회피
+- **5개 파일 생성** (Claude Code, 커밋 직전 멈춤→사용자 diff 검토 후 직접 커밋·푸시):
+  - `.claude/skills/namu-task/SKILL.md` — 7단계 오케스트레이션(recall→분할→명단확인→coding→review→**게이트**→record)
+  - `.claude/agents/namu-coder.md`(model=sonnet) / `.claude/agents/namu-reviewer.md`(model=haiku, read-only)
+  - `namu_workers.yaml`(repo 루트, 기본 전부 native, 외부 엔진 자리만 비움) / CLAUDE.md "작업 오케스트레이션 규칙" 3줄 추가
+  - `.claude/`는 `settings.local.json`만 gitignore, `skills/`·`agents/`는 git 추적 확인
+- **라이브 검증(새 세션) 통과:** `/agents`로 워커 2개(coder·sonnet/reviewer·haiku) 등록 확인 → 작은 작업(yaml 주석 추가)으로 회사 한 바퀴 — recall(교훈0→진행) → coder 위임 → reviewer가 `yaml.safe_load` **실파싱 검사** → pass → 7단계서 "단순 주석이라 일반화 교훈 없음" **판단해 record 생략**. 11번 저장 규칙이 실제로 작동(쓰레기 기록 방지)
+- **미검증 잔여:** 검수 게이트 fail 멈춤은 이번 pass라 미발동 → 다음 세션서 의도적 fail 작업으로 확인 필요
+- **진행 방식 확인:** Claude Code는 diff까지만, 커밋·푸시는 사용자 직접. 권한은 "Yes, this time only"만. plan.md는 대화창서 갱신→다운→repo 커밋
+- **다음 세션 시작점:** ① 이 plan.md 갱신 커밋 ② 검수 게이트 fail 테스트 ③ (이후) 13번 플러그인 패키징 또는 16번 agy 글루
 
 ## 🤖 AI 호출 방식 (어댑터 구조) — 확정
 ```
@@ -376,7 +395,12 @@ namu-agent/
     - ✅ `.claude/settings.local.json`에 SessionStart 훅 등록 (로컬 전용, gitignore)
     - ✅ `CLAUDE.md` 교훈 저장 규칙 (저장은 AI 수동 호출, 자동기록 보류) — 커밋 `b5d4670` 푸시 완료
     - 🔶 11-b (보류): record 자동화는 누락 관측 시 게이트형 Stop 리마인더로 재검토
-12. ⬜ CLAUDE.md + `/namu-task` 스킬 작성 — 멀티에이전트 워커 라우팅이 여기 들어감 (아래 "🔭 검토중" 참조)
+12. ✅ **CLAUDE.md + `/namu-task` 스킬 — 완료(MVP)** — 멀티에이전트 워커 라우팅
+    - ✅ 전제 검증(검색): Anthropic `claude -p` 허용/OAuth 추출 금지·`-p`는 별도 Agent SDK 크레딧 / Gemini 무료 API는 학습+사람리뷰라 검수 부적합·Pro 2026-04 유료전환 (결정 테이블 참조)
+    - ✅ 워커 구성 확정: 기본=메인 AI 네이티브 서브에이전트(같은 구독풀·비용0·보안OK). 이종 엔진은 override 후순위, MVP는 native만
+    - ✅ `.claude/skills/namu-task/SKILL.md`(7단계 오케스트레이션) + `namu-coder`(sonnet) + `namu-reviewer`(haiku, read-only) + `namu_workers.yaml`(기본 native) + CLAUDE.md 규칙 3줄
+    - ✅ 라이브 검증 통과: recall(교훈0→진행)→coder 위임→reviewer가 yaml 실파싱 검사→pass→record는 "단순작업이라 교훈없음" 판단해 적절히 생략(11번 저장 규칙 실작동)
+    - 🔶 검수 게이트(fail 시 멈춤)는 이번 pass라 미발동 → 다음 세션서 의도적 fail 작업으로 확인
 13. ⬜ 전체를 Claude Code 플러그인으로 패키징
     - ⚠️ 이 단계서 코드(별도 설치폴더)·노트(git repo)가 갈라짐 → learnings.yaml 경로를 BASE_DIR 고정에서 env/`${CLAUDE_PROJECT_DIR}`로 분리(한 줄)
 14. ⬜ git pull 후 SQLite 자동 재생성 기능 구현
@@ -384,12 +408,13 @@ namu-agent/
 16. ⬜ (나중) agy용 글루 — Antigravity 방식 설정/훅
     - ℹ️ 사실확인 완료(2026-06-25): agy도 MCP 호스트(`~/.gemini/config/mcp_config.json` + `/mcp`), 훅 있음(`hooks.json`, PreToolUse/PostInvocation/Stop+세션시작, Gemini CLI 동일 포맷), 네이티브 서브에이전트(`/agents`,`agy -p`). 단 MCP env var 버그·non-TTY stdout #76·훅 경로 버그(최근 수정) 있어 착수 시 재검증
 
-### 🔭 검토중 (미확정) — 멀티에이전트 워커 구조
-> 다른 창에서 시작한 설계. **전제 일부 미검증이라 확정 아님.** 12/16번 본격화 때 검증 후 반영.
-- **방향:** 오케스트레이터 + 코딩 워커 + 검수 워커. 코딩(민감 코드)은 구독 안에서, 검수/리뷰는 저렴한 경로로
-- **핵심 원칙 (2026-06-25 도출):** 오케스트레이터-워커 구조는 **엔진 무관(Claude Code/agy 대칭)**. 실행 차이(Task vs `/agents` vs `-p`)는 **"워커 spawn 어댑터" 한 겹**으로 흡수 — 기존 `adapters/` 패턴을 "워커 띄우기" 층에 한 번 더 적용
-- **공유 기억:** 워커가 어느 엔진이든 같은 MCP(namu-memory) 호출 → 교훈 공유. 벤더 독립이 워커 레벨에서 실현
-- **⚠️ 미검증 전제 (본격 설계 전 검색 검증 필수):** Anthropic의 CLI 래핑 차단 시점 / Gemini 무료 API 약관(프롬프트 학습 사용 여부)·Pro 유료화
+### 🔭 멀티에이전트 워커 구조 — 12번서 MVP 확정·검증, 이종 엔진은 후속
+> 다른 창에서 시작했던 설계. **12번(2026-06-25)서 전제 검증 + 워커 구성 확정 + 라이브 검증 완료.** 아래는 확정 결과와 남은 작업.
+- ✅ **방향 확정:** 오케스트레이터 + 코딩 워커 + 검수 워커. 단 "검수는 저렴한 경로로"는 검증 결과 **기각** — 무료 Gemini는 코드 학습돼 보안 부적합, `-p`는 별도 크레딧. 기본은 같은 구독 안 네이티브 서브에이전트(검수=haiku로 비용만 절감)
+- ✅ **핵심 원칙 유지:** 오케스트레이터-워커는 **엔진 무관**(Claude Code/agy 대칭). 실행 차이(Agent 도구 vs `/agents` vs `-p`)는 **"워커 spawn 어댑터" 한 겹**으로 흡수 — 단 세 경로가 과금상 비대칭이라 어댑터가 과금·보안 등급도 메타데이터로 들어야 함
+- ✅ **공유 기억 검증됨:** 워커가 같은 MCP(namu-memory) 호출 → 교훈 공유. 12번 라이브 검증서 coder/reviewer가 같은 메모리 코어 바라봄 확인(현재는 둘 다 native)
+- ✅ **미검증 전제 → 검증 완료:** Anthropic CLI 래핑(`-p` 허용/OAuth 추출 금지) / Gemini 무료 API(학습+사람리뷰)·Pro 유료화. 상세 결정 테이블
+- ⬜ **남은 작업(후속):** ① 검수 게이트 fail 멈춤 라이브 확인 ② 이종 엔진 워커(Ollama/유료Gemini) bash subprocess spawn 어댑터 + 설치·실행 초기 override 마법사 ③ agy 대칭 구현(16번, `/agents`·`agy -p`로 같은 워커 구조)
 
 ### 보류/기각
 - ❌ gemini_subscription.py (agy non-TTY 버그 + 쿼터)
