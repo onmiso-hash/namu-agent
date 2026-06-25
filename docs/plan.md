@@ -1,6 +1,6 @@
 # 나만의 멀티에이전트 시스템 기획
 
-> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-26 (로드맵 12번 MVP 완료 — `/namu-task` 멀티에이전트 라우팅: 오케스트레이터 + coder/reviewer 서브에이전트 + 라이브 검증 통과) | 대화를 통해 점진적으로 채워나가는 문서
+> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-26 (로드맵 12번 완전 종료 — 검수 게이트 fail 멈춤 라이브 검증까지 통과: pass(06-25)+fail(06-26) 양면 검증) | 대화를 통해 점진적으로 채워나가는 문서
 
 ---
 
@@ -240,6 +240,14 @@ github/
 - **진행 방식 확인:** Claude Code는 diff까지만, 커밋·푸시는 사용자 직접. 권한은 "Yes, this time only"만. plan.md는 대화창서 갱신→다운→repo 커밋
 - **다음 세션 시작점:** ① 이 plan.md 갱신 커밋 ② 검수 게이트 fail 테스트 ③ (이후) 13번 플러그인 패키징 또는 16번 agy 글루
 
+### 2026-06-26 (검수 게이트 fail 라이브 검증 — 12번 완전 종료)
+- 지난 세션 미검증 잔여(게이트 fail 멈춤) 검증: 확실한 fail 유발 위해 닫는 괄호 누락 파이썬을 `/tmp`에 "수정 금지·그대로 작성"으로 고정(coder가 자동수정해 pass 나는 것 방지)
+- 라이브 흐름: recall(교훈0→진행)→coder가 깨진 코드 그대로 Write→reviewer(haiku)가 `python -m py_compile` 실행→`SyntaxError: '(' was never closed` line4 잡음→6단계 게이트 🔴FAIL
+- 게이트 4동작 전부 확인: ①자동재실행 안 함 ②fail 이유(py_compile 원문) 보고 ③재실행/통과/중단 3선택 ④③중단 선택→record 없이 종료(11번 저장규칙 작동, 테스트 잡음 메모리 미저장)
+- 의미: 검수 워커가 형식적 OK/NG가 아니라 **실제 검증도구(py_compile)를 돌려** 그 출력 근거로 판정함을 fail 케이스서 입증. 12번 pass(06-25)+fail(06-26) 양면 검증 완료
+- 진행방식 재확인: Claude Code 자동제안 프롬프트("plan.md 커밋·푸시")는 실행 안 함 — plan.md는 대화창 갱신→사용자 커밋, 커밋·푸시는 사용자 직접
+- **다음 세션 시작점:** 13번 플러그인 패키징 또는 16번 agy 글루
+
 ## 🤖 AI 호출 방식 (어댑터 구조) — 확정
 ```
 내 시스템
@@ -400,7 +408,7 @@ namu-agent/
     - ✅ 워커 구성 확정: 기본=메인 AI 네이티브 서브에이전트(같은 구독풀·비용0·보안OK). 이종 엔진은 override 후순위, MVP는 native만
     - ✅ `.claude/skills/namu-task/SKILL.md`(7단계 오케스트레이션) + `namu-coder`(sonnet) + `namu-reviewer`(haiku, read-only) + `namu_workers.yaml`(기본 native) + CLAUDE.md 규칙 3줄
     - ✅ 라이브 검증 통과: recall(교훈0→진행)→coder 위임→reviewer가 yaml 실파싱 검사→pass→record는 "단순작업이라 교훈없음" 판단해 적절히 생략(11번 저장 규칙 실작동)
-    - 🔶 검수 게이트(fail 시 멈춤)는 이번 pass라 미발동 → 다음 세션서 의도적 fail 작업으로 확인
+    - ✅ 검수 게이트 fail 멈춤 라이브 검증 완료(2026-06-26): 의도적 SyntaxError 작업 → reviewer가 `py_compile` 실행 → SyntaxError 원문 보고 → 게이트 ①자동재실행안함 ②이유보고 ③3선택(재실행/통과/중단) 정상 → ③중단 선택 시 record 없이 종료. pass(06-25)+fail(06-26) 양면 검증 완료
 13. ⬜ 전체를 Claude Code 플러그인으로 패키징
     - ⚠️ 이 단계서 코드(별도 설치폴더)·노트(git repo)가 갈라짐 → learnings.yaml 경로를 BASE_DIR 고정에서 env/`${CLAUDE_PROJECT_DIR}`로 분리(한 줄)
 14. ⬜ git pull 후 SQLite 자동 재생성 기능 구현
@@ -414,7 +422,7 @@ namu-agent/
 - ✅ **핵심 원칙 유지:** 오케스트레이터-워커는 **엔진 무관**(Claude Code/agy 대칭). 실행 차이(Agent 도구 vs `/agents` vs `-p`)는 **"워커 spawn 어댑터" 한 겹**으로 흡수 — 단 세 경로가 과금상 비대칭이라 어댑터가 과금·보안 등급도 메타데이터로 들어야 함
 - ✅ **공유 기억 검증됨:** 워커가 같은 MCP(namu-memory) 호출 → 교훈 공유. 12번 라이브 검증서 coder/reviewer가 같은 메모리 코어 바라봄 확인(현재는 둘 다 native)
 - ✅ **미검증 전제 → 검증 완료:** Anthropic CLI 래핑(`-p` 허용/OAuth 추출 금지) / Gemini 무료 API(학습+사람리뷰)·Pro 유료화. 상세 결정 테이블
-- ⬜ **남은 작업(후속):** ① 검수 게이트 fail 멈춤 라이브 확인 ② 이종 엔진 워커(Ollama/유료Gemini) bash subprocess spawn 어댑터 + 설치·실행 초기 override 마법사 ③ agy 대칭 구현(16번, `/agents`·`agy -p`로 같은 워커 구조)
+- ⬜ **남은 작업(후속):** ~~① 검수 게이트 fail 멈춤 라이브 확인~~ ✅완료(06-26) ② 이종 엔진 워커(Ollama/유료Gemini) bash subprocess spawn 어댑터 + 설치·실행 초기 override 마법사 ③ agy 대칭 구현(16번, `/agents`·`agy -p`로 같은 워커 구조)
 
 ### 보류/기각
 - ❌ gemini_subscription.py (agy non-TTY 버그 + 쿼터)
