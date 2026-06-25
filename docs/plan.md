@@ -1,6 +1,6 @@
 # 나만의 멀티에이전트 시스템 기획
 
-> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-25 (MCP 서버 Claude Code 등록·검증 완료 — 로드맵 10번 종료) | 대화를 통해 점진적으로 채워나가는 문서
+> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-25 (로드맵 11번 종료 — Claude Code 글루: SessionStart 기억 자동주입 훅 + CLAUDE.md 교훈 저장 규칙) | 대화를 통해 점진적으로 채워나가는 문서
 
 ---
 
@@ -74,6 +74,11 @@
 | 2026-06-25 | 스코프 승격 경로 | 도구 신뢰되면 → **user**(어느 프로젝트서든 namu_recall/record, config.py BASE_DIR 고정이라 중앙 learnings.yaml 하나를 바라봄 = NAMU "보편 기억" 비전) → 최종 **플러그인**(로드맵 13, `${CLAUDE_PLUGIN_ROOT}`로 다중 PC 포터블 배포). **project 스코프는 건너뜀**(OS별 python 경로 차 + 플러그인이 대체) |
 | 2026-06-25 | 등록 명령(HP) | `claude mcp add namu-memory --scope local --transport stdio -- "$(pwd)/.venv/bin/python" "$(pwd)/mcp_server.py"`. 절대경로가 `~/.claude.json [project: namu-agent]`에 박힘. NAMU_MACHINE은 config.py가 .env서 읽으니 `--env` 불필요, venv activate도 불필요(절대경로 파이썬 직접 호출) |
 | 2026-06-25 | plugin 시 챙길 점 | 지금은 코드(mcp_server.py)·노트(learnings.yaml)가 같은 repo라 BASE_DIR 고정으로 문제 0. **플러그인화 때만** 코드가 별도 설치폴더로 갈라지므로 그 단계서 learnings.yaml 경로를 env/`${CLAUDE_PROJECT_DIR}`로 분리(한 줄). 미리 당길 필요 없음 |
+| 2026-06-25 | **로드맵 11번 자동/수동** | **recall=SessionStart 훅 자동주입(결정론적, AI 턴 안 씀) / record=수동 유지(CLAUDE.md 규칙).** 자동 저장 보류 — "작업 완료" 시점이 기계적으로 모호해 자동기록 시 쓰레기 데이터 누적 + 의미 있는 reason 생성 불가. 과거 교훈 #5([failure] learnings.md 자동기록 제거)와 동일 결론, recall이 그걸 자동으로 꺼내와 재확인됨 |
+| 2026-06-25 | 11-b 보류 | record 자동화는 누락이 실제로 관측될 때만 재검토. Stop 훅은 매 응답 턴마다 발화하므로(작업완료 아님) 무지성 리마인더는 노이즈 → 게이트(세션당 1회/조건부) 필요. SubagentStop은 별도 이벤트라 워커 노이즈 격리 가능 |
+| 2026-06-25 | 훅 설정 위치 | `.claude/settings.local.json`(gitignore, 로컬 전용). MCP local 스코프와 동일 논리 — PC별 절대경로(HP WSL `.venv/bin` vs 삼성 Win) 차로 repo 공유 불가, 플러그인화(13번) 때 플러그인으로 이전. `session_recall.py`는 경로 비의존이라 git 추적 |
+| 2026-06-25 | 훅 스펙 검증(공식 docs) | code.claude.com 교차확인: SessionStart는 stdout/`additionalContext`로 컨텍스트 주입(2.1.0부터 무음 주입), Stop은 매 응답 턴마다 발화, blocking 가능 이벤트=PreToolUse/UserPromptSubmit/Stop/SubagentStop. 훅은 세션 시작 시 스냅샷(핫적용 X)→`/hooks`에서 검토 |
+| 2026-06-25 | agy 확장점 사실확인 | (멀티에이전트 대비) **agy도 MCP 호스트**: `~/.gemini/config/mcp_config.json`(공유)·`.agents/mcp_config.json`(워크스페이스), `/mcp` 관리. **훅도 있음**: `hooks.json`, 이벤트 PreToolUse/PostInvocation/Stop+세션시작, Gemini CLI와 동일 포맷. **네이티브 서브에이전트**(`/agents`, `agy -p`). 단 MCP env var 버그(키 하드코딩 강제)·non-TTY stdout #76·훅 경로 버그(최근 수정) 존재 → agy 글루(16번) 착수 시 재검증 |
 
 ## 🏗️ 저장소 구조 (GitHub 기반)
 ```
@@ -205,6 +210,16 @@ github/
 - **검증 범위:** record는 일부러 미호출(learnings.yaml = source of truth라 테스트 잡음 방지). 쓰기 경로는 추후 실제 기록 거리 생길 때 자연 검증
 - design.md 체크리스트 6번은 Claude Code가 repo서 6-a[x]/6-b[x]로 분리 갱신(커밋은 사용자 직접)
 - **다음 세션 시작점:** 로드맵 11번 — Claude Code 글루(SessionStart 훅=기억 자동주입 / Stop·PostToolUse 훅=자동기록). 열린 질문(자동 vs 수동 호출)부터 정리
+
+### 2026-06-25 (저녁 세션 — 로드맵 11번 종료: Claude Code 글루)
+- **자동/수동 결정:** recall=SessionStart 훅 자동주입(결정론적, AI 턴 안 씀), record=수동 유지(CLAUDE.md 규칙). 자동 저장 보류 — "작업 완료" 시점이 모호해 자동기록 시 쓰레기 데이터/reason 부실 위험. (과거 교훈 #5 `[failure] learnings.md 자동기록 제거`와 동일 결론 — recall이 그걸 자동으로 꺼내와 재확인)
+- **Claude Code 훅 스펙 최신 문서 확인** 후 설계 확정 (SessionStart=컨텍스트 주입 가능, Stop=매 턴 발화→리마인더는 게이트 필요, SubagentStop 별도)
+- **`hooks/session_recall.py` 신규:** .venv 파이썬 실행 + `sys.path.insert`로 프로젝트 루트 추가. `config`·`memory.db` import, `_ensure_db`(DB 없으면 init+rebuild, 새 PC 첫 실행 대비), **`db.recall(conn, limit=5)` 기존 함수 그대로 재사용**, 결과를 `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":...}}`로 stdout 출력(`ensure_ascii=False`). **어떤 예외든 `except: sys.exit(0)`**(세션 시작 절대 안 막음), 0건이면 조용히 종료
+- **`.claude/settings.local.json`:** SessionStart 훅 등록(HP 절대경로 command). `.gitignore`에 `.claude/settings.local.json` 추가
+- **`CLAUDE.md`:** "교훈 저장 규칙" 섹션 추가 — 저장 대상(반복 패턴/근본원인/설계결정+이유) vs 제외(1회성/맥락없는 결과), reason 필수, 애매하면 사용자에 확인, 훅 자동화 금지+이유 명시
+- **라이브 검증 통과:** 새 세션에서 아무 요청 없이 과거 교훈 5건 자동주입 확인(outcome/reason/tags 정상). C층(메모리 코어)이 작업 루프에 자동 연결된 첫 순간
+- **커밋 `b5d4670` 푸시 완료** (`session_recall.py`, `CLAUDE.md`, `.gitignore`). `settings.local.json`은 gitignore라 제외(의도된 것)
+- **(논의) 멀티에이전트 워커 — 검토중·미확정:** agy 확장점 사실확인 완료(결정표 참조). 핵심 원칙 = 오케스트레이터-워커는 엔진 무관(Claude Code/agy 대칭), 실행 차이는 "워커 spawn 어댑터" 한 겹으로 흡수. 단 전제 일부 미검증(Anthropic CLI 래핑 차단 시점·Gemini 무료 API 약관) → 12/16번 본격화 때 검증 후 확정. 상세는 로드맵 하단 "🔭 검토중" 참조
 
 ## 🤖 AI 호출 방식 (어댑터 구조) — 확정
 ```
@@ -356,13 +371,25 @@ namu-agent/
     - ✅ .env 일원화(`2d885b3`) + tags 경계 정규화(`c5efc76`) 버그수정
     - ✅ MCP Inspector stdio 실호출 검증 (6-a)
     - ✅ Claude Code에 stdio 서버 등록·라이브 검증 (6-b, local 스코프, namu_recall 실호출 통과)
-11. 🔶 **Claude Code 글루** — SessionStart 훅(기억 주입) + Stop/PostToolUse 훅(자동 기록) ← **다음 시작점**
-12. ⬜ CLAUDE.md + `/namu-task` 스킬 작성
+11. ✅ **Claude Code 글루 — 완료** — SessionStart 훅(기억 자동주입) + CLAUDE.md 교훈 저장 규칙
+    - ✅ `hooks/session_recall.py` — `db.recall(limit=5)` 재사용, 어떤 예외든 `exit 0`(세션 시작 안 막음), 새 PC 대비 `_ensure_db`, 새 세션 라이브 검증 통과
+    - ✅ `.claude/settings.local.json`에 SessionStart 훅 등록 (로컬 전용, gitignore)
+    - ✅ `CLAUDE.md` 교훈 저장 규칙 (저장은 AI 수동 호출, 자동기록 보류) — 커밋 `b5d4670` 푸시 완료
+    - 🔶 11-b (보류): record 자동화는 누락 관측 시 게이트형 Stop 리마인더로 재검토
+12. ⬜ CLAUDE.md + `/namu-task` 스킬 작성 — 멀티에이전트 워커 라우팅이 여기 들어감 (아래 "🔭 검토중" 참조)
 13. ⬜ 전체를 Claude Code 플러그인으로 패키징
     - ⚠️ 이 단계서 코드(별도 설치폴더)·노트(git repo)가 갈라짐 → learnings.yaml 경로를 BASE_DIR 고정에서 env/`${CLAUDE_PROJECT_DIR}`로 분리(한 줄)
 14. ⬜ git pull 후 SQLite 자동 재생성 기능 구현
 15. ⬜ 삼성 노트북에서 git pull 후 동기화 테스트
 16. ⬜ (나중) agy용 글루 — Antigravity 방식 설정/훅
+    - ℹ️ 사실확인 완료(2026-06-25): agy도 MCP 호스트(`~/.gemini/config/mcp_config.json` + `/mcp`), 훅 있음(`hooks.json`, PreToolUse/PostInvocation/Stop+세션시작, Gemini CLI 동일 포맷), 네이티브 서브에이전트(`/agents`,`agy -p`). 단 MCP env var 버그·non-TTY stdout #76·훅 경로 버그(최근 수정) 있어 착수 시 재검증
+
+### 🔭 검토중 (미확정) — 멀티에이전트 워커 구조
+> 다른 창에서 시작한 설계. **전제 일부 미검증이라 확정 아님.** 12/16번 본격화 때 검증 후 반영.
+- **방향:** 오케스트레이터 + 코딩 워커 + 검수 워커. 코딩(민감 코드)은 구독 안에서, 검수/리뷰는 저렴한 경로로
+- **핵심 원칙 (2026-06-25 도출):** 오케스트레이터-워커 구조는 **엔진 무관(Claude Code/agy 대칭)**. 실행 차이(Task vs `/agents` vs `-p`)는 **"워커 spawn 어댑터" 한 겹**으로 흡수 — 기존 `adapters/` 패턴을 "워커 띄우기" 층에 한 번 더 적용
+- **공유 기억:** 워커가 어느 엔진이든 같은 MCP(namu-memory) 호출 → 교훈 공유. 벤더 독립이 워커 레벨에서 실현
+- **⚠️ 미검증 전제 (본격 설계 전 검색 검증 필수):** Anthropic의 CLI 래핑 차단 시점 / Gemini 무료 API 약관(프롬프트 학습 사용 여부)·Pro 유료화
 
 ### 보류/기각
 - ❌ gemini_subscription.py (agy non-TTY 버그 + 쿼터)
