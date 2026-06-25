@@ -222,3 +222,4 @@ tasks/
 db/
 *.bak
 *:Zone.Identifier
+.claude/settings.local.json
