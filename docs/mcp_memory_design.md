@@ -205,7 +205,7 @@ verified_by: human
 6-a. [x] MCP Inspector stdio 실호출 검증 (완료)
 6-b. [x] Claude Code에 stdio 서버 등록 (local 스코프, namu-memory)
      └ 세션 /mcp 라이브 호출(namu_recall) 검증은 사용자가 새 세션에서 확인
-7. [ ] git pull 후 SQLite 자동 재생성 배선
+7. [x] git pull 후 SQLite 자동 재생성 배선 — 카운트 비교(yaml id 수 vs db COUNT) 방식, 부팅 시 _ensure_db()에서 판정. 커밋 7e81906 (2026-06-26)
 
 **환경 확인 완료:** HP `sqlite3` 3.45.1 + FTS5/trigram OK / `python-ulid`,`PyYAML` 설치됨 / `.env`에 `NAMU_MACHINE=hp`
 **다음 PC(삼성) 설정 시:** `.env`에 `NAMU_MACHINE=samsung`
