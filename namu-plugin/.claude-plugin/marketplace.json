@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    {
+      "name": "namu",
+      "source": "./",
+      "description": "Vendor-independent multi-agent system with shared memory and self-learning"
+    }
+  ]
+}

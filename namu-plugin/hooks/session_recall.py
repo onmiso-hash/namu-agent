@@ -15,7 +15,7 @@ LIMIT = 5
 
 
 def _ensure_db(cfg) -> None:
-    from memory import db
+    import db
 
     if not cfg.NAMU_DB_PATH.exists():
         db.init_db()
@@ -39,7 +39,7 @@ def _format(items: list[dict]) -> str:
 def main() -> None:
     try:
         import config as cfg
-        from memory import db
+        import db
 
         _ensure_db(cfg)
 

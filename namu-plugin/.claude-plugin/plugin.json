@@ -1,0 +1,9 @@
+{
+  "name": "namu",
+  "version": "0.1.0",
+  "description": "Vendor-independent multi-agent system with shared memory and self-learning",
+  "author": {
+    "name": "onmiso"
+  },
+  "repository": "https://github.com/onmiso-hash/namu-agent"
+}

@@ -1,12 +1,16 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0"]
+# ///
 import json
 import sqlite3
 from contextlib import closing
 
 import config as cfg
 from mcp.server.fastmcp import FastMCP
-from memory.db import init_db, rebuild_from_yaml, record
-from memory.db import recall as _recall
-from memory.db import search as _search
+from db import init_db, rebuild_from_yaml, record
+from db import recall as _recall
+from db import search as _search
 
 mcp = FastMCP("namu-memory")
 

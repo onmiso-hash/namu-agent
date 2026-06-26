@@ -6,6 +6,11 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env")
 
+# NAMU_HOME: 데이터(learnings/tasks/db)가 놓이는 루트.
+# 미설정 시 BASE_DIR(코드 위치)로 폴백 — repo 직접 실행 하위호환.
+# 플러그인 모드에서는 BASE_DIR이 캐시 경로이므로 반드시 NAMU_HOME을 셸 환경변수로 지정해야 함.
+NAMU_HOME = Path(os.environ.get("NAMU_HOME", BASE_DIR))
+
 # DB
 DB_PATH = BASE_DIR / "db" / "namu.sqlite"
 
@@ -36,17 +41,17 @@ OLLAMA_HOST: str = "http://localhost:11434"
 OLLAMA_DEFAULT_MODEL: str = "llama3"
 
 # 학습 기억
-LEARNINGS_PATH = BASE_DIR / "memory" / "learnings.md"
-LEARNINGS_YAML_PATH = BASE_DIR / "memory" / "learnings.yaml"
+LEARNINGS_PATH = NAMU_HOME / "memory" / "learnings.md"
+LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "learnings.yaml"
 
 # DB
-NAMU_DB_PATH = BASE_DIR / "db" / "namu.db"
+NAMU_DB_PATH = NAMU_HOME / "db" / "namu.db"
 
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
 NAMU_MACHINE: str = os.getenv("NAMU_MACHINE", "unknown")
 
 # 작업 기록
-TASKS_DIR = BASE_DIR / "tasks"
+TASKS_DIR = NAMU_HOME / "tasks"
 
 # GitHub 동기화 (2단계 이후)
 GITHUB_SYNC_ENABLED: bool = False

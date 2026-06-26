@@ -6,11 +6,13 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **machine 이름** — `config.py`의 `NAMU_MACHINE` (`.env`에서 주입). 없으면 `unknown`.
 
+**작업 루트** — `${NAMU_HOME:-.}/tasks/` (NAMU_HOME 환경변수가 설정된 경우 그 경로, 미설정 시 현재 디렉토리 기준).
+
 ---
 
 ## 진입 분기
 
-`/namu-task <slug>` 호출 시 `tasks/<slug>/` 존재 여부로 경로가 갈린다.
+`/namu-task <slug>` 호출 시 `${NAMU_HOME:-.}/tasks/<slug>/` 존재 여부로 경로가 갈린다.
 
 ---
 
@@ -20,9 +22,9 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 사용자에게 목적(왜 하는가)·완료조건을 물어본다. 답을 받으면:
 
-- `tasks/<slug>/task.md` — 아래 템플릿대로 작성 → 사용자 확인 후 확정
-- `tasks/<slug>/context.<machine>.md` — 아래 템플릿으로 초기화
-- `tasks/<slug>/log.md` — 아래 템플릿으로 초기화
+- `${NAMU_HOME:-.}/tasks/<slug>/task.md` — 아래 템플릿대로 작성 → 사용자 확인 후 확정
+- `${NAMU_HOME:-.}/tasks/<slug>/context.<machine>.md` — 아래 템플릿으로 초기화
+- `${NAMU_HOME:-.}/tasks/<slug>/log.md` — 아래 템플릿으로 초기화
 
 **2. log `[시작]` 줄 append**
 
@@ -34,7 +36,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **4. 작업 분할** — 코딩 워커에게 넘길 단위로 쪼갠다.
 
-**5. 워커 명단 확인** — 루트 `namu_workers.yaml`을 읽는다. engine이 `native`면 Agent 도구로 서브에이전트 호출. 아니면 사용자에게 알리고 멈춘다.
+**5. 워커 명단 확인** — `${NAMU_HOME:-.}/namu_workers.yaml`을 읽는다. engine이 `native`면 Agent 도구로 서브에이전트 호출. 아니면 사용자에게 알리고 멈춘다.
 
 **6. 코딩 위임** — namu-coder 서브에이전트에게 구현을 맡긴다.
 
@@ -63,15 +65,15 @@ fail이면 멈추고 사용자에게 보여준다:
 
 **0. 다른 PC 흔적 확인 (안전장치)**
 
-`tasks/<slug>/` 안에 `context.<other-machine>.md` (현재 machine이 아닌 파일)나 `log.md` 꼬리가
+`${NAMU_HOME:-.}/tasks/<slug>/` 안에 `context.<other-machine>.md` (현재 machine이 아닌 파일)나 `log.md` 꼬리가
 현재 `context.<machine>.md`보다 더 최신 타임스탬프로 보이면:
 > "다른 PC 작업 흔적 있음 — git pull 했는지 확인하라" 안내 후 **멈춤**.
 
 **1. 상태 복원**
 
-- `task.md` → 목적·완료조건 복원
-- `context.<machine>.md` → "▶ 다음"부터 읽기 (재진입 지점)
-- `log.md` 꼬리(최근 10줄) → 최근 흐름 파악
+- `${NAMU_HOME:-.}/tasks/<slug>/task.md` → 목적·완료조건 복원
+- `${NAMU_HOME:-.}/tasks/<slug>/context.<machine>.md` → "▶ 다음"부터 읽기 (재진입 지점)
+- `${NAMU_HOME:-.}/tasks/<slug>/log.md` 꼬리(최근 10줄) → 최근 흐름 파악
 
 **2. recall (선택)**
 
