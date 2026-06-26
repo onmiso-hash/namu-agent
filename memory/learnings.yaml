@@ -59,3 +59,19 @@ task: 'NAMU 플러그인 패키징 (로드맵 #13) — namu-plugin/ 서브폴더
 task_type: code
 timestamp: '2026-06-26T10:12:01.448959+00:00'
 verified_by: human
+---
+id: 01KW21TRRSPAH2PD86CZJN2YP2
+machine: hp
+outcome: success
+reason: 캐시 stale 판정은 mtime이 아니라 카운트 비교(yaml의 id 수 vs db COUNT)로. 같은-초 pull 함정 회피 +
+  부분 쓰기(yaml만 들어가고 db 실패) 자동 치유. rebuild가 내부서 unlink→init_db로 스키마 재생성하므로 stale 경로는
+  rebuild 단독 호출로 충분.
+tags:
+- sqlite
+- cache
+- rebuild
+- namu14
+task: 캐시 신선도 판정 방식 결정 (#14)
+task_type: code
+timestamp: '2026-06-26T13:27:42.617731+00:00'
+verified_by: human
