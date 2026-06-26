@@ -218,7 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 # NAMU Agent
-tasks/
 db/
 *.bak
 *:Zone.Identifier
