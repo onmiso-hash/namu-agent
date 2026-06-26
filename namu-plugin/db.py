@@ -144,6 +144,29 @@ def rebuild_from_yaml() -> int:
     return len(docs)
 
 
+def count_yaml_docs(yaml_path) -> int:
+    """yaml 파일에서 최상위 `id:` 줄 수를 세어 entry 수를 반환. 파싱 없이 줄만 스캔."""
+    if not yaml_path.exists():
+        return 0
+    count = 0
+    with yaml_path.open(encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("id:"):
+                count += 1
+    return count
+
+
+def cache_is_stale(yaml_path, db_path) -> bool:
+    """yaml entry 수와 db row 수가 다르면 True (캐시 낡음 → rebuild 필요)."""
+    yaml_count = count_yaml_docs(yaml_path)
+    try:
+        with sqlite3.connect(db_path) as conn:
+            db_count = conn.execute("SELECT COUNT(*) FROM learnings").fetchone()[0]
+    except sqlite3.OperationalError:
+        return True
+    return yaml_count != db_count
+
+
 _COLS = (
     "id", "timestamp", "task", "task_type", "outcome",
     "reason", "machine", "verified_by", "tags",

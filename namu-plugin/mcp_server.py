@@ -8,7 +8,7 @@ from contextlib import closing
 
 import config as cfg
 from mcp.server.fastmcp import FastMCP
-from db import init_db, rebuild_from_yaml, record
+from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
 from db import search as _search
 
@@ -22,6 +22,9 @@ def get_conn() -> sqlite3.Connection:
 def _ensure_db() -> None:
     if not cfg.NAMU_DB_PATH.exists():
         init_db()
+        rebuild_from_yaml()
+        return
+    if cache_is_stale(cfg.LEARNINGS_YAML_PATH, cfg.NAMU_DB_PATH):
         rebuild_from_yaml()
 
 
