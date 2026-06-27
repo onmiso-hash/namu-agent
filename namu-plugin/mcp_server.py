@@ -20,11 +20,7 @@ def get_conn() -> sqlite3.Connection:
 
 
 def _ensure_db() -> None:
-    if not cfg.NAMU_DB_PATH.exists():
-        init_db()
-        rebuild_from_yaml()
-        return
-    if cache_is_stale(cfg.LEARNINGS_YAML_PATH, cfg.NAMU_DB_PATH):
+    if not cfg.NAMU_DB_PATH.exists() or cache_is_stale(cfg.LEARNINGS_YAML_PATH, cfg.NAMU_DB_PATH):
         rebuild_from_yaml()
 
 

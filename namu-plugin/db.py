@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 
 import yaml
@@ -42,8 +43,9 @@ _VALID_VERIFIED_BY = {"human", "ai", "unverified"}
 
 def init_db() -> None:
     cfg.NAMU_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-        conn.executescript(_SCHEMA)
+    with closing(sqlite3.connect(cfg.NAMU_DB_PATH)) as conn:
+        with conn:
+            conn.executescript(_SCHEMA)
 
 
 def record(
@@ -89,58 +91,45 @@ def record(
 
     # SQLite 나중 (검색 캐시)
     init_db()
-    with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-        conn.execute(
-            """INSERT INTO learnings
-               (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (
-                entry_id,
-                timestamp,
-                task,
-                task_type,
-                outcome,
-                reason,
-                machine,
-                verified_by,
-                json.dumps(tags, ensure_ascii=False),
-            ),
-        )
+    with closing(sqlite3.connect(cfg.NAMU_DB_PATH)) as conn:
+        with conn:
+            conn.execute(
+                """INSERT INTO learnings
+                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (entry_id, timestamp, task, task_type, outcome, reason,
+                 machine, verified_by, json.dumps(tags, ensure_ascii=False)),
+            )
 
     return entry_id
 
 
 def rebuild_from_yaml() -> int:
-    cfg.NAMU_DB_PATH.unlink(missing_ok=True)
-    init_db()
-
     yaml_path = cfg.LEARNINGS_YAML_PATH
-    if not yaml_path.exists():
-        return 0
+    cfg.NAMU_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    docs = list(yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")))
-    docs = [d for d in docs if d]  # None 필터 (빈 문서 구분자 처리)
+    docs = []
+    if yaml_path.exists():
+        docs = [d for d in yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")) if d]
 
-    with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-        for d in docs:
-            tags = d.get("tags") or []
-            conn.execute(
-                """INSERT OR IGNORE INTO learnings
-                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (
-                    d.get("id"),
-                    d.get("timestamp"),
-                    d.get("task"),
-                    d.get("task_type"),
-                    d.get("outcome"),
-                    d.get("reason"),
-                    d.get("machine"),
-                    d.get("verified_by"),
-                    json.dumps(tags, ensure_ascii=False),
-                ),
-            )
-
+    with closing(sqlite3.connect(cfg.NAMU_DB_PATH)) as conn:
+        conn.executescript(
+            "DROP TRIGGER IF EXISTS learnings_ai;"
+            "DROP TABLE IF EXISTS learnings_fts;"
+            "DROP TABLE IF EXISTS learnings;"
+            + _SCHEMA
+        )
+        with conn:
+            for d in docs:
+                tags = d.get("tags") or []
+                conn.execute(
+                    """INSERT OR IGNORE INTO learnings
+                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (d.get("id"), d.get("timestamp"), d.get("task"), d.get("task_type"),
+                     d.get("outcome"), d.get("reason"), d.get("machine"), d.get("verified_by"),
+                     json.dumps(tags, ensure_ascii=False)),
+                )
     return len(docs)
 
 
@@ -160,7 +149,7 @@ def cache_is_stale(yaml_path, db_path) -> bool:
     """yaml entry 수와 db row 수가 다르면 True (캐시 낡음 → rebuild 필요)."""
     yaml_count = count_yaml_docs(yaml_path)
     try:
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             db_count = conn.execute("SELECT COUNT(*) FROM learnings").fetchone()[0]
     except sqlite3.OperationalError:
         return True
