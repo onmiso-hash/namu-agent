@@ -1,6 +1,6 @@
 # 나만의 멀티에이전트 시스템 기획
 
-> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-27 (로드맵 **15번 삼성 동기화 검증 완료** — 윈도우 unlink 버그를 `rebuild` DROP방식+`closing`으로 해결, 삼성서 yaml=db COUNT 일치(5=5) 재검증 통과 → **#14·#15 완전 종료**. 두 번째 PC가 실전 버그를 잡고 수정까지 검증한 첫 사례. 다음=16(agy 글루)/플러그인 캐시 설치(`/plugin install`) 실검증) | 대화를 통해 점진적으로 채워나가는 문서
+> 📅 시작: 2026-06-22 | 최종 갱신: 2026-06-27 (로드맵 **15번 삼성 동기화 검증 완료** — 윈도우 unlink 버그를 `rebuild` DROP방식+`closing`으로 해결, 삼성서 yaml=db COUNT 일치(5=5) 재검증 통과 → **#14·#15 완전 종료**. 곁가지로 `config.py` NAMU_HOME 폴백 유령경로 버그도 수정(`REPO_ROOT`). 두 번째 PC가 실전 버그를 잡고 수정까지 검증한 첫 사례. 다음=플러그인 실설치(`/plugin install`, 13번 잔여+삼성 MCP 등록)/16(agy)) | 대화를 통해 점진적으로 채워나가는 문서
 
 ---
 
@@ -109,6 +109,8 @@
 | 2026-06-27 | **15번 윈도우 unlink 버그 = 진짜 범인** | `rebuild`의 `unlink(missing_ok=True)`가 삼성서 `WinError 32`. 근본원인 두 겹 — ① 파일 삭제 방식 자체가 크로스플랫폼 취약 ② **`with sqlite3.connect() as conn`은 commit만 하고 close 안 함**(파이썬 sqlite3 함정) → 핸들이 살아있는 채 unlink. 리눅스는 열린 파일 unlink 허용, 윈도우 거부. 첫 부팅 시 `init_db`가 만든 핸들 + stale 경로 `cache_is_stale`의 핸들 **둘 다** 같은 함정 → HP 단독으론 절대 못 잡음 |
 | 2026-06-27 | **15번 수정 = DROP방식 + closing** | (후보 B 채택) `rebuild_from_yaml`: unlink·init_db 제거, **단일 conn 안에서 `DROP TRIGGER→DROP TABLE fts→DROP TABLE main` 후 기존 `_SCHEMA` 재실행→재INSERT.** 파일 안 지우니 OS 잠금 무관. 더해 하드닝 — `init_db`/`record`/`cache_is_stale`/`rebuild` 전부 `contextlib.closing`으로 conn 확실히 close(함정 자체 제거). `_ensure_db`는 신규·stale 양쪽 다 `rebuild`만 호출로 단순화(rebuild가 스키마 self-create하니 init_db 선행 중복). 읽기계열(recall/search/_fts_query) 불변 |
 | 2026-06-27 | 윈도우 검증 = 카운트 일치 | 합격선 = `del db\namu.db`→재기동(WinError 안 뜸)→**yaml `^id:` 수 = db `COUNT(*)`**. 삼성서 5=5 통과(db 53248B 온전 생성, 지난 36864B 반쪽과 대비). 서버 STDIO 대기 중 `Ctrl+C`의 긴 KeyboardInterrupt 트레이스백은 정상(우리 코드 무관, mcp/anyio 내부 입력 끊김) |
+| 2026-06-27 | **config.py NAMU_HOME 폴백 버그** | 삼성서 MCP 미등록→`record` 파이썬 직접 실행→`NAMU_HOME` 미설정→`namu-plugin/memory/learnings.yaml` **유령 위치**에 기록. 근본원인=`BASE_DIR=Path(__file__).parent`가 13번(코드 `namu-plugin/` 서브폴더 이동) 이후 repo 루트가 아니라 `namu-plugin/`을 가리킴(폴백 주석은 "repo 루트"인데 대상 어긋남=stale 폴백). **수정=`REPO_ROOT=BASE_DIR.parent` 추가→`NAMU_HOME` 폴백 대상을 REPO_ROOT로.** `DB_PATH`(옛 CLI용 죽은 `.sqlite`)·NAMU_HOME 기준 경로들은 불변(NAMU_HOME 정의만 고치면 자동 추종). 검증=미설정 시 LEARNINGS_YAML_PATH가 repo 루트로 떨어짐 확인 |
+| 2026-06-27 | `.env` NAMU_HOME 안전망 | 양 PC `.env`에 `NAMU_HOME` 추가(HP=`/home/onmiso/project/namu-agent`, 삼성=`D:\Project\namu-agent`) — 셸 환경변수 깜빡해도 받치는 멜빵. `.env`는 gitignore라 PC별 수동. 삼성 `.env`는 `NAMU_MACHINE`+`NAMU_HOME` 둘만(메모리 코어엔 충분), HP의 옛 API 키들은 메모리와 무관(16번/워커 때나 쓰임) |
 
 ## 🏗️ 저장소 구조 (GitHub 기반)
 ```
@@ -349,7 +351,10 @@ github/
 - **Claude Code 구현(HP, diff까지만→사용자 직접 커밋):** db.py 5곳(import/init_db/record/rebuild/cache_is_stale) + mcp_server.py 1곳(_ensure_db). `test_cache_stale.py` 4케이스 전부 통과(리눅스 회귀 없음). diff 검토 2종 — ① rebuild DROP 순서(트리거→fts→main) 정확 ② recall/search/_fts_query diff에 안 뜸(=불변, 정답) → 커밋·푸시
 - **삼성 재검증 ⑤(핵심):** `git pull`(fast-forward, db.py 83줄·mcp_server.py 6줄) → `del db\namu.db`(반쪽 정리) → `$env:NAMU_HOME=(Get-Location).Path` → `uv run --script` 재기동 → **WinError 사라짐**, 서버 STDIO 대기 정상(`Ctrl+C`의 긴 KeyboardInterrupt 트레이스백은 입력 끊김 신호일 뿐, 우리 코드 무관). `dir db`로 `namu.db` **53248B 온전 생성**(지난 36864B 반쪽과 대비) → **yaml `^id:`=5 = db COUNT(*)=5 일치** ✅
 - **의미:** #14·#15 완전 종료. **"HP 단독으론 절대 못 잡는 버그를 두 번째 PC가 발견 → 수정 → 그 PC가 수정까지 검증"** 한 바퀴 완주 = NAMU 멀티 PC 검증 구조가 자기 가치를 스스로 증명. "독립성은 메모리 레이어에 있다" 토대가 크로스플랫폼서 실제 작동함을 입증
-- **다음 세션 시작점:** 교훈 `namu_record` 기록(윈도우 unlink 버그, verified_by: human) → 16번(agy 글루, 버그 3개 재검증 선행) 또는 플러그인 캐시 설치(`/plugin install`) 실검증(13번 미검증 잔여)
+- **곁가지 버그 B — config.py NAMU_HOME 폴백(유령 경로):** 삼성서 MCP 미등록이라 `record`를 파이썬 직접 실행 → `NAMU_HOME` 미설정 → `namu-plugin/memory/learnings.yaml` 유령 위치에 기록됨(사람이 알아채고 올바른 위치로 옮김). 근본원인=`BASE_DIR`이 13번 이후 `namu-plugin/`을 가리킴(repo 루트 아님). **HP서 수정**(`REPO_ROOT=BASE_DIR.parent` 폴백 대상 교체, diff→커밋·푸시→양 PC pull). 이제 `NAMU_HOME` 깜빡해도 repo 루트로 안전하게 떨어짐
+- **`.env` 안전망(양 PC):** HP·삼성 `.env`에 `NAMU_HOME` 추가(셸 환경변수 깜빡 대비 멜빵). 삼성은 `NAMU_MACHINE`+`NAMU_HOME` 둘만으로 메모리 코어 충분, HP 옛 API 키는 메모리와 무관 확인
+- **교훈 기록(멀티 PC 공유 기억 첫 실사용):** 삼성서 `namu_record`로 1건 기록(`01KW397QE2Q0HSM39GB10TQAJV`, rebuild 윈도우 버그, verified_by=human) → push → HP pull로 공유 확인. 🔶 미기록 1건 = "NAMU_HOME 유령경로 함정"(partial), 다음 세션서 기록 권장
+- **다음 세션 시작점:** ① **플러그인 실설치(`/plugin install`) 검증** — 삼성 `.mcp.json`이 `${CLAUDE_PLUGIN_ROOT}` 형식이라 플러그인 설치돼야만 변수 채워짐(`mcp add` 직접등록은 변수 안 풀려 깨짐). 이게 13번 미검증 잔여 + 삼성 MCP 등록을 한 번에 해결. 새 창서 집중(검증 단계 많음) ② 16번 agy(버그 3개 재검증 선행) ③ 미기록 교훈 1건 기록
 
 ## 🤖 AI 호출 방식 (어댑터 구조) — 확정
 ```
