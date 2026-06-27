@@ -108,3 +108,14 @@ task: NAMU_HOME 미설정 시 잘못된 경로에 기록되는 함정
 task_type: code
 timestamp: '2026-06-27T05:54:36.089503+00:00'
 verified_by: human
+---
+id: 01KW3YFTGDPMMBZ2DQPWZHBM85
+machine: hp
+outcome: success
+reason: 워크스페이스 .agents/mcp_config.json로 namu-memory를 agy에 연결. env 블록 리터럴 주입으로 agy
+  env 버그 회피, machine=hp 주입 확인
+tags: []
+task: agy MCP 연결 1단계 검증
+task_type: infra
+timestamp: '2026-06-27T07:07:47.085323+00:00'
+verified_by: human
