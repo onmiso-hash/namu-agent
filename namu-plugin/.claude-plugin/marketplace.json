@@ -1,4 +1,8 @@
 {
+  "name": "namu-marketplace",
+  "owner": {
+    "name": "onmiso"
+  },
   "plugins": [
     {
       "name": "namu",

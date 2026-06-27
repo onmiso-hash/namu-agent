@@ -75,3 +75,36 @@ task: 캐시 신선도 판정 방식 결정 (#14)
 task_type: code
 timestamp: '2026-06-26T13:27:42.617731+00:00'
 verified_by: human
+---
+id: 01KW397QE2Q0HSM39GB10TQAJV
+machine: samsung
+outcome: success
+reason: rebuild가 db 파일을 unlink→재생성하는 방식은 윈도우에서 깨진다. with sqlite3.connect는 commit만
+  하고 close를 안 해 열린 핸들이 남고, 리눅스는 열린 파일 unlink를 허용하나 윈도우는 WinError 32로 거부. 해결=unlink
+  제거하고 단일 conn 안에서 DROP TABLE 후 _SCHEMA 재생성 + contextlib.closing으로 conn 확실히 닫기. 두
+  번째 PC(삼성) 검증에서만 발견됨.
+tags:
+- sqlite
+- windows
+- cross-platform
+- 멀티PC검증
+task: rebuild_from_yaml 크로스플랫폼 버그 수정
+task_type: code
+timestamp: '2026-06-27T00:56:21.698001+00:00'
+verified_by: human
+
+---
+id: 01KW3T9TDSZGMMR7BZ511ZR9BT
+machine: samsung
+outcome: partial
+reason: config.py BASE_DIR 폴백이 13번 이후 namu-plugin/을 가리켜 유령 경로 발생. REPO_ROOT 폴백으로 수정.
+  추가 안전망 = .env에 NAMU_HOME + MCP 도구 경로 사용.
+tags:
+- namu_home
+- config
+- 멀티PC
+- 경로함정
+task: NAMU_HOME 미설정 시 잘못된 경로에 기록되는 함정
+task_type: code
+timestamp: '2026-06-27T05:54:36.089503+00:00'
+verified_by: human
