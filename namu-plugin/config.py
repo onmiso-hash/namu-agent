@@ -4,12 +4,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent
+REPO_ROOT = BASE_DIR.parent
 load_dotenv(BASE_DIR / ".env")
 
 # NAMU_HOME: 데이터(learnings/tasks/db)가 놓이는 루트.
-# 미설정 시 BASE_DIR(코드 위치)로 폴백 — repo 직접 실행 하위호환.
+# 미설정 시 repo 루트(REPO_ROOT)로 폴백 — repo 직접 실행 하위호환.
 # 플러그인 모드에서는 BASE_DIR이 캐시 경로이므로 반드시 NAMU_HOME을 셸 환경변수로 지정해야 함.
-NAMU_HOME = Path(os.environ.get("NAMU_HOME", BASE_DIR))
+NAMU_HOME = Path(os.environ.get("NAMU_HOME", REPO_ROOT))
 
 # DB
 DB_PATH = BASE_DIR / "db" / "namu.sqlite"
