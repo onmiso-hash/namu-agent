@@ -29,7 +29,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 **2. log `[시작]` 줄 append**
 
 ```
-- 📅<YYYY-MM-DD> 🕐<HH:MM> [<machine>] [시작] 작업 생성, 목적·완료조건 확정
+[시작] YYYY-MM-DD HH:MM:SS <machine> · 작업 생성, 목적·완료조건 확정
 ```
 
 **3. recall** — `namu_recall`로 관련 과거 교훈 조회. 신규는 항상 실행.
@@ -129,7 +129,9 @@ fail이면 멈추고 사용자에게 보여준다:
 # log — <slug>
 (append만. context 꼬이면 이걸로 복원)
 
-- 📅<YYYY-MM-DD> 🕐<HH:MM> [<machine>] [시작] 작업 생성, 목적·완료조건 확정
+[시작] YYYY-MM-DD HH:MM:SS <machine> · 작업 생성, 목적·완료조건 확정
 ```
 
+log 줄 형식: `[TAG] YYYY-MM-DD HH:MM:SS <machine> · 내용` (초단위 필수 — 멀티 PC "최신" 판별 신호).
 log 태그 고정 5종: `[시작]` `[결정]` `[분담]` `[막힘]` `[완료]`. 필요하면 추가 허용.
+옛 날짜-only 줄(`[TAG] YYYY-MM-DD <machine> · 내용`)은 그대로 두고 공존.

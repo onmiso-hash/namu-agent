@@ -222,4 +222,6 @@ db/
 *.bak
 *:Zone.Identifier
 .claude/settings.local.json
-.agents/
+.agents/hooks/
+.agents/hooks.json
+.agents/mcp_config*
