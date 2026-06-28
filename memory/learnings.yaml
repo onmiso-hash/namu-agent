@@ -119,3 +119,68 @@ task: agy MCP 연결 1단계 검증
 task_type: infra
 timestamp: '2026-06-27T07:07:47.085323+00:00'
 verified_by: human
+---
+id: 01KW884S2E0TP39Z8P3V2GZZAA
+machine: hp
+outcome: success
+reason: agy는 {workspace}/.agents/skills/<name>/SKILL.md 폴더 형태만 슬래시 명령으로 인식한다. 플랫 파일
+  .agents/skills/namu.md는 /namu → No matches로 안 뜬다. agy 바이너리 strings에서 직접 확인. Claude
+  Code는 .claude/commands/namu.md 플랫 파일로 정상 동작 — 두 엔진의 스킬/커맨드 파일 규약이 다르다.
+tags:
+- agy
+- skill
+- slash-command
+- namu
+task: agy 네이티브 스킬 등록 경로
+task_type: other
+timestamp: '2026-06-28T23:13:28.654349+00:00'
+verified_by: human
+---
+id: 01KW884XM12N1TVBG6WCMECCK2
+machine: hp
+outcome: success
+reason: .agents/를 통째로 gitignore하면 공유해야 할 스킬(.agents/skills/)까지 막혀 멀티 PC 동기화가 깨진다.
+  PC별 절대경로가 든 파일만 콕 집어 차단해야 한다 — .agents/hooks.json, .agents/mcp_config.json, .agents/hooks/*.log.
+  검증은 git check-ignore .agents/skills/<name>/SKILL.md가 빈 출력(추적 가능)인지로 한다.
+tags:
+- gitignore
+- agy
+- multi-pc
+- namu
+task: .agents/ gitignore 정책
+task_type: other
+timestamp: '2026-06-28T23:13:33.313659+00:00'
+verified_by: human
+---
+id: 01KW88539QWMM5CMPBT2BYDN5D
+machine: hp
+outcome: success
+reason: /namu 설계 초안에서 context.<machine>.md를 빼거나 보조로 돌리려 했으나, 작업이력 확인 결과 context의 존재
+  이유 2가지(현재 시점 스냅샷으로 빠른 재정박 / 머신별 분리로 git 머지충돌 회피)를 놓친 실수였다. 기존 설계 요소를 빼기 전에 그 도입
+  근거를 작업이력에서 먼저 확인해야 같은 실수를 반복하지 않는다.
+tags:
+- design
+- context-md
+- process
+- namu
+task: 기존 설계 요소 제거 전 근거 확인
+task_type: other
+timestamp: '2026-06-28T23:13:39.128116+00:00'
+verified_by: human
+---
+id: 01KW8855P8WTXHZHGP13MM97PY
+machine: hp
+outcome: success
+reason: 여러 PC에서 '어느 작업이 최신인가'를 가르는 신호가 시각뿐이라면, 시각 정밀도를 토대로 먼저 세운 뒤 그 위에 기능을 얹어야 한다.
+  log 타임스탬프가 날짜뿐인 상태로 /namu 선정 로직을 만들면 나중에 시:분:초를 추가할 때 그 로직을 다시 열어야 한다. 그래서 /namu-task의
+  log 타임스탬프를 %Y-%m-%d %H:%M:%S(초단위)로 먼저 바꾼 뒤 /namu를 구현했다. mtime은 git pull이 망가뜨리니 선정엔
+  절대 쓰지 말 것.
+tags:
+- multi-pc
+- timestamp
+- namu
+- mtime
+task: 멀티PC 최신 판별 토대
+task_type: other
+timestamp: '2026-06-28T23:13:41.576944+00:00'
+verified_by: human
