@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""SessionStart 훅 — 과거 교훈 자동 주입.
+"""SessionStart 훅 — 세션 컨텍스트(작업 상태 + 교훈) 자동 주입.
 
-세션 시작 시 실행돼 db.recall() 결과를 Claude Code 컨텍스트에 주입한다.
+세션 시작 시 실행돼 build_context_markdown() 결과를 Claude Code 컨텍스트에 주입한다.
 어떤 에러가 나도 exit 0 (훅이 세션 시작을 막으면 안 됨).
 """
 import json
@@ -10,8 +10,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-LIMIT = 5
 
 
 def _ensure_db(cfg) -> None:
@@ -23,30 +21,17 @@ def _ensure_db(cfg) -> None:
             db.rebuild_from_yaml()
 
 
-def _format(items: list[dict]) -> str:
-    lines = [f"[NAMU 과거 교훈 — 최근 {len(items)}건]"]
-    for i, it in enumerate(items, 1):
-        tags = ", ".join(it.get("tags") or []) or "없음"
-        date = (it.get("timestamp") or "")[:10]
-        lines.append(
-            f"\n{i}. [{it['outcome']}] {it['task']}"
-            f"\n   이유: {it['reason']}"
-            f"\n   태그: {tags} | {date}"
-        )
-    return "\n".join(lines)
-
-
 def main() -> None:
     try:
         import config as cfg
-        import db
+        from session_context import build_context_markdown
 
         _ensure_db(cfg)
 
         with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-            items = db.recall(conn, limit=LIMIT)
+            md = build_context_markdown(conn, cfg.NAMU_MACHINE)
 
-        if not items:
+        if md is None:
             sys.exit(0)
 
         print(
@@ -54,7 +39,7 @@ def main() -> None:
                 {
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
-                        "additionalContext": _format(items),
+                        "additionalContext": md,
                     }
                 },
                 ensure_ascii=False,
