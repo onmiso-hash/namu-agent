@@ -184,3 +184,95 @@ task: 멀티PC 최신 판별 토대
 task_type: other
 timestamp: '2026-06-28T23:13:41.576944+00:00'
 verified_by: human
+---
+id: 01KW987HQNEW9WSDWNB3VGX4Y6
+machine: samsung
+outcome: success
+reason: 화면 미표시는 동작 안 함이 아니다. claude --debug 로그의 statusLine stderr 한 줄을 먼저 직독하면 추측
+  없이 진범을 단번에 가른다.
+tags:
+- statusline
+- debug
+- 진단
+- claude-code
+task: statusLine 미표시 진단 진입점
+task_type: analysis
+timestamp: '2026-06-29T08:34:13.877691+00:00'
+verified_by: human
+---
+id: 01KW987NVNYTZT4H94G4KPX7EV
+machine: samsung
+outcome: success
+reason: 비영어권 Windows 네이티브 Claude Code가 파이프로 stdout 수신 시 cp949가 이모지(📌 U+1F4CC) 비ASCII를
+  못 내보내 UnicodeEncodeError로 status 1 사망. settings.json command를 python -X utf8 로 UTF-8
+  모드(PEP 540) 강제하면 해결. Linux/WSL은 무관.
+tags:
+- statusline
+- windows
+- cp949
+- utf8
+- 삼성
+task: 삼성 Windows statusLine 이모지 인코딩 사망 (cp949)
+task_type: code
+timestamp: '2026-06-29T08:34:18.101843+00:00'
+verified_by: human
+---
+id: 01KW987SZJMG0JJ4DTG7HPFSKP
+machine: samsung
+outcome: success
+reason: 터미널 직접 실행은 stdout=UTF-8 통과 / CC가 파이프로 부르면 stdout 인코딩이 locale(cp949)을 따라 비ASCII에서
+  죽는다. '수동은 되는데 부르면 죽는다'는 stdout 터미널이냐 파이프냐 차이 신호.
+tags:
+- statusline
+- stdout
+- 파이프
+- 진단
+task: 수동 실행은 되는데 CC 호출 시 죽는 statusLine
+task_type: analysis
+timestamp: '2026-06-29T08:34:22.322472+00:00'
+verified_by: human
+---
+id: 01KW987XJVCPNS3RZFD49EV6YA
+machine: samsung
+outcome: failure
+reason: '''네이티브 Windows에서 CC가 statusLine 스크립트를 안 부른다''는 v16 가설은 오답. 2.1.195는 정상 호출했고
+  진범은 cp949 인코딩. 같은 증상 재발 시 버전 회귀부터 의심하지 말 것.'
+tags:
+- statusline
+- 가설기각
+- windows
+task: v16 가설 '2.1.x 네이티브 Windows 회귀'
+task_type: analysis
+timestamp: '2026-06-29T08:34:26.011414+00:00'
+verified_by: human
+---
+id: 01KW988086FTG4FXJFJZSHFN7A
+machine: samsung
+outcome: success
+reason: agy statusLine 미표시는 cp949부터 의심하기 전에 settings.json(~/.gemini/antigravity-cli/settings.json)에
+  statusLine 블록이 등록돼 있는지부터 확인. Claude Code와 별도 파일이라 한쪽만 고치면 누락된다. agy 형식=root에 statusLine(camelCase
+  엄격, statusline 소문자는 무시) 블록, type/command/enabled:true. 등록+예방용 -X utf8로 해결.
+tags:
+- statusline
+- agy
+- antigravity
+- 등록누락
+task: 삼성 agy statusLine 미표시
+task_type: code
+timestamp: '2026-06-29T08:34:28.742212+00:00'
+verified_by: human
+---
+id: 01KW98827M6ZKGW0JSX9YE1TCF
+machine: samsung
+outcome: success
+reason: 바에 □로 깨지면 인코딩 의심 전에 터미널부터 의심. 구식 콘솔 호스트(conhost)는 컬러 이모지 렌더가 약하다. Windows
+  Terminal/VS Code 터미널이면 정상 표시. '멀티 탭 없음'이 구식 콘솔 신호.
+tags:
+- statusline
+- 터미널
+- 렌더
+- windows-terminal
+task: statusLine 바 이모지 □로 깨짐
+task_type: analysis
+timestamp: '2026-06-29T08:34:30.772319+00:00'
+verified_by: human
