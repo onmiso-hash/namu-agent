@@ -26,8 +26,7 @@ def main() -> None:
 
     task_part = "진행 task 없음"
     try:
-        machine = os.environ.get("NAMU_MACHINE", "unknown")
-        t = resolve_active_task(ws, machine)
+        t = resolve_active_task(ws)
         if t:
             task_part = f"📌 {t[0]} · {t[1]}"
     except Exception:

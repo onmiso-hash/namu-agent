@@ -22,93 +22,46 @@ def _extract_log_tail(log_path: Path, n: int = 5) -> str:
         return ""
 
 
-def find_active_task(machine: str) -> Path | None:
-    """tasks/ 아래에서 가장 최근에 수정된 진행 중 task 폴더 반환. 없으면 None.
-
-    머신별 context 파일만 대상으로 함 — 다른 PC 파일의 mtime 오염 구조적 차단.
-    """
+def find_active_task() -> Path | None:
+    """tasks/ 아래에서 가장 최근에 진행 중인 task 폴더 반환. 없으면 None."""
     import config as cfg
 
-    result = _resolve_task(machine, cfg.TASKS_DIR)
+    result = _resolve_task(cfg.TASKS_DIR)
     if result is None:
         return None
     return cfg.TASKS_DIR / result[0]
-
-
-# --- DEBUG START ---
-def _build_debug_block(machine: str) -> str:
-    import config as cfg
-
-    namu_machine = cfg.NAMU_MACHINE
-    namu_home = str(cfg.NAMU_HOME)
-    config_file = str(Path(cfg.__file__).resolve())
-    glob_pattern = str(cfg.TASKS_DIR / f"*/context.{machine}.md")
-
-    try:
-        candidates = sorted(
-            cfg.TASKS_DIR.glob(f"*/context.{machine}.md"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-    except OSError:
-        candidates = []
-
-    candidate_paths = [str(p) for p in candidates]
-
-    decisions: list[str] = []
-    for ctx_path in candidates:
-        try:
-            body = _extract_next_section(ctx_path.read_text(encoding="utf-8"))
-            if body is None:
-                decisions.append(f"{ctx_path.parent.name}: ▶다음 섹션 없음 → 탈락")
-            elif body.strip() == "(완료)":
-                decisions.append(f"{ctx_path.parent.name}: ▶다음이 (완료) → 탈락")
-            else:
-                preview = repr(body.strip())[:40]
-                decisions.append(f"{ctx_path.parent.name}: 미완료={preview} → 채택")
-        except OSError as e:
-            decisions.append(f"{ctx_path.parent.name}: OSError({e}) → 탈락")
-
-    lines = [
-        "\n--- DEBUG START ---",
-        f"1. NAMU_MACHINE = {namu_machine!r}",
-        f"2. NAMU_HOME = {namu_home!r}",
-        f"3. config.__file__ = {config_file!r}",
-        f"4. glob pattern = {glob_pattern!r}",
-        f"5. 후보 파일 = {candidate_paths!r}",
-        "6. 채택/탈락 판정:",
-    ]
-    for d in decisions:
-        lines.append(f"   - {d}")
-    if not decisions:
-        lines.append("   (후보 없음)")
-    lines.append("--- DEBUG END ---")
-    return "\n".join(lines)
-# --- DEBUG END ---
 
 
 def build_context_markdown(conn, machine: str) -> str | None:
     """세션 컨텍스트 마크다운 조립. 내용이 없으면(task도 교훈도 0) None 반환."""
     import db
 
-    active = find_active_task(machine)
+    active = find_active_task()
     parts: list[str] = ["## 🌳 NAMU — 세션 컨텍스트 자동 로딩\n"]
 
     if active:
         title = _extract_task_title(active / "task.md")
 
+        next_items = []
         try:
-            ctx_text = (active / f"context.{machine}.md").read_text(encoding="utf-8")
-            next_body = _extract_next_section(ctx_text)
+            for ctx_file in active.glob("context.*.md"):
+                # context.hp.md -> hp
+                ctx_machine = ctx_file.name.split(".")[1]
+                body = _extract_next_section(ctx_file.read_text(encoding="utf-8"))
+                if body and body.strip() != "(완료)":
+                    next_items.append(f"({ctx_machine}) {body}")
         except OSError:
-            next_body = None
+            pass
 
         log_snippet = _extract_log_tail(active / "log.md")
         learnings = db.recall(conn, query=title, limit=3)
 
         parts.append(f"### 📌 진행 중: {title}")
-        if next_body:
-            parts.append(f"- **다음 할 일:** {next_body}")
+        if next_items:
+            parts.append("- **다음 할 일:**")
+            for item in next_items:
+                indented = item.replace("\n", "\n    ")
+                parts.append(f"  - {indented}")
         if log_snippet:
             parts.append(f"- **최근 로그:**\n  {log_snippet}")
         parts.append("")
@@ -127,5 +80,4 @@ def build_context_markdown(conn, machine: str) -> str | None:
             parts.append(f"- [{it['outcome']}] {it['task']}: {it['reason']}")
 
     parts.append("\n---\n※ 새 교훈이 생기면 namu_record 도구로 저장하세요.")
-    parts.append(_build_debug_block(machine))  # --- DEBUG ---
     return "\n".join(parts)
