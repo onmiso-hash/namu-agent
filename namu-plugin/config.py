@@ -1,10 +1,13 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 BASE_DIR = Path(__file__).parent
 REPO_ROOT = BASE_DIR.parent
+# 1. 사용자가 실행한 현재 작업 폴더(cwd) 기준의 .env를 찾아 최우선 로드 (플러그인 모드 지원)
+load_dotenv(find_dotenv(usecwd=True))
+# 2. 없으면 플러그인 자체 경로의 .env 로드 (하위 호환)
 load_dotenv(BASE_DIR / ".env")
 
 # NAMU_HOME: 데이터(learnings/tasks/db)가 놓이는 루트.
