@@ -276,3 +276,61 @@ task: statusLine 바 이모지 □로 깨짐
 task_type: analysis
 timestamp: '2026-06-29T08:34:30.772319+00:00'
 verified_by: human
+---
+id: 01KWHJ4WMKKJA1EKKZ1WKMKT30
+machine: samsung
+outcome: success
+reason: 공식 문서가 사실상 없어(문서 페이지 빈 껍데기) 에러 메시지("cannot unmarshal array into JSONHookSpec")와
+  로그("1 named hooks, 0 total handlers")를 역공학한 실측 결과. HP 대칭 설치·후속 플러그인 작업에서 유일한 레퍼런스로
+  재사용됨. agy가 ${extensionPath}를 고치면 상대경로 우회를 원복 검토할 것
+tags:
+- agy
+- plugin
+- hooks
+- mcp
+- 형식실측
+task: '⑥ agy 플러그인 봉투 형식 실측 확정: 루트 plugin.json 필수 + mcp_config.json + hooks.json(네임스페이스
+  래핑 {"namu":{"PreInvocation":[...]}}). ${extensionPath} 변수는 1.0.14에서 미치환(리터럴 전달,
+  validate는 통과=validate≠런타임 파서). 경로는 상대로: mcp_config=agy 실행 폴더 기준, hooks=플러그인 설치 폴더(~/.gemini/config/plugins/<name>/)
+  기준 — 층마다 cwd가 다름'
+task_type: code
+timestamp: '2026-07-02T14:01:27.955727+00:00'
+verified_by: human
+---
+id: 01KWHJ5EM1950R6MCN1KY8H2BH
+machine: samsung
+outcome: success
+reason: uv 스크립트는 락 파일이 없어 첫 실행 시점의 최신 버전으로 환경이 굳는다 → 같은 코드가 PC마다 다른 의존성 트리를 가질 수 있음.
+  이 패턴은 모든 PEP 723 스크립트에서 반복 가능하므로 "코드는 같은데 한쪽만 깨짐"이면 버전 회귀 추측 전에 양쪽 uv 캐시의 해석 결과부터
+  대조할 것
+tags:
+- uv
+- pep723
+- 의존성
+- 멀티PC
+task: '"한 PC만 깨지는 PEP 723(uv) 스크립트"의 진단 우선순위: uv 캐시 환경 생성 시점차부터 의심. 삼성에서 session_inject.py가
+  조용히 죽은 원인=python-ulid 3.1.0이 typing_extensions를 import하면서 의존성 미선언(업스트림 패키징 버그) —
+  HP는 6월에 구버전(3.0.x)으로 캐시가 생성돼 잠복, 삼성은 7월 신규 캐시가 3.1.0을 받아 발현. 수정=스크립트 헤더에 typing-extensions
+  명시'
+task_type: code
+timestamp: '2026-07-02T14:01:46.370544+00:00'
+verified_by: human
+---
+id: 01KWHJ6B496DXM3Q9VJA0FRB49
+machine: samsung
+outcome: success
+reason: cp949 계열 3번째 재발(CC statusLine → agy statusLine → agy 훅). statusLine 때의 해법(python
+  -X utf8)은 설정 파일에 명령을 적을 수 있을 때만 가능한데, uv가 python을 스폰하는 등 -X utf8을 끼울 수 없는 호출 경로가
+  계속 생김 → 스크립트 자체가 인코딩을 보장하는 쪽이 근본 대책. 광역 except가 있는 스크립트는 인코딩 사망이 "조용한 빈 출력"으로 위장되는
+  점도 주의
+tags:
+- cp949
+- 인코딩
+- windows
+- 훅
+task: 파이프로 호출되는 스크립트의 이모지·비ASCII 출력은 코드에서 sys.stdout.reconfigure(encoding="utf-8")로
+  잡는 게 정석. session_inject.py가 삼성(cp949)에서 🌳 출력 중 UnicodeEncodeError로 죽고 광역 except가
+  {}로 삼켜 "빈 주입"으로 위장했던 것을 이 한 줄로 해결
+task_type: code
+timestamp: '2026-07-02T14:02:15.561673+00:00'
+verified_by: human
