@@ -1,7 +1,7 @@
 ## ▶ 다음
-클로드코드 새 세션을 열어 자동주입 컨텍스트가 뜨는지 확인한다. "새로 recall 돌리지 말고, 받은 NAMU 컨텍스트를 그대로 보여줘"로 자동주입 여부를 검증한다. 그 다음 agy 재시작 후 새 세션에서 같은 쪽지 확인, 양쪽 본문 1:1 대조.
+(완료)
 
 ## 현재 상태
-- HP 플러그인 설치 완료 (plugin:namu:namu-memory connected, 3 tools)
-- 옛 SessionStart 훅 제거 완료 (settings.local.json, permissions 17개 보존)
-- 검증용 task 생성
+- #16 완전 종료 (2026-07-03 hp): (A) HP 대칭 설치 라이브 통과 — agy 1.0.16 plugin install + 옛 직접 등록 청소 후, `/mcp` 3 tools + CC·agy 자동주입(🌳+📌) 본문 1:1 대조 통과.
+- HP·삼성 × CC·agy 4칸 전부 플러그인 방식 통일 (직접 등록 잔재 0).
+- 잔여 로드맵(⑦ 서브에이전트 대칭·공개 README·plan.md 정리)은 docs/plan.md 차기 목록 참조.

@@ -1,5 +1,5 @@
 ## ▶ 다음
-⑥ 커밋(사용자) → ⑦ 네이티브 서브에이전트 대칭 + HP 대칭 설치(HP 세션에서 `agy plugin install` + 옛 `.agents/hooks.json`·`mcp_config.json` 직접 등록 청소) + 공개 README.
+(완료)
 
 ## 현재 상태
 - ⑥ agy 플러그인 승격 **라이브 검증 통과** (2026-07-02 삼성): `/mcp`에 namu-memory ✓ 3 tools + PreInvocation 자동주입(🌳+📌) 확인 — 삼성 agy 최초의 MCP·자동주입.
