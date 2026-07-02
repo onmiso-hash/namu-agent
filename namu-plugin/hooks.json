@@ -1,0 +1,10 @@
+{
+  "namu": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "uv run --script hooks/session_inject.py"
+      }
+    ]
+  }
+}

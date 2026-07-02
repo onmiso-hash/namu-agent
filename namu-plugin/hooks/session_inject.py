@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["PyYAML>=6.0", "python-ulid>=3.0.0", "python-dotenv>=1.0.0"]
+# dependencies = ["PyYAML>=6.0", "python-ulid>=3.0.0", "python-dotenv>=1.0.0", "typing-extensions>=4.0"]
 # ///
 """PreInvocation 훅 — agy 세션 컨텍스트 자동 주입.
 
@@ -8,6 +8,7 @@ conversationId 기반 플래그 파일로 세션당 1회만 주입.
 어떤 에러도 {} 출력 + exit 0 (세션 안 막음).
 """
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -26,6 +27,8 @@ def _ensure_db(cfg) -> None:
 
 
 def main() -> None:
+    # 네이티브 Windows 파이프 stdout은 cp949라 이모지 출력 시 UnicodeEncodeError (#16 statusLine과 동일 패턴)
+    sys.stdout.reconfigure(encoding="utf-8")
     try:
         raw = sys.stdin.read()
         try:
@@ -43,6 +46,15 @@ def main() -> None:
         if flag.exists():
             print("{}")
             sys.exit(0)
+
+        # agy 플러그인 훅의 cwd는 플러그인 설치 폴더 → 워크스페이스 .env를 못 찾음.
+        # config가 find_dotenv(usecwd=True)로 .env를 찾기 전에 워크스페이스로 이동한다.
+        workspace_paths = data.get("workspacePaths") or []
+        if workspace_paths:
+            try:
+                os.chdir(workspace_paths[0])
+            except OSError:
+                pass
 
         import config as cfg
         from session_context import build_context_markdown

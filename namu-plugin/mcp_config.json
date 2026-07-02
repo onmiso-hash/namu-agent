@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "namu-memory": {
+      "command": "uv",
+      "args": ["run", "--script", "namu-plugin/mcp_server.py"]
+    }
+  }
+}
