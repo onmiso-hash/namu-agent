@@ -36,7 +36,12 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **4. 작업 분할** — 코딩 워커에게 넘길 단위로 쪼갠다.
 
-**5. 워커 명단 확인** — `${NAMU_HOME:-.}/namu_workers.yaml`을 읽는다. engine이 `native`면 Agent 도구로 서브에이전트 호출. 아니면 사용자에게 알리고 멈춘다.
+**5. 워커 명단 확인** — `${NAMU_HOME:-.}/namu_workers.yaml`을 읽는다. engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
+
+- Claude Code: `Agent` 도구 (`subagent_type` = 명단의 `agent` 값)
+- agy(Antigravity): `invoke_subagent` (`TypeName` = 명단의 `agent` 값, 정의는 `.agents/agents/<agent>/agent.md` 자동 로드). 비동기이므로 서브에이전트의 `send_message` 수신까지 대기 후 다음 단계로.
+
+engine이 `native`가 아니면 사용자에게 알리고 멈춘다.
 
 **6. 코딩 위임** — namu-coder 서브에이전트에게 구현을 맡긴다.
 
