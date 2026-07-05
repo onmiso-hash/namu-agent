@@ -1,8 +1,8 @@
 # context @ hp — namu-17-subagent-parity
-> 🔄 갱신 2026-07-05 23:35 [samsung이 HP 몫으로 작성]
+> 🔄 갱신 2026-07-05 23:45 [hp]
 
 ## ▶ 다음 (한 줄)
-HP 대칭 셋업 4步: ① git pull(이미 했으면 skip) ② `agy plugin install ./namu-plugin`(스킬 분기 0.1.1 반영, skills·mcpServers·hooks 각 1 확인) ③ CC `claude plugin update namu@namu-marketplace --scope local` 후 재시작 ④ (선택) `~/.gemini/antigravity-cli/settings.json` permissions.allow에 `"command(python)"` 추가(서브에이전트 run_command 승인 큐 60초 타임아웃 처방, 삼성 기적용) → 끝나면 이 파일 "▶ 다음"을 (완료)로
+(완료) HP 대칭 셋업 전부 끝 2026-07-05: ① git pull(기완료) ② `agy plugin install ./namu-plugin` 성공(skills·mcpServers·hooks 각 1, 설치본 invoke_subagent 분기 grep 확인, "agents: skipped" 정상) ③ CC 플러그인 0.1.0→0.1.1(--scope local) + 재시작 후 `claude plugin list`로 0.1.1 enabled 확인 ④ agy settings.json allow에 "command(python)" 추가. HP 이월분 없음 — task 완전 종료
 
 ## 지금 어디까지
 - 본체는 삼성에서 종료(2026-07-05, log [완료] 참조) — 워커 층 대칭 완성, 이 파일은 HP 로컬 셋업 이월분만 담음
