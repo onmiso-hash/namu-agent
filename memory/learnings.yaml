@@ -422,3 +422,26 @@ task: 'namu-17-subagent-parity 완료: NAMU 실행/워커 층(namu-coder·namu-r
 task_type: code
 timestamp: '2026-07-05T14:23:47.394215+00:00'
 verified_by: human
+---
+id: 01KWTGPFG4ESB12Z903YFPHHJM
+machine: samsung
+outcome: success
+reason: '공개 문서를 워커에게 위임할 때 효과적이었던 패턴 2가지. ① 소재 폐쇄 + "뺀 것 보고" 지시: coder에게 소재 파일 목록(plan.md
+  특정 행 범위·task log)을 명시하고 "실측 기록에 없는 절차는 지어내지 말고, 확인 못 해 뺀 것을 보고하라"고 지시하니, 미검증 사실(공개
+  GitHub URL로 marketplace add)을 지어내는 대신 플레이스홀더로 남기고 사유를 보고함 — 문서 할루시네이션이 검수 단계가 아니라
+  작성 단계에서 차단됨. ② 검수 기준에 "사실 대조 원본"을 행 번호까지 지정: reviewer가 README 서술을 실측 기록과 1:1 대조
+  가능해져 판정 근거가 구체적(파일:행)으로 나옴. 플레이스홀더의 최종 처리는 오케스트레이터가 실측과 일치하는 방식(clone한 로컬 경로 기준
+  등록 — repo가 곧 NAMU_HOME이라 어차피 clone 필수)으로 확정 — 미검증 경로를 문서에 넣지 않고도 공개 독자용 안내가 성립함.'
+tags:
+- readme
+- 문서
+- 공개배포
+- 워커
+- 할루시네이션
+task: 'namu-18-public-readme 완료: 공개 README 2개(루트 전면 개정 + namu-plugin 현행화) 작성 — 현재
+  아키텍처("봉투 둘·내용물 하나", 메모리 레이어 중심)와 셋업 함정 4종(cp949→-X utf8 / conhost 이모지→Windows Terminal
+  / agy 워크스페이스 상대경로 / 플러그인 설치본=복사본)을 plan.md·task log 실측 기록 기반으로 문서화. coder→reviewer
+  워커 흐름으로 진행, reviewer가 plan.md 실측 대조로 할루시네이션 검사 후 pass'
+task_type: doc
+timestamp: '2026-07-06T01:29:17.060246+00:00'
+verified_by: human
