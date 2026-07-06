@@ -1,6 +1,10 @@
 {
   "name": "namu",
-  "version": "0.1.1",
+  "version": "0.1.2",
+  "agents": [
+    "./cc-agents/namu-coder.md",
+    "./cc-agents/namu-reviewer.md"
+  ],
   "description": "Vendor-independent multi-agent system with shared memory and self-learning",
   "author": {
     "name": "onmiso"

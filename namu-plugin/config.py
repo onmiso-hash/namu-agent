@@ -11,9 +11,18 @@ load_dotenv(find_dotenv(usecwd=True))
 load_dotenv(BASE_DIR / ".env")
 
 # NAMU_HOME: 데이터(learnings/tasks/db)가 놓이는 루트.
-# 미설정 시 repo 루트(REPO_ROOT)로 폴백 — repo 직접 실행 하위호환.
-# 플러그인 모드에서는 BASE_DIR이 캐시 경로이므로 반드시 NAMU_HOME을 셸 환경변수로 지정해야 함.
-NAMU_HOME = Path(os.environ.get("NAMU_HOME", REPO_ROOT))
+# 우선순위:
+#   1. NAMU_HOME 환경변수 (.env 경유 포함) — 명시적 지정, 항상 최우선.
+#   2. REPO_ROOT/memory 가 실재하면 REPO_ROOT — repo를 클론해 직접 실행하는 하위호환 경로.
+#   3. 그 외엔 Path.home() / ".namu" — 플러그인 설치형 기본값(분리 모드).
+#      플러그인 캐시 폴더에는 memory/ 가 복사되지 않으므로, env 미설정 사용자가
+#      캐시 안에 데이터를 쓰는 "유령 경로" 사고(#13·#16)를 이 폴백이 방지한다.
+if "NAMU_HOME" in os.environ:
+    NAMU_HOME = Path(os.environ["NAMU_HOME"])
+elif (REPO_ROOT / "memory").is_dir():
+    NAMU_HOME = REPO_ROOT
+else:
+    NAMU_HOME = Path.home() / ".namu"
 
 # DB
 DB_PATH = BASE_DIR / "db" / "namu.sqlite"
