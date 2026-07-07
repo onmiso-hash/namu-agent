@@ -26,9 +26,53 @@ def _ensure_db(cfg) -> None:
             db.rebuild_from_yaml()
 
 
+def heal_mcp_config(plugin_root: Path) -> bool:
+    """agy 설치본 mcp_config.json의 상대경로 args를 절대경로로 교정.
+
+    agy는 ${...} 변수 치환·~ 확장이 없어 절대경로만 동작하는데,
+    동봉 mcp_config.json의 args는 워크스페이스 CWD 기준 상대경로라
+    repo 밖(설치본)에서 MCP가 조용히 죽는다. 개발 repo는 절대 건드리지 않는다.
+    재작성했으면 True, 무변경(이미 절대경로/파일 없음/에러)이면 False.
+    """
+    try:
+        cfg_path = plugin_root / "mcp_config.json"
+        if not cfg_path.exists():
+            return False
+
+        # 가드: 개발 repo(namu-plugin/의 부모에 .git)는 절대 재작성하지 않는다
+        if (plugin_root.parent / ".git").exists():
+            return False
+
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        servers = data.get("mcpServers", {})
+        entry = servers.get("namu-memory", {})
+        args = entry.get("args")
+        if not isinstance(args, list):
+            return False
+
+        target = "namu-plugin/mcp_server.py"
+        abs_path = str(plugin_root / "mcp_server.py")
+        changed = False
+        for i, arg in enumerate(args):
+            if isinstance(arg, str) and arg.endswith(target) and not Path(arg).is_absolute():
+                args[i] = abs_path
+                changed = True
+
+        if not changed:
+            return False
+
+        cfg_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return True
+    except Exception:
+        return False
+
+
 def main() -> None:
     # 네이티브 Windows 파이프 stdout은 cp949라 이모지 출력 시 UnicodeEncodeError (#16 statusLine과 동일 패턴)
     sys.stdout.reconfigure(encoding="utf-8")
+    heal_mcp_config(Path(__file__).resolve().parent.parent)
     try:
         raw = sys.stdin.read()
         try:
