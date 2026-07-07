@@ -166,6 +166,10 @@
 | 2026-07-05 | **⑦ agy 서브에이전트 형식 실측 확정 + coder·reviewer 포팅** | 라이브 2회(사용자 agy 세션)로 확정: ① define/invoke/manage_subagents 도구 세션 기본 노출 ② 영속 형식=**`agent.md`**(YAML frontmatter `name`·`description`·`tools`·`hidden`+마크다운 본문=시스템 프롬프트, 정적 분석의 agent.json 추정 정정) — CC `.claude/agents/*.md`와 동일 구조 ③ **워크스페이스 `.agents/agents/<name>/agent.md` 사전 배치 자동 로드 통과**(프로브 토큰 NAMU-LOAD-OK 응답=결정적 증거) → "봉투 둘·내용물 하나" 실행 층 성립 ④ manage_subagents list=실행 중 인스턴스만(정의 목록 아님) ⑤ 비동기 모델(invoke→ID 반환, Schedule wait↔send_message). 포팅: coder·reviewer를 `.agents/agents/`에 생성(내용물=CC 프롬프트 그대로, git 공유). 쓰기 도구 6종 이름은 바이너리 원문 확인·**런타임 미검증**(라이브 워커 흐름 때 확정), model 필드는 agy 미관찰이라 생략(세션 모델 상속 추정). 플러그인 봉투 동봉은 후속 |
 | 2026-07-05 | **⑦ 라이브 워커 흐름 통과 + 잔여 결정 3건** | 워커 흐름 2차 통과(1차 fail=edit_file 미등록 → tools 오기는 invoke 시 executor **fail-fast** 실측, 조용한 무력화 아님): coder 파일 실생성+reviewer pass 판정+비동기 완주 = CC와 1:1 대칭, **agent.md 핫 리로드 확정**(같은 세션서 수정→즉시 반영). 결정: ① namu-task 스킬=엔진 분기(5단계: CC `Agent`/agy `invoke_subagent`+send_message 대기, 봉투 0.1.1 범프·재설치 필요) ② 워커 정의 플러그인 동봉 **안 함**(repo=NAMU_HOME이라 git 대칭 자동+agents 카테고리 런타임 미검증+워크스페이스는 핫 리로드, 13번 보류분도 이동 안 함, 재검토=NAMU_HOME 분리 배포 필요 시) ③ recall/record 오케스트레이터 전용 규칙 유지 확인(워커 4개 tools에 메모리 도구 없음). ⚠️ 미결: 서브에이전트 run_command가 승인 큐 60초 타임아웃에 걸림(toolPermission=request-review, 로그 실측) → 검수 시 linter 실행 불가, allow에 command(python) 추가 or 60초 내 승인이 처방 후보 |
 | 2026-07-05 | **🟢 ⑦ 종료 — 최종 통합 라이브 통과, 워커 층 대칭 완성** | agy 새 세션 `/namu-task smoke-agy-worker`(0.1.1 설치본) 완주: 오케스트레이터가 recall→coder→reviewer→검수 게이트(사용자 선택 대기)→통과 후 record까지 — **agy에서 recall·invoke·record 전 루프 실증**, 상태 북엔드(log 태그·초단위·machine 도장)도 SKILL.md 형식 그대로. 처방 적용=settings allow에 command(python) 추가(사용자 승인) + CC·agy 플러그인 재설치(agy install 성공·CC 0.1.0→0.1.1). 완료조건 6개 전부 충족 → **#17 종료**(record `01KWSAKXP1...`, human). 이월=command(python) 효과 실측(이번 검증은 더미 파일이라 린터 안 돌았음, 실코드 검수서 자연 확인). "봉투 둘·내용물 하나"가 메모리(#13)·자동주입(#16)에 이어 **실행/워커 층까지 완성** |
+| 2026-07-06 | **#20 배포 3요소 설계 게이트(사용자 선택)** | ① 메모리 위치=**NAMU_HOME 3분기 폴백**(env → repo `memory/` 실재 시 REPO_ROOT → `~/.namu` 자동 스캐폴딩) ② 워커 배포=**플러그인 동봉**(13번 보류분 자급자족 발동) ③ agy repo 밖 한계=실측 확정 방침. 근거: config.py 폴백=REPO_ROOT가 플러그인 모드서 캐시 유령 경로(#13·#16 재발 위험), 워커 정의 수정 빈도 저하로 #17 핫리로드 논거 약화 |
+| 2026-07-06 | **#20 agents 레이아웃 분리(실측·삼성)** | 한 `agents/` 폴더 양 엔진 공용 불가 판명(agy가 플랫 .md까지 통째 스캔, 깨진 정의 2벌 공존) → **`agents/<name>/agent.md`=agy 전용 / `cc-agents/*.md`+plugin.json `"agents"` 필드=CC 전용**(공식 문서: 필드가 자동 스캔을 대체). ⚠️ agy plugin install=**비파괴 병합**(삭제 파일 잔존) → 정석=`uninstall→install`(hp 실측 완전 청소 확인). 플러그인 0.1.2 |
+| 2026-07-07 | **#20 실측 전판 통과(hp)** | **CC**: `namu:namu-coder` 네임스페이스 등재+라이브 호출 성공(파일 물증), agy 전용 폴더 미로드="agents" 필드 대체 확증, **directory 마켓플레이스=소스 라이브 참조**(설치 기록 0.1.1인데 0.1.2 로드 = 개발 기기는 pull+재시작만으로 반영). **~/.namu 분리 모드**: 가짜 캐시+가짜 HOME 시뮬레이션으로 3분기 폴백·record→recall 왕복·tasks 층·스캐폴딩 전부 동작. **agy repo 밖**: 스킬·훅·워커·MCP(대화형, 사용자 라이브+스크린샷) 전부 PASS — 유일 한계=**`-p` 비대화 모드+MCP=세션 멈춤**(1.0.16, 경로 방식·권한 스킵 무관, 서버는 수동 부팅 1초 정상 → agy 쪽 문제. 오케스트레이터=대화형이라 실영향 제한) |
+| 2026-07-07 | **#20 워커 호출명 폴백 확정 + 종료** | namu-task 스킬에 규칙 내장(설정 파일 불필요): **CC=에이전트 목록에 `namu-coder` 있으면 그대로(개발 repo), 없으면 `namu:<agent>`(설치형) / agy=그대로**(네임스페이스 없음). `namu_workers.yaml` 부재 시 **engine=native 간주 진행**(설치형 기본, 추가 설정·비용 0). 산출물: **docs/deploy_design.md 신설**(결정 3건+함정 5종+설치 절차), 플러그인 0.1.3 |
 
 ## 🏗️ 저장소 구조 (GitHub 기반)
 ```
@@ -190,6 +194,7 @@ github/
   - 🔭 이종 엔진 워커 어댑터(Ollama/유료 Gemini spawn + `namu_workers.yaml` override 마법사)는 **후속 설계 항목으로 이월**(사용자 결정 2026-07-06). #17 이월분 command(python) 효과 실측은 이 어댑터 작업 때 겸사 확인.
 - **2단계 (나중):** 공개 배포 + 개인 메모리 연동 구조
   - ⚠️ **메모(2026-07-06, #18 종료 시):** #18 "공개 README"는 **현재형(clone 기반 = repo가 곧 NAMU_HOME) 문서화**까지만이다. 플러그인 설치형 배포는 **미설계** — 사용자 메모리 위치(NAMU_HOME 분리 모드, 한 번도 그 형태로 산 적 없음)·워커 정의 배포 방식(#17 재검토 조건 "repo 밖 프로젝트서 쓰는 배포가 실제 필요해질 때" 발동)·agy repo 밖 실행 한계가 전부 미결정이라, **설치형 사용설명서는 2단계 배포 형태 설계·실측 후 별건**으로 쓴다. "#18로 공개 준비 문서 끝"으로 오인 금지.
+  - ✅ **해소(2026-07-07, #20 종료):** 미결정 3요소(메모리 위치·워커 배포·agy 한계) 설계+실측 완료 → **`docs/deploy_design.md`**. 남은 별건 = 설치형 사용설명서(+영어 README).
 - **3단계 (미래):** 공개 메모리 풀 — 선택적 기여/구독
   - 💡 각자 private 메모리 보유하되, 일반적인 학습은 공개 풀에 선택적 기여/구독 가능
   - 쓰면 쓸수록 커뮤니티 전체가 똑똑해지는 구조
@@ -239,6 +244,12 @@ github/
 - **🔧 워커 위임 패턴 실증:** coder에게 소재 폐쇄(plan.md 행 범위 지정)+"실측에 없으면 지어내지 말고 뺀 것을 보고" 지시 → 미검증 사실(GitHub URL marketplace add)을 플레이스홀더로 남기고 보고 = 문서 할루시네이션이 작성 단계서 차단. reviewer는 plan.md 실측 대조(파일:행 근거)로 pass. 게이트서 사용자 "통과+참고 2건 수정" → 오케스트레이터가 표기 통일 + 플레이스홀더를 "clone 로컬 경로 기준 등록"으로 확정(실측 일치·repo가 곧 NAMU_HOME이라 clone 전제 성립). record=01KWTGPFG4ESB12Z903YFPHHJM(doc·human). 커밋 2건(`db91ac3` docs(readme) / `faa8a0d` chore(learnings)) 푸시 완료.
 - **🔑 사용자 질문으로 구분 확정 → 로드맵 2단계 메모 반영:** "공개 시엔 clone이 아니라 플러그인 설치일 텐데 이 README로 되나?" → **안 됨이 정답.** #18은 현재형(clone 기반) 문서화까지고, 플러그인 설치형 배포는 미설계(메모리 위치·워커 배포·agy repo 밖 전부 미결정). 설치형 사용설명서는 2단계 설계·실측 후 별건 — 로드맵 2단계 항목에 ⚠️ 메모로 박음.
 - **⬜ 남은 차기:** plan.md 정리(헤더 손상 블롭·아카이브) · 이종 엔진 워커 어댑터(+#17 이월 command(python) 실측 겸사) · 2단계 착수 시 배포 형태 설계부터(로드맵 메모 참조) · 영어판 README(공개 임박 시).
+
+### 2026-07-06~07 (#20 배포 형태 설계 — 3요소 설계·실측 완료, 대화창15 삼성→16 HP 이어달리기)
+> 삼성에서 설계 게이트(3요소 사용자 선택)+구현(config.py 3분기·agents 레이아웃 분리·0.1.2)+agy install 실측, 커밋·푸시 후 HP가 pull 받아 실측 마감 — 멀티 PC 이어달리기가 상태 파일(task/context/log) 그대로 굴러간 실전 사례.
+- **🟢 namu-20-deploy-design 완주:** ① NAMU_HOME 3분기 폴백 — 분리 모드(`~/.namu`) 시뮬레이션 실측으로 메모리 3층(learnings/db/tasks) 전부 동작 ② 워커=플러그인 동봉+엔진별 폴더 분리(`agents/`=agy·`cc-agents/`+"agents" 필드=CC), CC `namu:namu-coder` 라이브 호출 성공 ③ agy repo 밖=스킬·훅·워커·MCP(대화형) 전부 PASS. 산출물 **docs/deploy_design.md**(결정 3건+함정 5종+설치 절차), 스킬에 워커 호출명 폴백 규칙 내장, 플러그인 0.1.3.
+- **🔑 새 발견 2건:** CC directory 마켓플레이스=**소스 라이브 참조**(개발 기기는 pull+재시작만으로 반영, 재설치 불필요) / agy 1.0.16 **`-p` 비대화 모드+MCP=세션 멈춤**(대조 실험으로 확정: 경로 방식·권한 스킵 무관, 플러그인 disable 시 즉답, 서버는 정상 — 오케스트레이터는 대화형이라 실영향 제한, 배포 문서 명기).
+- **🔧 실측 방법론:** 가짜 캐시+가짜 HOME 시뮬레이션(실데이터 오염 0) · agy 멈춤 진단은 30초 타임아웃+대조군(빈 폴더/심링크/복사본/disable) 조합 · 대화형 검증은 사용자 라이브+스크린샷 물증.
 
 ## 🤖 AI 호출 방식 (어댑터 구조) — 확정
 ```

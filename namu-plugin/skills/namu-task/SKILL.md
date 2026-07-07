@@ -36,10 +36,10 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **4. 작업 분할** — 코딩 워커에게 넘길 단위로 쪼갠다.
 
-**5. 워커 명단 확인** — `${NAMU_HOME:-.}/namu_workers.yaml`을 읽는다. engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
+**5. 워커 명단 확인** — `${NAMU_HOME:-.}/namu_workers.yaml`을 읽는다. **파일이 없으면 engine=`native`로 간주하고 그대로 진행한다** (설치형 기본값 — 기본 워커는 현재 엔진의 네이티브 서브에이전트, 별도 설정 불필요). engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
 
-- Claude Code: `Agent` 도구 (`subagent_type` = 명단의 `agent` 값)
-- agy(Antigravity): `invoke_subagent` (`TypeName` = 명단의 `agent` 값, 정의는 `.agents/agents/<agent>/agent.md` 자동 로드). 비동기이므로 서브에이전트의 `send_message` 수신까지 대기 후 다음 단계로.
+- Claude Code: `Agent` 도구. `subagent_type`은 **호출명 폴백 규칙**을 따른다 — 사용 가능한 에이전트 목록에 명단의 `agent` 값(예: `namu-coder`)이 있으면 그대로 쓰고, 없으면 플러그인 네임스페이스 이름 `namu:<agent>`(예: `namu:namu-coder`)를 쓴다. (개발 repo에선 프로젝트 `.claude/agents/`의 비네임스페이스 이름이 우선 존재하고, 설치형에선 플러그인 동봉 정의라 `namu:` 접두사가 강제로 붙기 때문)
+- agy(Antigravity): `invoke_subagent` (`TypeName` = 명단의 `agent` 값 그대로 — agy는 네임스페이스를 붙이지 않는다. 정의는 워크스페이스 `.agents/agents/<agent>/agent.md` 또는 플러그인 설치본 `agents/<agent>/agent.md`에서 자동 로드). 비동기이므로 서브에이전트의 `send_message` 수신까지 대기 후 다음 단계로.
 
 engine이 `native`가 아니면 사용자에게 알리고 멈춘다.
 
