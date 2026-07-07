@@ -1,5 +1,7 @@
 """agy 설치본 mcp_config.json 절대경로 self-healing 테스트."""
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -7,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent / "hooks"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from session_inject import heal_mcp_config
+
+_HOOK_SRC = Path(__file__).parent / "hooks" / "session_inject.py"
 
 
 def _write_cfg(plugin_root: Path, args_last: str) -> Path:
@@ -89,6 +93,69 @@ def test_broken_json_returns_false_no_exception(tmp_path):
     result = heal_mcp_config(plugin_root)
 
     assert result is False
+
+
+def _copy_hook_install(tmp_path: Path) -> tuple[Path, Path]:
+    """가짜 설치본 트리(<tmp>/plugins/namu/hooks/session_inject.py)를 만들고 스크립트 경로를 반환."""
+    plugin_root = tmp_path / "plugins" / "namu"
+    hooks_dir = plugin_root / "hooks"
+    hooks_dir.mkdir(parents=True)
+    script_path = hooks_dir / "session_inject.py"
+    shutil.copy(_HOOK_SRC, script_path)
+    return plugin_root, script_path
+
+
+def test_heal_cli_rewrites_relative_path(tmp_path):
+    plugin_root, script_path = _copy_hook_install(tmp_path)
+    cfg_path = _write_cfg(plugin_root, "namu-plugin/mcp_server.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--heal"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0
+    assert "교정 완료" in result.stdout
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    args = data["mcpServers"]["namu-memory"]["args"]
+    assert args[-1] == str(plugin_root / "mcp_server.py")
+    assert Path(args[-1]).is_absolute()
+
+
+def test_heal_cli_noop_when_already_absolute(tmp_path):
+    plugin_root, script_path = _copy_hook_install(tmp_path)
+    abs_path = str(plugin_root / "mcp_server.py")
+    cfg_path = _write_cfg(plugin_root, abs_path)
+    before_content = cfg_path.read_text(encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--heal"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0
+    assert "무변경" in result.stdout
+    assert cfg_path.read_text(encoding="utf-8") == before_content
+
+
+def test_hook_mode_without_args_still_outputs_empty_json(tmp_path):
+    # 회귀: --heal 분기 추가가 기존 훅 모드(인자 없음) 출력 규약을 깨지 않는지 확인
+    _, script_path = _copy_hook_install(tmp_path)
+
+    result = subprocess.run(
+        [sys.executable, str(script_path)],
+        input="{}",
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "{}"
 
 
 if __name__ == "__main__":

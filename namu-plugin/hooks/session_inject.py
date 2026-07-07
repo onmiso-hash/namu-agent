@@ -6,6 +6,7 @@
 
 conversationId 기반 플래그 파일로 세션당 1회만 주입.
 어떤 에러도 {} 출력 + exit 0 (세션 안 막음).
+`--heal` 인자로 단독 실행하면 mcp_config.json 절대경로 교정만 즉시 수행하고 종료한다(설치 직후용).
 """
 import json
 import os
@@ -70,6 +71,16 @@ def heal_mcp_config(plugin_root: Path) -> bool:
 
 
 def main() -> None:
+    if "--heal" in sys.argv:
+        sys.stdout.reconfigure(encoding="utf-8")
+        healed = heal_mcp_config(Path(__file__).resolve().parent.parent)
+        if healed:
+            abs_path = str(Path(__file__).resolve().parent.parent / "mcp_server.py")
+            print(f"[namu --heal] mcp_config.json 절대경로 교정 완료: {abs_path}")
+        else:
+            print("[namu --heal] 무변경 (이미 절대경로이거나 대상 아님)")
+        sys.exit(0)
+
     # 네이티브 Windows 파이프 stdout은 cp949라 이모지 출력 시 UnicodeEncodeError (#16 statusLine과 동일 패턴)
     sys.stdout.reconfigure(encoding="utf-8")
     heal_mcp_config(Path(__file__).resolve().parent.parent)
