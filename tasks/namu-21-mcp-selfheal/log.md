@@ -1,0 +1,6 @@
+# log — namu-21-mcp-selfheal
+(append만. context 꼬이면 이걸로 복원)
+
+[시작] 2026-07-07 22:32:27 samsung · 작업 생성, 목적·완료조건 확정 — 사용자 확인 통과. 소재=#20 함정 목록 #3(agy 설치본 mcp_config 상대경로, 재설치마다 수동 절대경로 재주입 필요). 사용자 게이트: A안 훅 self-healing 선택(B안 설치 스크립트 기각)
+[결정] 2026-07-07 22:46:55 samsung · 구현(coder)+검수(reviewer) PASS — session_inject.py에 heal_mcp_config 추가(agy PreInvocation 전용=CC 구조적 무영향, main 초입 chdir·조기종료보다 앞에서 매 실행). 멱등 3중 가드(절대경로 무변경·부모 .git repo 보호·전예외 무음 False). 신규 테스트 5건+기존 회귀 11건=16 passed. deploy_design.md 함정 #3 해소 문구+절차 표 갱신, 플러그인 0.1.4 범프 2곳. 남은 것=samsung 라이브 실측(재설치→세션1 교정 발동→세션2 MCP 로드)+CC 무영향 확인
+[완료] 2026-07-07 22:58:12 samsung · #21 종료 — 완료조건 4건 전부 충족(사용자 라이브 실측): ① 훅 자동 교정 실측 — 재설치 22:48:34 상대경로 → 세션1 후 22:50:22 절대경로 재작성(디스크 물증), repo 동봉본 무변경(가드 정상) ② 세션2 repo 밖(D:\Temp\namu-agy-ws)서 namu-memory 3도구 로드(image6.png 물증) + 세션 브리핑 주입 회귀 없음 ③ CC 무영향(별개 훅 파일+diff 무변경) ④ deploy_design.md 함정 #3 해소 기록. 플러그인 0.1.4, 테스트 16 passed. record 1건(01KWYDZPJTQ32QAJEWVVGT5NTP, human). 커밋·푸시는 사용자 확인 대기
