@@ -530,3 +530,27 @@ task: 'CC directory 소스 마켓플레이스 동작 실측: 설치 기록(insta
 task_type: analysis
 timestamp: '2026-07-07T12:52:36.187817+00:00'
 verified_by: human
+---
+id: 01KWYDZPJTQ32QAJEWVVGT5NTP
+machine: samsung
+outcome: success
+reason: '설계 요체 = 설치기(installer)에 후처리 훅이 없을 때, 매 세션 도는 기존 훅을 설치 후처리 대용으로 쓰는 패턴. 성립
+  조건 3가지: ① 훅이 자기 위치(__file__)로 설치본 루트를 알 수 있고(agy 훅 CWD=설치 폴더 실측이 근거) ② 교정이 멱등이라
+  매 실행 무해(절대경로면 무변경) ③ 실패가 세션을 못 막게 전예외 무음. 안전핀으로 부모 .git 가드를 둬 개발 repo 원본은 절대 안 건드림
+  — 기기별 절대경로는 git 공유 불가 값이므로 설치본에만 존재해야 한다. 함정 하나: agy는 MCP 설정을 세션 시작 시 읽으므로 훅 교정
+  효과는 다음 세션부터 = 재설치 직후 첫 세션의 MCP 부재는 버그가 아니라 정상(실측 절차도 세션 2회로 설계해야 함). 엔진별 훅 파일이 이미
+  분리돼 있어(agy=루트 hooks.json/PreInvocation, CC=hooks/hooks.json/SessionStart) CC 무영향이
+  구조적으로 보장됨 — 엔진별 진입점 분리가 이런 엔진 한정 개입을 싸게 만든다.'
+tags:
+- namu-21
+- agy
+- mcp
+- 훅
+- self-healing
+- 함정해소
+task: 'namu-21-mcp-selfheal 완료: agy 설치본 mcp_config.json 절대경로 자동 교정(훅 self-healing)
+  — session_inject.py(agy PreInvocation 전용)에 heal_mcp_config 추가, 재설치→세션1 교정 발동(디스크
+  물증)→세션2 repo 밖 MCP 3도구 로드(스크린샷 물증) 라이브 전판 PASS. 플러그인 0.1.4'
+task_type: code
+timestamp: '2026-07-07T13:58:51.226300+00:00'
+verified_by: human
