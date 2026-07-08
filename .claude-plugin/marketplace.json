@@ -1,0 +1,14 @@
+{
+  "name": "namu-marketplace",
+  "owner": {
+    "name": "onmiso"
+  },
+  "description": "NAMU — vendor-independent agent system with a portable MCP memory core",
+  "plugins": [
+    {
+      "name": "namu",
+      "source": "./namu-plugin",
+      "description": "Vendor-independent multi-agent system with shared memory and self-learning"
+    }
+  ]
+}
