@@ -72,8 +72,8 @@ repo 밖 임시 워크스페이스 실측(hp, 2026-07-07, agy 1.0.16):
 | | Claude Code | agy |
 |---|---|---|
 | 설치 (directory 소스) | `/plugin marketplace add /path/to/namu-plugin` → `plugin install` | `agy plugin install <namu-plugin 경로>` |
-| 설치 (원격 GitHub, 실측 확정) | `claude plugin marketplace add onmiso-hash/namu-agent` → `claude plugin install namu@namu-marketplace` (기본 user 스코프, repo 루트 `.claude-plugin/marketplace.json` 필요 — e2fba2e부터 포함) | — (agy는 원격 marketplace 미지원, directory 설치만) |
+| 설치 (원격 GitHub, 실측 확정) | `claude plugin marketplace add onmiso-hash/namu-agent` → `claude plugin install namu@namu-marketplace` (기본 user 스코프, repo 루트 `.claude-plugin/marketplace.json` 필요 — e2fba2e부터 포함) | — (agy 원격 설치는 미실측 — 현행 확정 절차는 directory 설치뿐) |
 | 업데이트 (개발 기기, directory 소스) | git pull + CC 재시작 | `scripts/agy_reinstall.ps1` 실행 (수동: `uninstall → install → --heal`, 비파괴 병합 함정 회피 + mcp_config 절대경로 첫 세션부터 교정) |
-| 업데이트 (원격 설치) | `claude plugin update namu` (⚠️ 갱신 결과 자체는 0.1.6 반영 후 실측 예정) | `scripts/agy_reinstall.ps1` 실행 (수동: `uninstall → install → --heal`) |
+| 업데이트 (원격 설치) | `claude plugin update namu@namu-marketplace` — 전체 식별자 필수(짧은 이름 `update namu`는 not found 실패) + CC 재시작. 실측(2026-07-08): 0.1.5→0.1.6·sha 6daad22 반영 확인 | `scripts/agy_reinstall.ps1` 실행 (수동: `uninstall → install → --heal`) |
 | 메모리 위치 | 기본 `~/.namu`, `NAMU_HOME` env로 변경 | 동일 (config.py 공용) |
 | 기기 식별 | `NAMU_MACHINE` env (미설정 시 `unknown`) | 동일 |
