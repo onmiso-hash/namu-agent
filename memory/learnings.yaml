@@ -569,3 +569,53 @@ task: 'namu-22-install-heal: agy 첫 세션 시 mcp 설정 누락 문제 수정'
 task_type: code
 timestamp: '2026-07-07T23:22:19.410623+00:00'
 verified_by: human
+---
+id: 01KX06QSYRRXWG6PBCVGXCS0JP
+machine: samsung
+outcome: success
+reason: '잠복 원인은 3중 겹침: ① Windows 파이프 stdout 기본 cp949에 이모지(🌳📌) JSON print → UnicodeEncodeError
+  ② 훅의 bare except exit 0(세션 시작 보호 설계)이 실패를 무음화 ③ CC 2.1.0+ additionalContext 무화면
+  사양이라 성공·실패가 똑같이 안 보임. 일반화 교훈 3개: (a) "어떤 예외든 삼키는" 방어 코드는 실패 관측 수단이 없으면 결함을 완전 잠복시킨다
+  — 삼키더라도 물증(파일 로그 등)을 남기거나 회귀 테스트로 덮어야 함 (b) 엔진별 대칭 코드는 한쪽만 고치면 다른 쪽이 사각지대가 된다 —
+  agy판 session_inject.py는 07-02에 같은 cp949 버그를 잡았는데 CC판 session_recall.py는 누락됐고, 리눅스(hp)에서의
+  검증은 Windows 인코딩 결함을 구조적으로 못 잡는다 (c) 디버깅 분리 절차가 유효했다: python 직접 실행(-X utf8)으로 로직
+  무죄 입증 → uv/파이프 조건 재현 → 한 변수(인코딩)만 남김. 발견 경로 자체가 교훈 — 문서 쓰려고 한 원격 설치 라이브 실측이 아니었으면
+  영원히 몰랐을 버그로, "설명서에 쓸 절차는 반드시 실측" 원칙이 문서 품질을 넘어 코드 결함까지 잡았다.'
+tags:
+- namu-23
+- cp949
+- windows
+- hook
+- 함정해소
+- claude-code
+task: 'namu-23 중 발견·수정: Windows CC SessionStart 훅(session_recall.py) cp949 무음 실패 —
+  samsung에서 세션 자동주입이 애초부터 전멸했던 잠복 버그. reconfigure(utf-8) 1줄 + cp949 강제 subprocess
+  회귀 테스트 2건으로 해소(0.1.6), 원격 설치본 새 세션 라이브에서 주입 복구 확인(도구 없이 진행 task 정답)'
+task_type: code
+timestamp: '2026-07-08T06:30:41.368759+00:00'
+verified_by: human
+---
+id: 01KX06RG1QW9CEPSEXFGACZ22T
+machine: samsung
+outcome: success
+reason: '실측 확정 4건: ① CC 원격 add는 repo 루트 .claude-plugin/marketplace.json만 찾는다 — private
+  repo clone은 git 자격증명으로 성공해도 manifest가 그 위치에 없으면 실패하며, 에러 메시지가 요구 경로를 정확히 알려준다(중첩
+  위치인 namu-plugin/.claude-plugin/은 원격 add에선 무효) ② 같은 이름 marketplace add는 기존 등록을 충돌
+  에러 없이 조용히 대체한다 — 개발 기기의 directory 등록이 원격 소스로 바뀌는 사고 경로인 동시에, 역으로 실측 후 directory
+  재등록만으로 원복되는 수단 ③ 원격 marketplace 캐시는 repo 전체 clone(memory/ 포함)이지만 실행본은 plugins/cache/<mp>/<plugin>/<버전>/에
+  플러그인 폴더만 복사돼 config.py 분기 3(~/.namu)이 정상 발동 — 유령 경로 사고 없음 ④ plugin update는 짧은 이름(namu)이면
+  not found, 전체 식별자(namu@namu-marketplace) 필수. 검증 방법 교훈: installed_plugins.json의 gitCommitSha가
+  방금 푸시한 커밋과 일치하는지가 "진짜 GitHub에서 왔다"의 결정적 물증이고, 사용자 라이브 전에 claude CLI(plugin/marketplace
+  서브커맨드)로 헤드리스 선검증하면 재시작 왕복이 1회로 준다.'
+tags:
+- namu-23
+- claude-code
+- plugin
+- marketplace
+- 배포
+task: 'namu-23: CC GitHub 원격 marketplace 설치 경로 실측 확정 + 설치형 사용설명서(docs/install_guide.md)
+  완성 — 루트 .claude-plugin/marketplace.json 봉투 신설(e2fba2e), 원격 install(기본 user 스코프)·update
+  실측, 함정 3건 신규 채록'
+task_type: code
+timestamp: '2026-07-08T06:31:03.991354+00:00'
+verified_by: human
