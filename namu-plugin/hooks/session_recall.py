@@ -23,6 +23,10 @@ def _ensure_db(cfg) -> None:
 
 def main() -> None:
     try:
+        # 네이티브 Windows 파이프 stdout은 cp949라 이모지 출력 시 UnicodeEncodeError로
+        # 무음 삼켜짐(#16 statusLine, session_inject.py와 동일 패턴)
+        sys.stdout.reconfigure(encoding="utf-8")
+
         import config as cfg
         from session_context import build_context_markdown
 
