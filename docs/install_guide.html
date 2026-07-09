@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAMU 설치 가이드</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f5f6f8;
+    --bg-card: #fbfbfd;
+    --fg: #1c1f26;
+    --fg-soft: #565d6b;
+    --accent: #2b6cb0;
+    --accent-soft: #e7f0fb;
+    --border: #dfe3ea;
+    --code-bg: #1e2430;
+    --code-fg: #eef1f6;
+    --ok: #1a7f4b;
+    --warn: #a15c00;
+    --shadow: 0 1px 3px rgba(20, 24, 33, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161c;
+      --bg-soft: #1b1e26;
+      --bg-card: #1f222b;
+      --fg: #eaecf1;
+      --fg-soft: #a6acba;
+      --accent: #6fa8dc;
+      --accent-soft: #1e2c3d;
+      --border: #333947;
+      --code-bg: #0d0f14;
+      --code-fg: #e6e9f0;
+      --ok: #4fd18a;
+      --warn: #e0a94e;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.7;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 20px 96px;
+  }
+  header.hero {
+    padding: 8px 0 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  header.hero h1 {
+    font-size: 1.9rem;
+    margin: 0 0 8px;
+  }
+  header.hero p {
+    color: var(--fg-soft);
+    margin: 0;
+    font-size: 1rem;
+  }
+  h2 {
+    font-size: 1.35rem;
+    margin-top: 3em;
+    padding-top: 0.4em;
+    border-top: 1px solid var(--border);
+  }
+  h2:first-of-type { border-top: none; }
+  h3 {
+    font-size: 1.05rem;
+    margin-top: 1.8em;
+  }
+  a { color: var(--accent); }
+  p { color: var(--fg); }
+  .muted { color: var(--fg-soft); }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    background: var(--accent-soft);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+  }
+  pre {
+    position: relative;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 14px 44px 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.88rem;
+    box-shadow: var(--shadow);
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    white-space: pre;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 0.72rem;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08);
+    color: var(--code-fg);
+    cursor: pointer;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.18); }
+
+  /* 목차 */
+  nav.toc {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 8px;
+  }
+  nav.toc h2 {
+    margin: 0 0 10px;
+    padding: 0;
+    border: none;
+    font-size: 1.05rem;
+  }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 1.2em;
+  }
+  nav.toc li { margin: 4px 0; }
+  nav.toc a { text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  /* 체크리스트 */
+  .checklist {
+    list-style: none;
+    padding: 0;
+    margin: 1.2em 0;
+  }
+  .checklist li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .checklist input[type="checkbox"] {
+    margin-top: 4px;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    accent-color: var(--accent);
+  }
+  .checklist .label { font-weight: 600; }
+  .checklist .how { color: var(--fg-soft); font-size: 0.92rem; margin-top: 2px; }
+
+  /* 단계 카드 */
+  .step {
+    display: flex;
+    gap: 14px;
+    margin: 1.4em 0;
+    align-items: flex-start;
+  }
+  .step .num {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .step .body { flex: 1; min-width: 0; }
+  .step .body h4 {
+    margin: 4px 0 6px;
+    font-size: 1.02rem;
+  }
+
+  /* 카드/박스 */
+  .box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 1.2em 0;
+  }
+  .box.tip {
+    border-left: 4px solid var(--ok);
+  }
+  .box.tip strong { color: var(--ok); }
+  .box.note {
+    border-left: 4px solid var(--accent);
+  }
+
+  details {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 14px 10px;
+    margin: 10px 0;
+    background: var(--bg-card);
+  }
+  details[open] { padding-bottom: 14px; }
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 10px 0;
+    list-style: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "▸ ";
+    color: var(--accent);
+  }
+  details[open] summary::before { content: "▾ "; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--bg-soft); }
+
+  .faq-symptom { color: var(--warn); font-weight: 600; }
+  .faq-block { margin: 8px 0; }
+  .faq-block strong { display: inline-block; min-width: 3.6em; }
+
+  /* 다이어그램 */
+  .diagram-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 1.4em 0;
+  }
+  svg text { fill: var(--fg); font-family: inherit; }
+  svg .soft { fill: var(--fg-soft); }
+  svg rect.box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+  svg rect.box2 { fill: var(--bg-soft); stroke: var(--border); stroke-width: 1.4; }
+  svg line, svg path.arrow { stroke: var(--fg-soft); stroke-width: 1.6; fill: none; }
+  svg polygon.arrowhead { fill: var(--fg-soft); }
+
+  footer {
+    margin-top: 4em;
+    padding-top: 1.4em;
+    border-top: 1px solid var(--border);
+    color: var(--fg-soft);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 480px) {
+    header.hero h1 { font-size: 1.5rem; }
+    .step { gap: 10px; }
+    .step .num { width: 28px; height: 28px; font-size: 0.9rem; }
+    pre { font-size: 0.78rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>NAMU 설치 가이드</h1>
+    <p>내 컴퓨터에 NAMU를 설치해서 쓰는 방법을 처음부터 끝까지 안내합니다. 개발자가 아니어도 그대로 따라 하시면 됩니다.</p>
+  </header>
+
+  <nav class="toc" aria-label="목차">
+    <h2>목차</h2>
+    <ol>
+      <li><a href="#intro">이게 뭔가요?</a></li>
+      <li><a href="#checklist">시작 전 준비물 체크리스트</a></li>
+      <li><a href="#install-cc">설치하기 — Claude Code (권장)</a></li>
+      <li><a href="#install-agy">설치하기 — agy</a></li>
+      <li><a href="#verify">잘 설치됐는지 확인하기</a></li>
+      <li><a href="#update">업데이트할 때</a></li>
+      <li><a href="#troubleshoot">문제가 생겼어요</a></li>
+      <li><a href="#more">더 알아보기</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1. 이게 뭔가요 -->
+  <section id="intro">
+    <h2>1. 이게 뭔가요?</h2>
+    <p>
+      NAMU는 <strong>AI 비서(Claude Code, agy 같은 프로그램)에 끼워 넣는 "기억 장치"</strong>라고 생각하시면 쉽습니다.
+      원래 AI 비서는 대화가 끝나면 그 내용을 대부분 잊어버립니다. NAMU를 설치하면, AI가 작업하면서 얻은 교훈과
+      진행 중이던 작업 상태를 옆에 붙은 기억 장치에 계속 쌓아 두고, 다음에 다시 켰을 때도 그 기억을 불러와 씁니다.
+    </p>
+    <p>
+      <strong>플러그인(plugin)</strong>이란, 프로그램 본체를 건드리지 않고 나중에 끼워 넣을 수 있는 부품을 말합니다.
+      NAMU도 Claude Code나 agy에 "설치"하는 방식으로 끼워 넣습니다.
+    </p>
+
+    <h3>설치형 vs clone 개발형</h3>
+    <p>
+      NAMU를 쓰는 방법은 두 가지입니다. 이 문서는 <strong>①번, 설치형</strong>을 다룹니다.
+    </p>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 640 300" role="img" aria-label="설치형과 clone 개발형 구조 비교 다이어그램" width="100%" height="auto">
+        <!-- 왼쪽: 설치형 -->
+        <text x="20" y="26" font-size="15" font-weight="700">① 설치형 (이 문서)</text>
+        <rect class="box2" x="20" y="40" width="260" height="42" rx="8"></rect>
+        <text x="150" y="66" font-size="12.5" text-anchor="middle">내 프로젝트 폴더</text>
+
+        <path class="arrow" d="M150 82 L150 108"></path>
+        <polygon class="arrowhead" points="150,116 144,104 156,104"></polygon>
+        <text x="160" y="102" font-size="11" class="soft">플러그인 설치</text>
+
+        <rect class="box" x="20" y="118" width="260" height="42" rx="8"></rect>
+        <text x="150" y="144" font-size="12.5" text-anchor="middle">namu-plugin (복사본)</text>
+
+        <path class="arrow" d="M150 160 L150 186"></path>
+        <polygon class="arrowhead" points="150,194 144,182 156,182"></polygon>
+
+        <rect class="box2" x="20" y="196" width="260" height="46" rx="8"></rect>
+        <text x="150" y="220" font-size="12.5" text-anchor="middle">기억 저장소</text>
+        <text x="150" y="235" font-size="11" text-anchor="middle" class="soft">~/.namu (기본) 또는 NAMU_HOME</text>
+
+        <!-- 오른쪽: clone 개발형 -->
+        <text x="360" y="26" font-size="15" font-weight="700">② clone 개발형</text>
+        <rect class="box2" x="360" y="40" width="260" height="202" rx="8"></rect>
+        <text x="490" y="66" font-size="12.5" text-anchor="middle">NAMU repo (그대로 clone)</text>
+
+        <rect class="box" x="380" y="86" width="220" height="42" rx="8"></rect>
+        <text x="490" y="112" font-size="12" text-anchor="middle">namu-plugin/ (원본)</text>
+
+        <rect class="box" x="380" y="140" width="220" height="42" rx="8"></rect>
+        <text x="490" y="166" font-size="12" text-anchor="middle">memory/ (기억, repo 안)</text>
+
+        <text x="490" y="212" font-size="10.5" text-anchor="middle" class="soft">repo 폴더 자체가</text>
+        <text x="490" y="226" font-size="10.5" text-anchor="middle" class="soft">기억 저장소 위치</text>
+      </svg>
+    </div>
+    <ul>
+      <li><strong>설치형</strong> — NAMU repo와 무관한 <em>내 프로젝트</em>에 NAMU를 플러그인으로 설치해서 씁니다.
+        설치되는 것은 원본의 <strong>복사본</strong>이며, 기억은 기본적으로 <code>~/.namu</code>라는 별도 폴더에 저장됩니다.
+        이 문서가 안내하는 방식입니다.</li>
+      <li><strong>clone 개발형</strong> — NAMU repo 자체를 내려받아(clone) 그 안에서 직접 개발하며 씁니다. NAMU를 직접 고치고 싶은
+        개발자용이며, 이 문서의 대상이 아닙니다.</li>
+    </ul>
+    <div class="box note">
+      <strong>기억은 어디에 저장되나요?</strong>
+      <p style="margin-bottom:0">
+        특별히 설정하지 않으면 내 컴퓨터의 <code>~/.namu</code> 폴더(사용자 홈 폴더 아래 <code>.namu</code>)에 저장됩니다.
+        이 폴더는 미리 만들어 둘 필요 없이, NAMU가 처음 무언가를 기억할 때 자동으로 생깁니다.
+        저장 위치를 바꾸고 싶다면 <code>NAMU_HOME</code>이라는 환경변수(프로그램 실행 전에 미리 정해 두는 값)를 지정하면 됩니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- 2. 준비물 -->
+  <section id="checklist">
+    <h2>2. 시작 전 준비물 체크리스트</h2>
+    <p>아래 항목을 하나씩 확인하고 넘어가세요. 하나라도 빠지면 설치 중간에 막힐 수 있습니다.</p>
+    <ul class="checklist">
+      <li>
+        <input type="checkbox" id="chk1">
+        <label for="chk1">
+          <div class="label">GitHub 계정과 repo 초대</div>
+          <div class="how">NAMU repo(<code>onmiso-hash/namu-agent</code>)는 비공개(private) 저장소입니다. 저장소 소유자에게
+            <strong>collaborator(공동작업자)</strong>로 초대받아 GitHub 계정으로 수락해야 합니다. 확인법: GitHub 웹사이트에서 해당 repo
+            페이지가 로그인 상태로 열리는지 확인하세요.</div>
+        </label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk2">
+        <label for="chk2">
+          <div class="label">git 자격증명(credential) 설정</div>
+          <div class="how">위에서 초대받은 GitHub 계정으로, 내 컴퓨터의 git이 로그인돼 있어야 합니다(HTTPS credential manager 등).
+            확인법: 터미널에서 <code>git clone https://github.com/onmiso-hash/namu-agent</code>를 한 번 시도해서 인증 없이(또는 로그인 창을 거쳐)
+            성공하는지 봅니다. 성공했다면 만들어진 폴더는 지워도 됩니다 — 확인용입니다.</div>
+        </label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk3">
+        <label for="chk3">
+          <div class="label">Python 3.12 이상</div>
+          <div class="how">확인법: 터미널에 <code>python --version</code>을 입력합니다. <code>Python 3.12.x</code> 이상이 나오면 통과입니다.</div>
+        </label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk4">
+        <label for="chk4">
+          <div class="label">uv (파이썬 패키지 실행 도구)</div>
+          <div class="how">NAMU의 메모리 서버는 uv를 통해 필요한 것들을 자동으로 준비하므로, 따로 pip install을 할 필요는 없습니다.
+            확인법: 터미널에 <code>uv --version</code>을 입력해 버전이 나오는지 봅니다. 없다면
+            <a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">공식 설치 문서</a>를 참고해 먼저 설치하세요.</div>
+        </label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk5">
+        <label for="chk5">
+          <div class="label">Claude Code 또는 agy 중 하나</div>
+          <div class="how">NAMU는 이 둘 중 하나(또는 둘 다)의 플러그인으로 설치합니다. 둘 다 없다면 먼저 둘 중 하나를 설치해 두세요.
+            확인법: 터미널에 <code>claude --version</code>(Claude Code) 또는 <code>agy --version</code>(agy)을 입력해 버전이 나오는지 봅니다.</div>
+        </label>
+      </li>
+    </ul>
+  </section>
+
+  <!-- 3. Claude Code 설치 -->
+  <section id="install-cc">
+    <h2>3. 설치하기 — Claude Code (권장)</h2>
+    <p>
+      가장 간단한 방법은 GitHub 저장소를 <strong>원격 마켓플레이스</strong>(플러그인을 모아 둔 등록소)로 등록하고
+      바로 설치하는 것입니다. 명령 두 줄이면 끝납니다.
+    </p>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <h4>마켓플레이스 등록</h4>
+        <p class="muted">터미널(명령을 입력하는 검은 화면)에 아래 명령을 입력하고 엔터를 누릅니다.</p>
+        <pre><code>claude plugin marketplace add onmiso-hash/namu-agent</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h4>NAMU 플러그인 설치</h4>
+        <p class="muted">이어서 아래 명령을 입력합니다.</p>
+        <pre><code>claude plugin install namu@namu-marketplace</code></pre>
+        <p class="muted">
+          Claude Code 대화 세션(채팅 창) 안에서라면 <code>/plugin marketplace add onmiso-hash/namu-agent</code>로 시작해도 동일하게 동작합니다.
+        </p>
+      </div>
+    </div>
+
+    <div class="box tip">
+      <strong>참고</strong>
+      <p style="margin-bottom:0">
+        repo가 비공개(private)이므로, 앞서 체크리스트에서 확인한 <strong>초대받은 GitHub 계정 + git 자격증명</strong>이
+        이미 준비돼 있어야 이 단계가 성공합니다. 설치 범위는 기본적으로 "이 컴퓨터를 쓰는 나"(user 스코프)입니다.
+      </p>
+    </div>
+
+    <details>
+      <summary>내 컴퓨터에 이미 내려받은 폴더로 설치하고 싶다면 (로컬 directory 방식)</summary>
+      <p>
+        NAMU repo를 이미 clone해 뒀거나, 개발자에게서 <code>namu-plugin</code> 폴더를 직접 전달받은 경우 이 방식을 쓸 수 있습니다.
+        Claude Code 대화 세션 안에서 아래 세 줄을 순서대로 입력합니다. <code>/path/to/namu-plugin</code> 자리에는 실제
+        <code>namu-plugin</code> 폴더의 경로를 넣습니다.
+      </p>
+      <pre><code>/plugin marketplace add /path/to/namu-plugin
+/plugin marketplace update
+/reload-plugins</code></pre>
+      <p class="muted">
+        이 방식은 폴더의 내용을 실시간으로 그대로 참조합니다. 그래서 나중에 그 폴더의 내용이 최신화되면(예: <code>git pull</code>),
+        Claude Code를 다시 시작하기만 해도 반영됩니다 — 재설치가 필요 없습니다.
+      </p>
+    </details>
+  </section>
+
+  <!-- 4. agy 설치 -->
+  <section id="install-agy">
+    <h2>4. 설치하기 — agy</h2>
+    <p>
+      agy(Antigravity)에는 아래 명령으로 설치합니다. <code>&lt;namu-plugin 경로&gt;</code> 자리에는 <code>namu-plugin</code>
+      폴더의 실제 경로를 넣습니다.
+    </p>
+    <pre><code>agy plugin install &lt;namu-plugin 경로&gt;</code></pre>
+
+    <p>
+      더 편하고 안전한 방법은, 설치부터 재설치·업데이트까지 한 번에 처리해 주는 스크립트를 쓰는 것입니다.
+      터미널에서 NAMU repo(또는 <code>namu-plugin</code> 폴더가 있는 위치) 기준으로 아래를 실행하세요.
+    </p>
+    <pre><code>namu-plugin/scripts/agy_reinstall.ps1</code></pre>
+    <p class="muted">
+      이 스크립트는 기존 설치를 먼저 깨끗이 지운 뒤(agy의 설치 방식은 지운 파일도 남기는 "병합" 방식이라, 완전히 새로 하려면
+      먼저 지워야 합니다) 다시 설치하고, 경로 설정까지 즉시 손봐 줍니다.
+    </p>
+
+    <div class="box tip">
+      <strong>안심하세요</strong>
+      <p style="margin-bottom:0">
+        재설치 직후 <strong>첫 세션</strong>에서는 <code>/mcp</code> 상태가 조금 이상하게 보일 수 있습니다. 이건 정상입니다.
+        agy가 실행 시점에 경로를 자동으로 손보는 절차가 아직 한 번도 돌지 않아서 그런 것이고, 위 스크립트가 이미 그 부분까지
+        처리해 두었기 때문에 세션을 새로 시작하면 곧 정상으로 보입니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- 5. 확인 -->
+  <section id="verify">
+    <h2>5. 잘 설치됐는지 확인하기</h2>
+
+    <h3>Claude Code</h3>
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <p>터미널에 아래 명령을 입력합니다.</p>
+        <pre><code>claude mcp list</code></pre>
+        <p class="muted">목록에 <code>plugin:namu:namu-memory</code> 항목이 <strong>Connected</strong>(연결됨) 상태로 보이면 성공입니다.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <p>
+          새 대화 세션을 열어 화면 하단 상태줄에 NAMU 관련 정보가 표시되는지, 대화창에서 <code>/mcp</code>로 도구 목록을 열었을 때
+          <code>namu_record</code> · <code>namu_recall</code> · <code>namu_search</code> 3개의 도구가 보이는지 확인하세요.
+        </p>
+      </div>
+    </div>
+
+    <h3>agy</h3>
+    <p>
+      새 세션을 열고 <code>/mcp</code> 상태를 확인합니다. 앞서 안내한 대로, 재설치 직후 첫 세션에서만 이상하게 보일 수 있고
+      그다음 세션부터는 정상으로 보여야 합니다.
+    </p>
+  </section>
+
+  <!-- 6. 업데이트 -->
+  <section id="update">
+    <h2>6. 업데이트할 때</h2>
+    <p>NAMU 코드가 새로 바뀌었을 때 반영하는 방법은 <strong>어떻게 설치했는지에 따라 다릅니다.</strong></p>
+    <table>
+      <thead>
+        <tr>
+          <th>설치 방식</th>
+          <th>Claude Code</th>
+          <th>agy</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>로컬 폴더(directory) 방식</td>
+          <td><code>git pull</code>(또는 소스 폴더 최신화) 후 Claude Code 재시작만 하면 됩니다. 재설치는 필요 없습니다.</td>
+          <td><code>namu-plugin/scripts/agy_reinstall.ps1</code> 실행</td>
+        </tr>
+        <tr>
+          <td>GitHub 원격 설치</td>
+          <td>
+            <pre><code>claude plugin update namu@namu-marketplace</code></pre>
+            실행 후 Claude Code 재시작. <strong><code>이름@마켓플레이스</code> 전체 이름을 꼭 써야 합니다</strong> — 짧게
+            <code>update namu</code>만 쓰면 "찾을 수 없음(not found)" 오류가 납니다.
+          </td>
+          <td><code>namu-plugin/scripts/agy_reinstall.ps1</code> 실행</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted">
+      기억해 두면 좋은 구분: 로컬 폴더 방식은 원본 폴더를 "실시간으로" 그대로 보고 실행하는 방식이라 폴더만 최신화하면 끝나지만,
+      GitHub 원격 설치는 설치 시점의 내용을 "복사"해서 실행하는 방식이라 명시적으로 업데이트 명령을 내려야 반영됩니다.
+    </p>
+  </section>
+
+  <!-- 7. 문제 해결 -->
+  <section id="troubleshoot">
+    <h2>7. 문제가 생겼어요</h2>
+    <p>자주 겪는 증상을 모았습니다. 해당하는 항목을 눌러 펼쳐 보세요.</p>
+
+    <details>
+      <summary><span class="faq-symptom">세션을 시작해도 이전 작업 상태나 교훈이 안 떠요</span></summary>
+      <div class="faq-block"><strong>원인</strong> Windows 환경에서 세션이 시작될 때 저장된 내용을 자동으로 불러오는 과정이
+        한글·이모지가 섞인 내용을 화면에 표시하려다 인코딩 문제로 조용히 실패하는 오래된 버그입니다(버전 0.1.5 이하에서 발생).
+        이 실패가 겉으로 오류 없이 조용히 일어나기 때문에, 그냥 "안 뜨네" 정도로만 보입니다.</div>
+      <div class="faq-block"><strong>해결</strong> NAMU를 <strong>0.1.6 이상</strong>으로 업데이트하세요(위 6절 참고). 이 버전부터
+        해당 문제가 해소됐습니다.</div>
+    </details>
+
+    <details>
+      <summary><span class="faq-symptom">업데이트했는데 반영이 안 돼요</span></summary>
+      <div class="faq-block"><strong>원인</strong> 설치 방식에 따라 "업데이트"의 의미가 다릅니다. 로컬 폴더 방식은 원본을
+        실시간으로 참조하지만, GitHub 원격 설치는 설치 당시 내용을 복사해 둔 것을 실행하는 방식이라, 원본만 최신화해서는
+        복사본이 갱신되지 않습니다.</div>
+      <div class="faq-block"><strong>해결</strong> 6절 표에서 내 설치 방식에 맞는 절차를 따르세요. 특히 GitHub 원격 설치는
+        <code>claude plugin update namu@namu-marketplace</code>처럼 <strong>이름@마켓플레이스 전체 이름</strong>을 반드시 써야
+        합니다.</div>
+    </details>
+
+    <details>
+      <summary><span class="faq-symptom">agy에서 /mcp 상태가 이상해요</span></summary>
+      <div class="faq-block"><strong>원인</strong> agy는 실행할 때마다 필요한 경로를 자동으로 손보는데, 재설치 직후
+        <strong>첫 세션</strong>에서는 이 손보는 과정이 아직 한 번도 돌지 않아 일시적으로 이상하게 보일 수 있습니다. 정상적인
+        현상입니다.</div>
+      <div class="faq-block"><strong>해결</strong> <code>namu-plugin/scripts/agy_reinstall.ps1</code>을 실행하면 설치 직후 바로
+        경로를 교정해 주므로 첫 세션부터 정상으로 보입니다. 이미 실행했는데도 계속 이상하다면 스크립트를 다시 한번
+        실행해 보세요.</div>
+    </details>
+
+    <details>
+      <summary><span class="faq-symptom">agy에서 자동화 스크립트(비대화 모드)로 NAMU를 쓰고 싶어요</span></summary>
+      <div class="faq-block"><strong>원인</strong> agy의 비대화(자동, <code>-p</code>) 모드는 NAMU 같은 MCP(메모리) 도구가
+        설정돼 있으면 세션 전체가 멈춰 버리는 현재 알려진 제한입니다.</div>
+      <div class="faq-block"><strong>해결</strong> 아직 방법이 없습니다. agy에서 NAMU는 <strong>대화형 세션</strong>에서만
+        정상 동작합니다. 자동화가 꼭 필요하다면 Claude Code 쪽을 이용해 주세요.</div>
+    </details>
+
+    <details>
+      <summary><span class="faq-symptom">재설치했는데 지웠던 파일이 그대로 남아 있어요 (agy)</span></summary>
+      <div class="faq-block"><strong>원인</strong> agy의 <code>plugin install</code>은 기존 설치 위에 덧씌우는 방식이라, 원본에서
+        삭제된 파일이 설치본에는 그대로 남습니다.</div>
+      <div class="faq-block"><strong>해결</strong> 반드시 먼저 지운(<code>uninstall</code>) 뒤 다시 설치해야 완전히 깨끗해집니다.
+        <code>namu-plugin/scripts/agy_reinstall.ps1</code>이 이 순서를 자동으로 처리해 주니, 이 스크립트를 쓰는 것이 가장 안전합니다.</div>
+    </details>
+
+    <details>
+      <summary><span class="faq-symptom">마켓플레이스를 다시 등록했더니 다른 소스로 바뀌어 버렸어요</span></summary>
+      <div class="faq-block"><strong>원인</strong> 이미 등록된 것과 같은 이름(<code>namu-marketplace</code>)으로 다시
+        <code>marketplace add</code>를 실행하면, 오류 없이 조용히 기존 등록이 새 소스로 교체됩니다.</div>
+      <div class="faq-block"><strong>해결</strong> 같은 이름으로 두 번 등록하지 않도록 주의하세요. 실수로 바뀌었다면 원하는
+        방식(원격 또는 로컬 폴더)으로 다시 <code>marketplace add</code>를 실행해 원하는 소스로 되돌리면 됩니다.</div>
+    </details>
+  </section>
+
+  <!-- 8. 더 알아보기 -->
+  <section id="more">
+    <h2>8. 더 알아보기</h2>
+    <p>
+      NAMU가 실제 작업을 시킬 때 부르는 일꾼(워커, 서브에이전트)이 있습니다. 특별한 설정 없이도 기본값으로 잘 동작하므로,
+      대부분의 설치형 사용자는 아래 내용을 몰라도 됩니다.
+    </p>
+    <ul>
+      <li>워커 설정 파일(<code>namu_workers.yaml</code>)이 <strong>없으면</strong> — 지금 쓰고 있는 프로그램(Claude Code 또는
+        agy) 자체의 기본 서브에이전트를 그대로 씁니다. 추가 설정도 추가 비용도 없습니다.</li>
+      <li>이 파일이 <strong>있으면</strong> — 워커마다 어떤 엔진을 쓸지 지정할 수 있습니다. 다만 지금 실제로 동작하는 값은
+        <code>native</code>(현재 프로그램의 기본 서브에이전트)뿐입니다.</li>
+      <li>워커가 실제로 쓰는 AI 모델을 바꾸고 싶다면, 이 yaml 파일이 아니라 서브에이전트 정의 파일 안의 <code>model:</code>
+        값을 고쳐야 합니다.</li>
+    </ul>
+    <p>
+      더 자세한 내용(개발 배경, 실측 기록 포함)은 <a href="install_guide.md">install_guide.md</a>를 참고하세요.
+    </p>
+  </section>
+
+  <footer>
+    NAMU 설치 가이드 · <code>docs/install_guide.md</code>의 내용을 바탕으로 정리한 사용자용 안내서입니다.
+  </footer>
+</div>
+
+<script>
+(function () {
+  try {
+    var blocks = document.querySelectorAll('pre');
+    blocks.forEach(function (pre) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copy-btn';
+      btn.textContent = '복사';
+      btn.addEventListener('click', function () {
+        var code = pre.querySelector('code');
+        var text = code ? code.textContent : pre.textContent;
+        var done = function () {
+          btn.textContent = '복사됨';
+          setTimeout(function () { btn.textContent = '복사'; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {});
+        } else {
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            done();
+          } catch (e) {}
+        }
+      });
+      pre.appendChild(btn);
+    });
+  } catch (e) {}
+})();
+</script>
+
+</body>
+</html>
