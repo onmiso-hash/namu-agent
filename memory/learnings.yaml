@@ -670,3 +670,51 @@ task: 'namu-24-user-guide: 설치형 마무리 + 일반 사용자용 HTML 가이
 task_type: code
 timestamp: '2026-07-09T01:26:28.306022+00:00'
 verified_by: human
+---
+id: 01KX3CD0ZYWB6FWFPFQD7H4EF5
+machine: hp
+outcome: success
+reason: '두 설계가 겹쳐 침묵이 만들어진다: ① 브리핑 훅(session_recall.py)은 task·교훈이 0건이면 md=None으로 아무것도
+  출력하지 않음(설계상 침묵) ② CC 2.1.0+는 SessionStart 훅 출력을 화면에 안 보여주고 AI 컨텍스트에만 주입(무화면 사양).
+  신규 사용자는 이를 설치 실패로 오인하기 쉬우므로 검증법은 (a) /mcp에서 plugin:namu:namu-memory ✔ connected
+  · 3 tools 확인 (b) AI에게 recall 요청 → ''비어 있음'' 응답 자체가 정상 동작의 증거. 디스크 물증으로 침묵과 고장을 구분할
+  수 있다: ~/.namu/db는 첫 MCP 서버 부팅만으로 생성되므로(첫 record 시점이 아님 — 기존 가이드 3절 서술은 부정확해 교정)
+  폴더 존재=경로·서버 정상. 개선 후보: 신규 환경 환영 브리핑(namu-26 이월)'
+tags:
+- install
+- onboarding
+- session-briefing
+- usage-guide
+- namu-25
+task: 'namu-25 실측: 설치형(원격 marketplace) 신규 환경의 첫 세션은 NAMU 존재감이 0 — 소비자 관점 설치 검증법 확립.
+  hp에서 onnamu-project에 0.1.7 원격 설치 후 라이브 관찰: 브리핑 없음·statusLine만(개발기기 설정 덕) 표시. 사용
+  가이드(docs/usage_guide.md) 1절로 문서화'
+task_type: doc
+timestamp: '2026-07-09T12:07:22.878713+00:00'
+verified_by: human
+---
+id: 01KX3CDRKXRPF6D6FFKJV1RGKK
+machine: hp
+outcome: partial
+reason: '경로·정체성 규칙의 단일 출처가 깨져 있어서다. config.py의 3분기(NAMU_HOME→repo→~/.namu)는 코드지만,
+  SKILL.md는 작업 루트를 셸 폴백 표기 `${NAMU_HOME:-.}`로 안내해 NAMU_HOME 미설정 소비자에게 cwd로 떨어지고, statusline
+  _log_path도 ''NAMU_HOME 없으면 ws'' 자체 규칙을 씀 — 문서 속 경로 규칙과 스크립트별 자체 폴백은 코드의 분기와 조용히
+  어긋난다. machine 분열도 같은 패턴: 세션 환경변수에 NAMU_MACHINE=hp가 실재했는데(실증) SKILL.md가 machine을
+  ''.env에서 주입''이라고만 안내해 세션 AI가 .env 부재→unknown 폴백, 반면 MCP 서버 프로세스는 env를 읽어 hp를 찍음.
+  교훈: 데이터 루트와 기기 정체성 같은 시스템 불변식은 config 한 곳에서만 결정되게 하고, 스킬 문서·보조 스크립트는 그 결정을 재구현하지
+  말고 참조만 해야 한다. 부수 발견: tasks/가 사용자 프로젝트에 남는 건 그 프로젝트 git으로 공유된다는 장점도 있어 일원화 방향은 설계
+  결정 필요(namu-26 이월, .env 우회책은 배포 안 함 — 근본은 스킬 문구 수정)'
+tags:
+- data-root
+- config
+- skill
+- namu-machine
+- install
+- namu-25
+- namu-26
+task: 'namu-25 실측: 설치형 환경 데이터 루트 3분열 + machine 정체성 분열 발견 — 같은 /namu-task 세션에서 교훈은
+  ~/.namu/memory에, 작업 상태 파일은 사용자 프로젝트 cwd(tasks/)에, statusline 렌더 로그는 ws/db에 생성됐고,
+  교훈 record에는 machine=hp가 찍히는데 task 파일에는 unknown이 찍힘 (onnamu-project 라이브 물증)'
+task_type: analysis
+timestamp: '2026-07-09T12:07:47.069174+00:00'
+verified_by: human

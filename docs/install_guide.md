@@ -2,7 +2,7 @@
 
 > 📅 2026-07-08 · docs/deploy_design.md(#20) 실측 결과를 사용자 관점으로 정리한 문서.
 
-이 문서는 NAMU repo를 clone해 개발하는 게 아니라, **자기 임의 프로젝트에 NAMU를 플러그인으로 설치해 쓰려는 사용자**를 위한 것이다. clone 기반 개발 환경(repo 자체가 NAMU_HOME)을 원한다면 루트 [`README.md`](../README.md)의 셋업 가이드를 따를 것.
+이 문서는 NAMU repo를 clone해 개발하는 게 아니라, **자기 임의 프로젝트에 NAMU를 플러그인으로 설치해 쓰려는 사용자**를 위한 것이다. clone 기반 개발 환경(repo 자체가 NAMU_HOME)을 원한다면 루트 [`README.md`](../README.md)의 셋업 가이드를 따를 것. 설치를 마쳤다면 다음 단계로 [사용설명서 — 설치 후 첫 하루](usage_guide.md)를 볼 것.
 
 > **독자 전제** — NAMU repo(`onmiso-hash/namu-agent`)는 현재 **private**이다(공개 전환은 추후 별도 결정). 이 문서를 따라 설치할 수 있는 사람은 repo 소유자에게 **collaborator로 초대받은 GitHub 계정**을 갖고 있고, 그 계정으로 **git 자격증명**(HTTPS credential manager 등)이 로컬에 설정돼 있어야 한다. 아래 4절의 두 설치 경로 모두 이 전제가 선행된다.
 
