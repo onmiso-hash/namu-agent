@@ -12,16 +12,30 @@
     을 순서대로 실행해, 재설치 직후 첫 세션부터 MCP가 정상 동작하도록 한다.
 
 .PARAMETER PluginSource
-    설치할 namu-plugin 소스 경로. 기본값은 이 스크립트의 상위 폴더(repo root) 밑의 namu-plugin.
+    설치할 namu-plugin 소스 경로. 기본값은 이 스크립트의 상위 폴더(namu-plugin 폴더 자신).
 
 .NOTES
     Windows PowerShell 5.1 호환. 삼항연산자·`&&` 체이닝 미사용.
 #>
 param(
-    [string]$PluginSource = (Join-Path (Split-Path $PSScriptRoot -Parent) "namu-plugin")
+    [string]$PluginSource = (Split-Path $PSScriptRoot -Parent)
 )
 
 $ErrorActionPreference = "Stop"
+
+# ---- 안전 가드: 설치본(agy 캐시) 안에서 실행되는 것을 방지 ----
+# 설치본에 복사된 이 스크립트를 그 자리에서 실행하면, 1단계 uninstall이
+# 소스 폴더 자신을 지워버려 2단계 install이 실패한다.
+$resolvedSource = (Resolve-Path $PluginSource).Path
+$installedRoot = Join-Path $HOME ".gemini\config\plugins"
+if (Test-Path $installedRoot) {
+    $resolvedInstalledRoot = (Resolve-Path $installedRoot).Path
+    if ($resolvedSource.StartsWith($resolvedInstalledRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "이 스크립트는 agy 설치본 폴더 안에서 실행할 수 없습니다." -ForegroundColor Red
+        Write-Host "원본 namu-plugin 폴더(clone 또는 다운로드본)에서 실행하세요." -ForegroundColor Red
+        exit 1
+    }
+}
 
 # ---- 단계 1: uninstall (미설치 상태여도 계속 진행) ----
 Write-Host "[1/3] agy plugin uninstall namu ..."

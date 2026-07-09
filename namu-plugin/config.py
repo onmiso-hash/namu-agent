@@ -1,4 +1,5 @@
 import os
+import platform
 from pathlib import Path
 
 from dotenv import load_dotenv, find_dotenv
@@ -61,7 +62,20 @@ LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "learnings.yaml"
 NAMU_DB_PATH = NAMU_HOME / "db" / "namu.db"
 
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
-NAMU_MACHINE: str = os.getenv("NAMU_MACHINE", "unknown")
+# 해석 규칙:
+#   1. NAMU_MACHINE 환경변수가 있고 공백 제거 후 비지 않으면 그 값(strip만, 대소문자 유지)
+#   2. 없거나 빈 값이면 platform.node()(호스트명)를 소문자화+strip한 값
+#   3. 그것도 비면 "unknown"
+def _resolve_machine(env_value: str | None) -> str:
+    if env_value is not None and env_value.strip():
+        return env_value.strip()
+    hostname = platform.node().strip().lower()
+    if hostname:
+        return hostname
+    return "unknown"
+
+
+NAMU_MACHINE: str = _resolve_machine(os.getenv("NAMU_MACHINE"))
 
 # 작업 기록
 TASKS_DIR = NAMU_HOME / "tasks"
