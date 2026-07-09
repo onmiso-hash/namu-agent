@@ -8,7 +8,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "namu-plugin"))
 from task_resolve import resolve_active_task
 
 def main() -> None:
-    ws = os.environ.get("NAMU_HOME") or os.getcwd()
+    # tasks는 프로젝트 로컬 저장소(namu-26 이원화) — NAMU_HOME(메모리 루트)과
+    # 무관하게 항상 현재 프로젝트 폴더(cwd) 기준으로 찾는다. statusLine/브리핑
+    # 훅과 동일 규칙(resolve_active_task는 ws만 본다).
+    ws = os.getcwd()
     try:
         t = resolve_active_task(ws)
         if t:

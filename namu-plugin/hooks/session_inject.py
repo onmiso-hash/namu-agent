@@ -111,13 +111,18 @@ def main() -> None:
             except OSError:
                 pass
 
+        # tasks는 프로젝트 로컬 저장소(namu-26 이원화) — 현재 워크스페이스 경로를
+        # project_dir로 넘겨 그 프로젝트의 tasks/를 보게 한다. workspacePaths가 없으면
+        # (위 chdir도 스킵됐으므로) 현재 프로세스 cwd로 폴백한다.
+        project_dir = workspace_paths[0] if workspace_paths else os.getcwd()
+
         import config as cfg
         from session_context import build_context_markdown
 
         _ensure_db(cfg)
 
         with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-            md = build_context_markdown(conn, cfg.NAMU_MACHINE)
+            md = build_context_markdown(conn, cfg.NAMU_MACHINE, project_dir)
 
         if md:
             print(json.dumps({"injectSteps": [{"ephemeralMessage": md}]}, ensure_ascii=False))

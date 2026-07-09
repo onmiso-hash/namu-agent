@@ -4,15 +4,15 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 # NAMU 작업 오케스트레이션
 
-**machine 이름** — `config.py`의 `NAMU_MACHINE` (`.env`에서 주입). 없으면 `unknown`.
+**machine 이름** — `config.py`의 `NAMU_MACHINE`. **환경변수 `NAMU_MACHINE` 또는 호스트명**으로 결정된다(우선순위: 환경변수 → `platform.node()` 호스트명 → `unknown`). `.env` 파일이 없다는 이유만으로 `unknown`으로 찍지 말 것 — 환경변수와 호스트명을 확인하라. `unknown`은 호스트명조차 빌 때의 최후 폴백이다.
 
-**작업 루트** — `${NAMU_HOME:-.}/tasks/` (NAMU_HOME 환경변수가 설정된 경우 그 경로, 미설정 시 현재 디렉토리 기준).
+**작업 루트** — **현재 프로젝트 폴더(cwd) 기준** `tasks/`(`config.py`의 `tasks_dir_for(project_dir)`, 생략 시 `os.getcwd()`). tasks는 메모리(`NAMU_HOME` — 설치형은 `~/.namu`)와 **별개 저장소**다 — `NAMU_HOME`이 설정돼 있어도 tasks 위치에는 영향을 주지 않으며, 그 프로젝트의 git으로 함께 공유된다(프로젝트 종속 데이터라서). 아래 `TASKS_DIR` 표기는 이 규칙(cwd/tasks)을 가리키는 약칭이다.
 
 ---
 
 ## 진입 분기
 
-`/namu-task <slug>` 호출 시 `${NAMU_HOME:-.}/tasks/<slug>/` 존재 여부로 경로가 갈린다.
+`/namu-task <slug>` 호출 시 `TASKS_DIR/<slug>/` 존재 여부로 경로가 갈린다.
 
 ---
 
@@ -22,9 +22,9 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 사용자에게 목적(왜 하는가)·완료조건을 물어본다. 답을 받으면:
 
-- `${NAMU_HOME:-.}/tasks/<slug>/task.md` — 아래 템플릿대로 작성 → 사용자 확인 후 확정
-- `${NAMU_HOME:-.}/tasks/<slug>/context.<machine>.md` — 아래 템플릿으로 초기화
-- `${NAMU_HOME:-.}/tasks/<slug>/log.md` — 아래 템플릿으로 초기화
+- `TASKS_DIR/<slug>/task.md` — 아래 템플릿대로 작성 → 사용자 확인 후 확정
+- `TASKS_DIR/<slug>/context.<machine>.md` — 아래 템플릿으로 초기화
+- `TASKS_DIR/<slug>/log.md` — 아래 템플릿으로 초기화
 
 **2. log `[시작]` 줄 append**
 
@@ -36,7 +36,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **4. 작업 분할** — 코딩 워커에게 넘길 단위로 쪼갠다.
 
-**5. 워커 명단 확인** — `${NAMU_HOME:-.}/namu_workers.yaml`을 읽는다. **파일이 없으면 engine=`native`로 간주하고 그대로 진행한다** (설치형 기본값 — 기본 워커는 현재 엔진의 네이티브 서브에이전트, 별도 설정 불필요). engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
+**5. 워커 명단 확인** — `NAMU_HOME/namu_workers.yaml`을 읽는다. **파일이 없으면 engine=`native`로 간주하고 그대로 진행한다** (설치형 기본값 — 기본 워커는 현재 엔진의 네이티브 서브에이전트, 별도 설정 불필요). engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
 
 - Claude Code: `Agent` 도구. `subagent_type`은 **호출명 폴백 규칙**을 따른다 — 사용 가능한 에이전트 목록에 명단의 `agent` 값(예: `namu-coder`)이 있으면 그대로 쓰고, 없으면 플러그인 네임스페이스 이름 `namu:<agent>`(예: `namu:namu-coder`)를 쓴다. (개발 repo에선 프로젝트 `.claude/agents/`의 비네임스페이스 이름이 우선 존재하고, 설치형에선 플러그인 동봉 정의라 `namu:` 접두사가 강제로 붙기 때문)
 - agy(Antigravity): `invoke_subagent` (`TypeName` = 명단의 `agent` 값 그대로 — agy는 네임스페이스를 붙이지 않는다. 정의는 워크스페이스 `.agents/agents/<agent>/agent.md` 또는 플러그인 설치본 `agents/<agent>/agent.md`에서 자동 로드). 비동기이므로 서브에이전트의 `send_message` 수신까지 대기 후 다음 단계로.
@@ -70,15 +70,15 @@ fail이면 멈추고 사용자에게 보여준다:
 
 **0. 다른 PC 흔적 확인 (안전장치)**
 
-`${NAMU_HOME:-.}/tasks/<slug>/` 안에 `context.<other-machine>.md` (현재 machine이 아닌 파일)나 `log.md` 꼬리가
+`TASKS_DIR/<slug>/` 안에 `context.<other-machine>.md` (현재 machine이 아닌 파일)나 `log.md` 꼬리가
 현재 `context.<machine>.md`보다 더 최신 타임스탬프로 보이면:
 > "다른 PC 작업 흔적 있음 — git pull 했는지 확인하라" 안내 후 **멈춤**.
 
 **1. 상태 복원**
 
-- `${NAMU_HOME:-.}/tasks/<slug>/task.md` → 목적·완료조건 복원
-- `${NAMU_HOME:-.}/tasks/<slug>/context.<machine>.md` → "▶ 다음"부터 읽기 (재진입 지점)
-- `${NAMU_HOME:-.}/tasks/<slug>/log.md` 꼬리(최근 10줄) → 최근 흐름 파악
+- `TASKS_DIR/<slug>/task.md` → 목적·완료조건 복원
+- `TASKS_DIR/<slug>/context.<machine>.md` → "▶ 다음"부터 읽기 (재진입 지점)
+- `TASKS_DIR/<slug>/log.md` 꼬리(최근 10줄) → 최근 흐름 파악
 
 **2. recall (선택)**
 

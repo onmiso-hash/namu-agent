@@ -4,7 +4,6 @@
   - scripts/namu_statusline.py (plain python3) 에서 직접 import
   - session_context.py (uv/namu env) 에서도 여기서 import해 재사용
 """
-import os
 import re
 from pathlib import Path
 
@@ -110,8 +109,12 @@ def find_active_task(tasks_dir: Path) -> tuple[str, str] | None:
 
 
 def resolve_active_task(ws: str) -> tuple[str, str] | None:
-    """statusline용: NAMU_HOME 환경변수(없으면 ws)에서 tasks_dir 계산 후 active task 반환."""
-    namu_home = os.environ.get("NAMU_HOME") or ws
-    if not namu_home:
+    """statusline용: 현재 프로젝트(ws) 기준으로 tasks_dir 계산 후 active task 반환.
+
+    tasks는 프로젝트 로컬 데이터이므로 NAMU_HOME(메모리 루트)과는 무관하게 ws만 본다
+    (NAMU_HOME이 설정돼 있어도 무시 — statusLine은 항상 "지금 이 프로젝트"의 tasks를 본다).
+    ws가 비어있을 때만 탐지 불가로 None을 반환하는 안전 폴백을 둔다.
+    """
+    if not ws:
         return None
-    return find_active_task(Path(namu_home) / "tasks")
+    return find_active_task(Path(ws) / "tasks")

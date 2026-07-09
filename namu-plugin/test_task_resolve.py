@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from task_resolve import _parse_log_ts, find_active_task
+from task_resolve import _parse_log_ts, find_active_task, resolve_active_task
 
 def test_parse_log_ts():
     # 시각 있는 줄
@@ -55,7 +55,40 @@ def test_find_active_no_context_is_active(tmp_path):
 def test_find_active_missing_machine_context_still_found(tmp_path):
     # context.hp.md만 있고, context.samsung.md는 없어도 잡힘
     _make_task(tmp_path, "only-hp", "진행중", "2026-06-29 10:00:00", machine="hp")
-    
+
     res = find_active_task(tmp_path)
     assert res is not None
     assert res[0] == "only-hp"
+
+
+def test_resolve_active_task_uses_ws_tasks_subdir(tmp_path):
+    """resolve_active_task(ws)는 ws/tasks/ 아래에서 찾는다."""
+    _make_task(tmp_path / "tasks", "ws-task", "진행중", "2026-06-29 10:00:00")
+
+    res = resolve_active_task(str(tmp_path))
+    assert res is not None
+    assert res[0] == "ws-task"
+
+
+def test_resolve_active_task_ignores_namu_home_env(monkeypatch, tmp_path):
+    """NAMU_HOME 환경변수가 설정돼 있어도 ws(프로젝트) 기준만 본다(namu-26 이원화).
+
+    이전 동작(NAMU_HOME 우선)이었다면 이 테스트는 실패한다 — NAMU_HOME 아래
+    tasks에 활성 task를 심어 놓고 ws 쪽엔 아무것도 안 둬서, 옛 로직이면
+    NAMU_HOME의 task를 찾고 새 로직이면 None을 반환해야 정상이다.
+    """
+    namu_home = tmp_path / "namu_home"
+    _make_task(namu_home / "tasks", "memory-root-task", "진행중", "2026-06-29 10:00:00")
+
+    ws_dir = tmp_path / "project"
+    ws_dir.mkdir()
+
+    monkeypatch.setenv("NAMU_HOME", str(namu_home))
+
+    res = resolve_active_task(str(ws_dir))
+    assert res is None
+
+
+def test_resolve_active_task_empty_ws_returns_none():
+    """ws가 비어있으면 안전 폴백으로 None."""
+    assert resolve_active_task("") is None

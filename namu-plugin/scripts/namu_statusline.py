@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """NAMU statusline — Claude Code & agy 공용. 한 줄 출력, 표준 라이브러리만.
 
-⚠️ 이 repo 루트 사본은 개발 기기의 글로벌 `~/.claude/settings.json`(git 밖, 절대경로)이
-직접 참조 중이라 이동·삭제 금지. 설치형 사용자용 동봉 사본은
-`namu-plugin/scripts/namu_statusline.py`에 있다(namu-26) — import 경로 계산만 다르고
-나머지 로직은 동일해야 한다. 한쪽을 고치면 반드시 다른 쪽도 맞출 것.
+⚠️ 이 파일은 repo 루트 `scripts/namu_statusline.py`의 동봉용 사본이다(namu-26).
+개발 기기의 글로벌 `~/.claude/settings.json`은 repo 루트 사본의 절대경로를 참조 중이라
+그쪽을 옮기면 깨지므로, 설치형 사용자를 위해 이 경로(`namu-plugin/scripts/`)에
+내용을 복사해 동봉했다. 두 파일은 import 경로 계산(아래 sys.path 라인)만 다르고
+나머지 로직은 동일해야 한다 — 한쪽을 고치면 반드시 다른 쪽도 맞출 것.
 
 관측성: 매 렌더를 NAMU_HOME/db/statusline.log에 남긴다 — statusLine 미동기화
 증상이 재발하면 이 로그와 화면을 대조해 "스크립트가 안 돎(하네스) vs 돌았는데
@@ -18,8 +19,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-# namu-plugin을 path에 추가 — task_resolve는 stdlib only이므로 plain python3로 import 가능
-sys.path.insert(0, str(Path(__file__).parent.parent / "namu-plugin"))
+# 이 파일은 namu-plugin/scripts/ 아래에 있으므로 parent.parent가 이미 namu-plugin이다
+# (repo 루트 scripts/ 버전은 parent.parent가 repo 루트라 "namu-plugin"을 덧붙였다 — 계산 기준이 다름)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from task_resolve import resolve_active_task
 

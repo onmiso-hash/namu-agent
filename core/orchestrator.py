@@ -127,7 +127,7 @@ class Orchestrator:
         *,
         success: bool,
     ) -> None:
-        task_dir = cfg.TASKS_DIR / task_id
+        task_dir = cfg.tasks_dir_for() / task_id
         task_dir.mkdir(parents=True, exist_ok=True)
         finished_at = datetime.now()
         elapsed = (finished_at - started_at).total_seconds()

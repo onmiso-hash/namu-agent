@@ -22,21 +22,41 @@ def _extract_log_tail(log_path: Path, n: int = 5) -> str:
         return ""
 
 
-def find_active_task() -> Path | None:
-    """tasks/ 아래에서 가장 최근에 진행 중인 task 폴더 반환. 없으면 None."""
+def find_active_task(project_dir: str | Path) -> Path | None:
+    """project_dir/tasks/ 아래에서 가장 최근에 진행 중인 task 폴더 반환. 없으면 None.
+
+    tasks는 프로젝트 로컬 저장소(project_dir 기준)이며 메모리(NAMU_HOME)와는 별개다.
+    """
     import config as cfg
 
-    result = _resolve_task(cfg.TASKS_DIR)
+    tasks_dir = cfg.tasks_dir_for(project_dir)
+    result = _resolve_task(tasks_dir)
     if result is None:
         return None
-    return cfg.TASKS_DIR / result[0]
+    return tasks_dir / result[0]
 
 
-def build_context_markdown(conn, machine: str) -> str | None:
-    """세션 컨텍스트 마크다운 조립. 내용이 없으면(task도 교훈도 0) None 반환."""
+_WELCOME_MARKDOWN = (
+    "## 🌳 NAMU 준비됨\n\n"
+    "아직 기록된 작업·교훈이 없습니다 (신규 환경이면 정상입니다).\n\n"
+    "- 설치 확인: `/mcp`에서 `namu-memory`가 connected인지, 또는 recall을 요청해 "
+    "\"비어 있음\" 응답이 오는지 확인하세요.\n"
+    "- `/namu-task`로 첫 작업을 시작할 수 있습니다."
+)
+
+
+def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str | None:
+    """세션 컨텍스트 마크다운 조립.
+
+    project_dir(현재 프로젝트 폴더) 아래 tasks/에서 진행 중 task를 찾는다 — tasks는
+    프로젝트 로컬 저장소라 메모리(conn, NAMU_HOME 기준)와는 저장 위치가 분리돼 있다.
+
+    진행 중 task도 교훈도 0건이면 완전한 침묵(None) 대신 짧은 환영 안내를 반환한다
+    (신규 설치 사용자가 무응답을 "설치 실패"로 오인하는 문제 방지, namu-25/26).
+    """
     import db
 
-    active = find_active_task()
+    active = find_active_task(project_dir)
     parts: list[str] = ["## 🌳 NAMU — 세션 컨텍스트 자동 로딩\n"]
 
     if active:
@@ -73,7 +93,7 @@ def build_context_markdown(conn, machine: str) -> str | None:
     else:
         learnings = db.recall(conn, limit=5)
         if not learnings:
-            return None
+            return _WELCOME_MARKDOWN
 
         parts.append("### 💡 최근 교훈")
         for it in learnings:

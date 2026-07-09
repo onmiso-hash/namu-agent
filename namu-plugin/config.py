@@ -77,8 +77,16 @@ def _resolve_machine(env_value: str | None) -> str:
 
 NAMU_MACHINE: str = _resolve_machine(os.getenv("NAMU_MACHINE"))
 
-# 작업 기록
-TASKS_DIR = NAMU_HOME / "tasks"
+# 작업 기록(tasks) — 메모리(NAMU_HOME)와 저장소를 분리한다.
+# tasks는 프로젝트 종속 데이터라 "실행 시점의 프로젝트 폴더(cwd)" 아래 tasks/에 둔다
+# (그 프로젝트의 git으로 공유됨). 반대로 학습 기억(LEARNINGS_*/NAMU_DB_PATH)은 계속
+# NAMU_HOME(설치형은 ~/.namu 중앙) 기준으로 프로젝트 독립 지식으로 취급한다.
+#
+# 모듈 로드 시점 상수로 고정하면 cwd가 import 시점에 박혀버리므로, 고정 상수 대신
+# 호출자가 프로젝트 경로를 넘기는 헬퍼로 둔다. project_dir 생략 시 os.getcwd() 사용.
+def tasks_dir_for(project_dir: str | os.PathLike | None = None) -> Path:
+    base = Path(project_dir) if project_dir else Path.cwd()
+    return base / "tasks"
 
 # GitHub 동기화 (2단계 이후)
 GITHUB_SYNC_ENABLED: bool = False
