@@ -753,3 +753,33 @@ task: 'namu-26: NAMU 저장소 이원화 — 교훈·db는 ~/.namu 중앙(글로
 task_type: code
 timestamp: '2026-07-09T13:13:03.031832+00:00'
 verified_by: human
+---
+id: 01KX4TRX960V8XTEYPCXPCAC6F
+machine: samsung
+outcome: success
+reason: '핵심 판단 3개. ① 유령 판정을 "마지막 [시작] 이후 구간에 [완료]/[중단] 존재=닫힘"으로 설계한 이유: 마감 후 [정정]
+  같은 후속 append가 있어도(namu-25 실물 사례) 닫힘이 유지되고, 재개는 [시작] append로 표현돼 "log=권위" 원칙과 일치한다
+  — "마지막 줄 태그 검사"로 구현했다면 namu-25가 도로 유령이 됐다. 위임 전 오케스트레이터 사전 조사에서 이 실물 함정을 발견해 테스트
+  케이스로 지시서에 못박은 것이 재실행 0회의 핵심(#24 패턴 재확인). ② 훅 자기검증 라이브 실측 방법론: 훅은 자기 발동 조건(behind)을
+  스스로 만들 수 없으므로 외부에서 조건을 심어야 실환경 증거가 된다 — 무해한 tasks-only 마커 커밋을 push한 뒤 로컬만 reset
+  --hard HEAD~1 하면 잃는 것 0으로 behind가 재현되고, directory 소스 플러그인 코드(워킹트리)는 신버전으로 유지되며,
+  "pull로 마커 커밋이 보이는가" 자체가 성공 판정 기준이 된다(namu-23·26 "라이브만이 실환경 결함을 잡는다" 계보). ③ 함정: 라이브
+  실측 환경 설계는 플러그인 활성 스코프 확인이 전제다 — CC 플러그인이 local 스코프(projectPath=개발 repo 한정)면 클론·타
+  폴더 세션엔 훅·MCP가 아예 로드되지 않아 "기능 미발동"처럼 보이는 무음 무효 실측이 된다(1차 클론 실측이 이것으로 무효 — installed_plugins.json의
+  scope/projectPath가 물증). 검증 대상이 훅이면 "그 폴더에서 훅이 뜨는가"부터 확인할 것. 부수 확인: CC 무화면 사양상 세션
+  시작 직후 AI 선발화는 불가하므로 라이브 판정 기준은 "첫 사용자 메시지에 대한 응답이 경고 보고로 시작하는가"로 잡아야 한다.'
+tags:
+- namu-27
+- session-sync
+- git-behind
+- 유령판정
+- 라이브실측
+- plugin-scope
+task: 'namu-27-session-sync: 세션 시작 자기동기화 — ① git behind 경고(check_git_behind, session_context
+  공용이라 CC·agy 동시 적용, 3초 타임아웃·실패 무음+물증로그·NAMU_GIT_CHECK=0 스위치) ② 캐시 stale 재생성(MCP 도구
+  3종 진입 시+훅 2종) ③ 유령 판정 log 권위화 ④ 마감 task 이월 안내(⏭ 다음 작업 후보). 플러그인 0.1.9. 코더·리뷰어 각
+  1회 통과, behind 클론 헤드리스로 경고·유령차단·이월 3종 동시 실증 후 개발 repo 라이브 실측 PASS(behind 경고→승인 pull→재안내
+  전 사이클)'
+task_type: code
+timestamp: '2026-07-10T01:37:46.790643+00:00'
+verified_by: human
