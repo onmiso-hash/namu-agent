@@ -1,8 +1,8 @@
 # context @ hp — namu-25-usage-guide
-> 🔄 갱신 2026-07-09 21:00 [hp]
+> 🔄 갱신 2026-07-10 [samsung이 유령 정정]
 
 ## ▶ 다음 (한 줄)
-사용자 가이드 검토(검수 게이트) → 통과 시 record·task.md 체크·커밋 승인 → 마감
+(완료)
 
 ## 지금 어디까지
 - 완료조건 ①~⑤ 실질 전부 수행: ①② 실측 완주, ③ 채록 8건, ④ docs/usage_guide.md 신설(+README·install_guide 링크), ⑤ 6절 한계+임시 안내(해법은 namu-26 이월)
