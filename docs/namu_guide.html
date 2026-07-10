@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌳 NAMU 에이전트 시스템 — 쉽게 읽는 안내서</title>
+<style>
+  :root{
+    --bark:#3f3325;          /* 짙은 나무껍질 */
+    --leaf:#3f7d4e;          /* 잎 초록 */
+    --leaf-deep:#2c5a39;
+    --leaf-light:#e8f3ea;
+    --sun:#e0a93b;           /* 햇살 노랑 */
+    --sun-soft:#fbf2dd;
+    --soil:#f7f4ee;          /* 흙빛 배경 */
+    --paper:#fffdf9;
+    --ink:#2a2620;
+    --ink-soft:#6b6358;
+    --line:#e7e0d3;
+    --code-bg:#2b2a26;
+    --blue:#3a6ea5;
+    --blue-soft:#e9f0f7;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,-apple-system,sans-serif;
+    background:var(--soil);
+    color:var(--ink);
+    line-height:1.75;
+    font-size:16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 20px 80px;}
+
+  /* ---------- HERO ---------- */
+  header.hero{
+    background:
+      radial-gradient(1200px 400px at 80% -10%, rgba(224,169,59,.25), transparent 60%),
+      linear-gradient(160deg,var(--leaf-deep),var(--leaf) 70%);
+    color:#fff;
+    padding:64px 20px 56px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero .tree{font-size:64px;line-height:1;filter:drop-shadow(0 6px 10px rgba(0,0,0,.25));}
+  .hero h1{margin:14px 0 6px;font-size:34px;font-weight:800;letter-spacing:-.5px;}
+  .hero .sub{font-size:17px;opacity:.95;font-weight:500;max-width:560px;margin:0 auto;}
+  .hero .meta{margin-top:18px;font-size:13px;opacity:.85;}
+  .hero .badge{
+    display:inline-block;background:rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.35);
+    padding:4px 12px;border-radius:999px;font-size:12.5px;margin:4px 4px 0;
+  }
+
+  /* ---------- TOC ---------- */
+  nav.toc{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:18px 22px;
+    margin:-28px auto 40px;
+    max-width:860px;
+    box-shadow:0 8px 24px rgba(63,51,37,.08);
+    position:relative;
+  }
+  nav.toc h2{margin:0 0 10px;font-size:14px;color:var(--ink-soft);letter-spacing:.5px;font-weight:700;}
+  nav.toc ol{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:8px;}
+  nav.toc a{
+    display:inline-block;text-decoration:none;color:var(--leaf-deep);
+    background:var(--leaf-light);border:1px solid #d4e7d8;
+    padding:6px 13px;border-radius:999px;font-size:13.5px;font-weight:600;
+    transition:.15s;
+  }
+  nav.toc a:hover{background:var(--leaf);color:#fff;}
+
+  /* ---------- SECTIONS ---------- */
+  section{margin:0 0 38px;}
+  .card{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:30px 30px 26px;
+    box-shadow:0 4px 18px rgba(63,51,37,.05);
+  }
+  h2.sec{
+    font-size:24px;font-weight:800;margin:0 0 6px;color:var(--bark);
+    letter-spacing:-.3px;display:flex;align-items:center;gap:10px;
+  }
+  h2.sec .n{
+    flex:0 0 auto;width:34px;height:34px;border-radius:10px;
+    background:var(--leaf);color:#fff;font-size:16px;font-weight:800;
+    display:inline-flex;align-items:center;justify-content:center;
+  }
+  .lead{color:var(--ink-soft);font-size:15px;margin:2px 0 20px;padding-left:44px;}
+  h3{font-size:18px;font-weight:700;margin:26px 0 8px;color:var(--leaf-deep);}
+  p{margin:10px 0;}
+  strong{color:var(--bark);font-weight:700;}
+  em{font-style:normal;background:var(--sun-soft);padding:1px 5px;border-radius:5px;color:#8a6a1f;font-weight:600;}
+
+  /* analogy box */
+  .analogy{
+    background:linear-gradient(135deg,var(--sun-soft),#fff);
+    border:1px solid #f0dfb4;border-left:5px solid var(--sun);
+    border-radius:12px;padding:16px 20px;margin:18px 0;
+  }
+  .analogy .tag{font-size:12px;font-weight:800;color:var(--sun);letter-spacing:.5px;}
+  .analogy p{margin:6px 0 0;}
+
+  /* key insight */
+  .insight{
+    background:var(--leaf-deep);color:#fff;border-radius:14px;
+    padding:20px 24px;margin:20px 0;text-align:center;
+  }
+  .insight .q{font-size:19px;font-weight:800;line-height:1.5;}
+  .insight .small{opacity:.85;font-size:13.5px;margin-top:8px;}
+
+  /* feature grid */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0;}
+  .tile{
+    background:var(--soil);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;
+  }
+  .tile .ico{font-size:24px;}
+  .tile h4{margin:6px 0 4px;font-size:15.5px;color:var(--bark);}
+  .tile p{margin:0;font-size:14px;color:var(--ink-soft);}
+
+  /* layer stack (A/B/C) */
+  .stack{margin:18px 0;}
+  .layer{
+    display:flex;align-items:center;gap:16px;border-radius:12px;
+    padding:16px 20px;margin:8px 0;border:1px solid var(--line);
+  }
+  .layer .lab{
+    flex:0 0 auto;width:46px;height:46px;border-radius:12px;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:20px;font-weight:800;color:#fff;
+  }
+  .layer .body{flex:1;}
+  .layer h4{margin:0 0 2px;font-size:16px;}
+  .layer p{margin:0;font-size:14px;color:var(--ink-soft);}
+  .layer .pill{
+    flex:0 0 auto;font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;
+  }
+  .layA{background:#faf6ef;}    .layA .lab{background:#b0a18c;}
+  .layA .pill{background:#efe7d8;color:#7d6f56;}
+  .layB{background:var(--blue-soft);} .layB .lab{background:var(--blue);}
+  .layB .pill{background:#d4e2f2;color:var(--blue);}
+  .layC{background:var(--leaf-light);border-color:#cfe6d4;} .layC .lab{background:var(--leaf);}
+  .layC .pill{background:#d3ebd9;color:var(--leaf-deep);}
+  .layC{box-shadow:0 0 0 2px rgba(63,125,78,.18);}
+
+  /* memory flow */
+  .flow{
+    background:var(--soil);border:1px dashed #d8cfbe;border-radius:14px;
+    padding:20px;margin:18px 0;
+  }
+  .flow .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;}
+  .chip{
+    background:#fff;border:1px solid var(--line);border-radius:10px;
+    padding:10px 14px;font-size:13.5px;font-weight:600;text-align:center;min-width:120px;
+  }
+  .chip.core{background:var(--leaf);color:#fff;border-color:var(--leaf);}
+  .chip.note{background:var(--sun-soft);border-color:#f0dfb4;}
+  .chip.cache{background:var(--blue-soft);border-color:#cfdef0;}
+  .arrow{font-size:20px;color:var(--ink-soft);}
+
+  /* tool cards */
+  .tool{
+    border:1px solid var(--line);border-radius:13px;padding:18px 20px;margin:12px 0;
+    background:var(--paper);
+  }
+  .tool .head{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .tool code.name{
+    background:var(--leaf-deep);color:#fff;font-size:14px;font-weight:700;
+    padding:4px 10px;border-radius:7px;font-family:"SF Mono",Consolas,monospace;
+  }
+  .tool .role{font-size:13px;color:var(--ink-soft);font-weight:600;}
+  .tool p{margin:6px 0 0;font-size:14.5px;}
+
+  /* timeline / roadmap */
+  .timeline{position:relative;margin:18px 0 4px;padding-left:8px;}
+  .step{position:relative;padding:0 0 4px 34px;margin-bottom:14px;}
+  .step::before{
+    content:"";position:absolute;left:9px;top:24px;bottom:-14px;width:2px;background:var(--line);
+  }
+  .step:last-child::before{display:none;}
+  .step .dot{
+    position:absolute;left:0;top:2px;width:20px;height:20px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;font-size:11px;
+    border:2px solid #fff;box-shadow:0 0 0 1px var(--line);
+  }
+  .dot.done{background:var(--leaf);color:#fff;box-shadow:0 0 0 1px var(--leaf);}
+  .dot.now{background:var(--sun);color:#fff;box-shadow:0 0 0 1px var(--sun);animation:pulse 2s infinite;}
+  .dot.todo{background:#fff;color:var(--ink-soft);}
+  @keyframes pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}
+  .step h4{margin:0 0 2px;font-size:15.5px;color:var(--bark);}
+  .step h4 .st{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1px;}
+  .st.done{background:var(--leaf-light);color:var(--leaf-deep);}
+  .st.now{background:var(--sun-soft);color:#9a7415;}
+  .st.todo{background:#f0ece3;color:var(--ink-soft);}
+  .step p{margin:2px 0 0;font-size:14px;color:var(--ink-soft);}
+
+  /* usage steps */
+  .usage-step{display:flex;gap:16px;margin:14px 0;align-items:flex-start;}
+  .usage-step .num{
+    flex:0 0 auto;width:30px;height:30px;border-radius:9px;background:var(--bark);color:#fff;
+    font-weight:800;font-size:15px;display:inline-flex;align-items:center;justify-content:center;
+  }
+  .usage-step .txt{flex:1;}
+  .usage-step h4{margin:2px 0 4px;font-size:16px;}
+  .usage-step p{margin:0;font-size:14.5px;color:var(--ink-soft);}
+
+  pre{
+    background:var(--code-bg);color:#e8e6df;border-radius:11px;
+    padding:15px 17px;overflow-x:auto;font-size:13px;line-height:1.6;
+    font-family:"SF Mono",Consolas,"D2Coding",monospace;margin:12px 0;
+  }
+  pre .c{color:#8f8b7d;}      /* comment */
+  pre .k{color:#7fc7a0;}      /* keyword/green */
+  pre .y{color:#e0c06a;}      /* yellow */
+  code.inline{
+    background:#efeae0;color:#7a4f1e;padding:2px 6px;border-radius:5px;
+    font-family:"SF Mono",Consolas,monospace;font-size:13.5px;
+  }
+
+  .note{
+    background:var(--blue-soft);border:1px solid #d2e0f0;border-left:5px solid var(--blue);
+    border-radius:10px;padding:13px 17px;margin:16px 0;font-size:14px;
+  }
+  .note b{color:var(--blue);}
+
+  footer{text-align:center;color:var(--ink-soft);font-size:13px;margin-top:50px;}
+  footer .tree{font-size:28px;}
+
+  @media (max-width:600px){
+    .grid{grid-template-columns:1fr;}
+    .hero h1{font-size:27px;}
+    .card{padding:22px 20px;}
+    .lead{padding-left:0;}
+    h2.sec{font-size:21px;}
+    .layer{flex-wrap:wrap;}
+    .layer .pill{order:3;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="tree">🌳</div>
+  <h1>NAMU 에이전트 시스템</h1>
+  <p class="sub">어느 한 AI 회사에 묶이지 않고, 여러 AI가 <b>같은 기억</b>을 나눠 쓰며 스스로 배워 발전하는 나만의 AI 시스템</p>
+  <div class="meta">
+    <span class="badge">🎯 벤더 독립</span>
+    <span class="badge">🧠 공유 기억</span>
+    <span class="badge">📈 자가학습</span>
+    <br><span style="opacity:.8;font-size:12px;display:inline-block;margin-top:10px;">📅 2026년 7월 10일 기준 · 초보자용 안내서</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <h2>📖 목차</h2>
+    <ol>
+      <li><a href="#what">NAMU가 뭐예요?</a></li>
+      <li><a href="#why">왜 만들어요? (기획)</a></li>
+      <li><a href="#how">어떻게 만들어요? (설계)</a></li>
+      <li><a href="#memory">기억은 어떻게 굴러가나</a></li>
+      <li><a href="#done">지금까지 한 일</a></li>
+      <li><a href="#next">앞으로 할 일</a></li>
+      <li><a href="#use">사용법</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1. WHAT -->
+  <section id="what">
+    <div class="card">
+      <h2 class="sec"><span class="n">1</span>NAMU가 뭐예요?</h2>
+      <p class="lead">한 문장으로: "AI는 갈아끼워도, 기억은 내가 들고 다니는 시스템"</p>
+
+      <p><strong>NAMU(나무)</strong>는 클로드·제미나이·GPT 같은 여러 AI를 부려서 일을 시키되, 그 과정에서 얻은 <strong>경험과 교훈을 한 곳에 차곡차곡 쌓아두는</strong> 개인용 AI 작업 시스템이에요. 핵심은 "어떤 AI를 쓰느냐"가 아니라 "그 기억을 누가 가지고 있느냐"예요.</p>
+
+      <div class="analogy">
+        <span class="tag">💡 쉬운 비유</span>
+        <p>보통 AI 챗봇은 그 회사 앱을 나가면 대화 내용을 다 잊어버려요. 마치 <strong>매번 처음 만나는 직원</strong> 같죠. NAMU는 그 직원이 바뀌어도 똑같이 보는 <strong>공용 업무 노트</strong>를 내가 직접 들고 있는 구조예요. 직원(AI)은 바뀌어도 노트(기억)는 그대로라서, 새 직원도 노트만 읽으면 바로 일을 이어받아요.</p>
+      </div>
+
+      <div class="insight">
+        <div class="q">"독립성은 화면(인터페이스)이 아니라<br>기억(메모리)에 있다"</div>
+        <div class="small">이게 NAMU 프로젝트 전체를 관통하는 가장 중요한 깨달음이에요</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. WHY -->
+  <section id="why">
+    <div class="card">
+      <h2 class="sec"><span class="n">2</span>왜 만들어요? <span style="font-size:15px;font-weight:600;color:var(--ink-soft);">— 기획 의도</span></h2>
+      <p class="lead">세 가지 바람에서 출발했어요</p>
+
+      <div class="grid">
+        <div class="tile">
+          <div class="ico">🔓</div>
+          <h4>① AI에 안 묶이기</h4>
+          <p>클로드가 막히면 제미나이로, 그것도 안 되면 내 PC의 무료 모델로. 한 회사 정책·요금·서비스 종료에 휘둘리지 않아요.</p>
+        </div>
+        <div class="tile">
+          <div class="ico">🧠</div>
+          <h4>② 기억 공유하기</h4>
+          <p>모든 AI가 같은 노트를 봐요. 게다가 노트북·집 PC 어디서 작업해도 같은 기억이 따라다녀요.</p>
+        </div>
+        <div class="tile">
+          <div class="ico">📈</div>
+          <h4>③ 스스로 발전하기</h4>
+          <p>성공·실패만이 아니라 <em>"왜 그렇게 판단했는지 이유"</em>까지 쌓아요. 이게 쌓이면 시스템이 스스로 기준을 만들어가요.</p>
+        </div>
+        <div class="tile">
+          <div class="ico">🌍</div>
+          <h4>④ (먼 미래) 함께 크기</h4>
+          <p>나중엔 일반적인 교훈을 커뮤니티 공용 풀에 선택적으로 나눠서, 쓸수록 모두가 똑똑해지는 구조도 꿈꿔요.</p>
+        </div>
+      </div>
+
+      <h3>"이유까지 기록한다"가 왜 중요할까?</h3>
+      <p>그냥 "성공/실패"만 적으면, 나중에 패턴을 분석할 때 엉뚱한 기준을 뽑아낼 수 있어요. 예를 들어 "금요일에 한 작업은 다 실패했네 → 금요일을 피하자" 같은 헛다리요. 하지만 <strong>왜 실패했는지(이유)</strong>가 같이 적혀 있으면 "아, 테스트를 안 돌려서 실패한 거구나"라는 진짜 원인을 잡을 수 있어요. 그래서 NAMU는 <code class="inline">reason</code>(이유)을 <strong>반드시 적도록 강제</strong>해요. 이유 없이는 기록 자체가 거부돼요.</p>
+    </div>
+  </section>
+
+  <!-- 3. HOW -->
+  <section id="how">
+    <div class="card">
+      <h2 class="sec"><span class="n">3</span>어떻게 만들어요? <span style="font-size:15px;font-weight:600;color:var(--ink-soft);">— 설계</span></h2>
+      <p class="lead">"다 직접 만들면 끝이 없다" → 빌릴 건 빌리고, 핵심만 직접 만들어요</p>
+
+      <p>처음엔 모든 걸 직접 만들려다가, 중요한 결정을 했어요. AI 작업 시스템을 <strong>3개 층</strong>으로 나눠서, 이미 잘 만들어진 부분은 가져다 쓰고 <strong>진짜 핵심인 기억 부분만 직접 만들기</strong>로요.</p>
+
+      <div class="stack">
+        <div class="layer layA">
+          <span class="lab">A</span>
+          <div class="body">
+            <h4>실행 엔진</h4>
+            <p>AI를 호출하고, 파일을 고치고, 명령어를 돌리는 부분. (예: Claude Code, agy=안티그래비티)</p>
+          </div>
+          <span class="pill">빌려쓴다</span>
+        </div>
+        <div class="layer layB">
+          <span class="lab">B</span>
+          <div class="body">
+            <h4>하네스 엔지니어링</h4>
+            <p>"작업 전엔 꼭 기억을 확인해라" 같은 규칙·자동화·작업 절차. NAMU가 직접 만들어요.</p>
+          </div>
+          <span class="pill">직접 제작</span>
+        </div>
+        <div class="layer layC">
+          <span class="lab">C</span>
+          <div class="body">
+            <h4>메모리 / 학습 코어 💚</h4>
+            <p>경험을 쌓고 꺼내쓰는 부분. <strong>이게 NAMU의 심장이자 진짜 차별점</strong>이에요.</p>
+          </div>
+          <span class="pill">직접 제작</span>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>왜 이렇게 나눴나요?</b> 실행 엔진(A)은 큰 회사들이 수년간 다듬은 부분이라 직접 만들면 시간 낭비예요. 반면 "기억과 학습"(C)은 어디서도 안 주는, NAMU만의 가치라서 여기에 힘을 집중해요.
+      </div>
+
+      <h3>핵심 코어(C층)는 'MCP 서버'라는 형태로</h3>
+      <p>기억 코어를 <strong>MCP 서버</strong>라는 형태로 만들었어요. MCP는 쉽게 말해 <em>"AI에 갖다 붙이는 표준 콘센트"</em>예요. 이 콘센트 규격으로 만들어두면 클로드든, 다른 AI 도구든 똑같이 꽂아서 같은 기억을 쓸 수 있어요. 바로 이 점이 "AI에 안 묶인다"는 목표를 진짜로 실현해줘요.</p>
+
+      <div class="note" style="background:var(--leaf-light);border-color:#cfe6d4;border-left-color:var(--leaf);">
+        <b style="color:var(--leaf-deep);">제미나이도 지원돼요 — 이제는 완료됐어요.</b> 예전에 포기했던 건 "NAMU가 <code class="inline">agy</code>(안티그래비티)를 직접 조종하던 <em>옛 구독 어댑터</em>" 딱 하나였어요(non-TTY 출력 버그 때문). 대신 <strong>agy를 실행엔진(A층)으로 빌려쓰고 그 위에 같은 NAMU 메모리(MCP)를 붙이는 '글루'</strong>를 완성했어요. 그래서 지금은 <strong>클로드 코드와 똑같은 방식으로 agy(제미나이)에서도 같은 기억</strong>을 써요. 다만 이건 "완전 지원"이라기보다, 같은 플러그인을 설치해 같은 기억 코어에 꽂았다는 뜻이에요.
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. MEMORY -->
+  <section id="memory">
+    <div class="card">
+      <h2 class="sec"><span class="n">4</span>기억은 어떻게 굴러가나</h2>
+      <p class="lead">"진짜 노트" 하나 + "빠른 색인" 하나, 역할이 달라요</p>
+
+      <div class="flow">
+        <div class="row">
+          <div class="chip">🤖 작업 중인 AI</div>
+          <span class="arrow">→</span>
+          <div class="chip core">🧠 기억 코어<br>(MCP 서버)</div>
+          <span class="arrow">→</span>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="chip note">📒 learnings.yaml<br><span style="font-weight:400;font-size:12px;">진짜 기억</span></div>
+            <div class="chip cache">🔍 SQLite<br><span style="font-weight:400;font-size:12px;">빠른 검색 색인</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="tile" style="background:var(--sun-soft);border-color:#f0dfb4;">
+          <div class="ico">📒</div>
+          <h4>learnings.yaml = 진짜 노트</h4>
+          <p>사람이 그냥 읽을 수 있는 텍스트 파일. <strong>추가만 가능</strong>(삭제·수정 금지)해서 이력이 보존돼요. 깃(GitHub)으로 여러 PC가 이 노트를 공유해요. <b>이게 진실의 원천.</b></p>
+        </div>
+        <div class="tile" style="background:var(--blue-soft);border-color:#cfdef0;">
+          <div class="ico">🔍</div>
+          <h4>SQLite = 빠른 색인</h4>
+          <p>노트를 검색이 잘 되게 정리해둔 데이터베이스. 어디까지나 <strong>캐시</strong>라서, 망가져도 노트(yaml)로 언제든 다시 만들 수 있어요.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>왜 둘로 나눴나요?</b> "노트 먼저 쓰고, 색인은 나중에" 순서가 핵심이에요. 만약 색인(DB)이 깨져도 노트만 멀쩡하면 전부 복구할 수 있거든요. 그래서 <b>기록할 때 항상 yaml에 먼저 저장</b>해요. 이 순서는 절대 안 바꿔요.
+      </div>
+
+      <h3>어디에 저장되나 — 저장소는 두 곳으로 나뉘어요</h3>
+      <div class="grid">
+        <div class="tile" style="background:var(--sun-soft);border-color:#f0dfb4;">
+          <div class="ico">🌍</div>
+          <h4>교훈(learnings.yaml)+SQLite → <code class="inline">~/.namu</code></h4>
+          <p>어느 프로젝트에서 일하든 <strong>공통으로 써먹을 지식</strong>이라, 설치형에서는 기기 전역 폴더(<code class="inline">~/.namu</code>)에 모여요.</p>
+        </div>
+        <div class="tile" style="background:var(--blue-soft);border-color:#cfdef0;">
+          <div class="ico">📁</div>
+          <h4>작업 상태(tasks) → 그 프로젝트 폴더</h4>
+          <p>지금 이 프로젝트에서만 의미 있는 상태라, 작업 중인 <strong>프로젝트 폴더 안 <code class="inline">tasks/</code></strong>에 쌓여요. 그 프로젝트의 git으로 팀과 공유할 수도 있어요.</p>
+        </div>
+      </div>
+      <div class="analogy">
+        <span class="tag">💡 쉬운 비유</span>
+        <p>"데이터는 자기 공유 범위를 따라 산다"고 생각하면 쉬워요. 어디서나 써먹는 <strong>일반 상식(교훈)</strong>은 내 머릿속(기기 전역, <code class="inline">~/.namu</code>)에 담아두고, <strong>이번 프로젝트에서만 쓰는 메모(작업 상태)</strong>는 그 프로젝트 서랍(프로젝트 폴더)에 넣어두는 것과 같아요.</p>
+      </div>
+
+      <h3>기억을 다루는 도구 3개</h3>
+      <p>AI가 이 콘센트(MCP)에 꽂으면 쓸 수 있는 도구가 딱 세 개예요. 단순하게 유지하는 게 목표였어요.</p>
+
+      <div class="tool">
+        <div class="head"><code class="name">namu_recall</code><span class="role">기억 꺼내기</span></div>
+        <p>작업을 시작하기 전에 "예전에 비슷한 거 해봤나?" 하고 관련 기억을 불러와요. 딱 맞는 게 없으면 최근 것이라도 몇 개 보여줘서 <strong>뭐라도 맥락을 잡게</strong> 해줘요.</p>
+      </div>
+      <div class="tool">
+        <div class="head"><code class="name">namu_record</code><span class="role">기억 저장하기</span></div>
+        <p>작업이 끝나면 결과(성공/실패/부분성공)와 <strong>판단 이유</strong>를 함께 기록해요. 이유가 비어 있으면 저장이 거부돼요 — 이게 자가학습의 핵심 규칙이에요.</p>
+      </div>
+      <div class="tool">
+        <div class="head"><code class="name">namu_search</code><span class="role">패턴 찾기</span></div>
+        <p>쌓인 기록에서 비슷한 사례·패턴을 분석적으로 찾아요. 정확히 맞는 것만 보여주고, <strong>"성공 N건·실패 M건" 같은 경향 요약</strong>도 같이 붙여줘요.</p>
+      </div>
+
+      <div class="note" style="background:var(--leaf-light);border-color:#cfe6d4;border-left-color:var(--leaf);">
+        <b style="color:var(--leaf-deep);">한글 검색도 신경 썼어요.</b> 일반 검색 방식은 한글 부분검색이 잘 안 돼서, <code class="inline">trigram</code>이라는 방식(3글자 단위로 쪼개 검색)을 썼고, 2글자 이하 짧은 검색어는 별도 방식으로 보완했어요.
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. DONE -->
+  <section id="done">
+    <div class="card">
+      <h2 class="sec"><span class="n">5</span>지금까지 한 일</h2>
+      <p class="lead">기획 → 설계 → 기억 코어 완성 → 자동화 → 패키징 → 멀티 PC 실측까지 왔어요</p>
+
+      <div class="timeline">
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>기억 코어 완성 <span class="st done">완료</span></h4>
+          <p>"자체 CLI 직접 제작" 대신 "기억 코어(MCP) + 빌려쓴 실행엔진"으로 방향을 잡고(어댑터 5종 시행착오 포함), 도구 3개(recall·record·search)를 전부 구현·검증했어요. yaml 먼저 쓰고 SQLite 색인을 만드는 구조, 한글 검색, 이유 필수 규칙까지 동작 확인. NAMU가 개발 중 얻은 교훈을 스스로 기록하기 시작한 것도 이 단계예요.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>세션 자동 브리핑(훅 자동화) <span class="st done">완료</span></h4>
+          <p>Claude Code 세션을 열면 <strong>진행 중인 작업·최근 교훈이 AI에게 자동 주입</strong>돼요. git이 최신이 아니면 경고(behind 감지)하고, 검색 캐시(SQLite)가 낡았으면 자동으로 다시 만들어요.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4><code class="inline">/namu-task</code> 작업 절차 <span class="st done">완료</span></h4>
+          <p>작업 정의(사용자 확인) → 코더 워커 구현 → 리뷰어 워커 검수 → 검수 실패 시 자동 재실행 금지(사용자에게 물음) → 교훈 기록까지 표준 절차로 완성했어요. 워커는 <code class="inline">namu-coder</code>/<code class="inline">namu-reviewer</code> 서브에이전트예요.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>플러그인 패키징(현재 0.1.9) + agy용 글루 <span class="st done">완료</span></h4>
+          <p>한 번에 설치되는 Claude Code 플러그인으로 묶었어요. 같은 플러그인을 agy(안티그래비티)에 설치하면 <strong>제미나이에서도 같은 기억</strong>을 써요.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>git pull 후 SQLite 자동 재생성 <span class="st done">완료</span></h4>
+          <p>다른 PC의 노트(yaml)를 받아오면, 검색 색인(SQLite)이 항목 수 불일치를 감지해 서버 부팅 시 자동으로 다시 만들어져요.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>멀티 PC 동기화 실측 <span class="st done">완료</span></h4>
+          <p>삼성·hp 두 기기에서 실제 작업으로 기억이 잘 따라오는지 확인했어요. 이론이 아니라 실측으로 검증.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>statusLine 스크립트 동봉 <span class="st done">완료</span></h4>
+          <p>화면 하단에 <code class="inline">[모델] 폴더 | 📌 진행 task | 컨텍스트%</code>를 보여주는 스크립트가 플러그인에 함께 들어와요. 다만 Claude Code 사양상 <strong>자동으로 등록되지는 않고</strong>, <code class="inline">settings.json</code>에 수동으로 경로를 연결해야 해요.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. NEXT -->
+  <section id="next">
+    <div class="card">
+      <h2 class="sec"><span class="n">6</span>앞으로 할 일</h2>
+      <p class="lead">기억 코어와 자동화는 자리를 잡았어요. 이제 남은 건 "로컬 한계 넘기"와 "다듬기"예요</p>
+
+      <div class="timeline">
+        <div class="step">
+          <span class="dot now">▶</span>
+          <h4>설치형 기억의 자동 백업·멀티 PC 동기화 <span class="st now">다음 차례</span></h4>
+          <p>지금 설치형(<code class="inline">~/.namu</code>)은 <strong>그 기기의 로컬 폴더일 뿐</strong>이에요. 디스크가 죽으면 기억도 같이 사라지고, PC를 두 대 이상 쓰면 기억이 기기마다 따로 쌓여요. 지금은 사람이 직접 백업하거나 git 저장소로 만들어 수동으로 운영해야 해요 — 이 한계를 넘는 자동화가 다음 목표예요.</p>
+        </div>
+        <div class="step">
+          <span class="dot todo">2</span>
+          <h4>워커를 외부 AI 엔진으로 바꾸는 기능 <span class="st todo">예정</span></h4>
+          <p>설정 자리(<code class="inline">namu_workers.yaml</code>)는 이미 있지만, 지금 실제로 동작하는 건 <strong>native(메인 AI의 서브에이전트)</strong>뿐이에요. 로컬 모델·제미나이 API 같은 외부 엔진으로 워커를 바꿔 쓰는 건 아직 미구현이에요.</p>
+        </div>
+        <div class="step">
+          <span class="dot todo">3</span>
+          <h4>자잘한 다듬기 <span class="st todo">예정</span></h4>
+          <p>테스트 정리, statusLine 표시 개선 같은 마감 작업들이에요.</p>
+        </div>
+        <div class="step">
+          <span class="dot todo">★</span>
+          <h4>(먼 미래) 공개 배포 & 커뮤니티 메모리 풀 <span class="st todo">비전</span></h4>
+          <p>개인 메모리는 그대로 두되, 일반적인 교훈은 선택적으로 공개 풀에 기여·구독할 수 있게요. 쓸수록 모두가 똑똑해지는 구조.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. USE -->
+  <section id="use">
+    <div class="card">
+      <h2 class="sec"><span class="n">7</span>사용법 <span style="font-size:15px;font-weight:600;color:var(--ink-soft);">— 아주 쉽게</span></h2>
+      <p class="lead">크게 ①한 번만 하는 설정(플러그인 설치) → ②매번 하는 작업 흐름, 두 가지예요</p>
+
+      <h3>📦 ① 한 번만 하는 설정 — 플러그인 설치</h3>
+      <p>예전엔 저장소를 통째로 clone해서 직접 MCP를 등록해야 했지만, 지금은 <strong>플러그인 설치 한 번</strong>이면 끝나요.</p>
+
+      <div class="usage-step">
+        <span class="num">1</span>
+        <div class="txt">
+          <h4>마켓플레이스 등록 + 설치</h4>
+          <p>Claude Code에서 이 두 줄이면 NAMU의 기억 도구 3개와 서브에이전트가 통째로 설치돼요.</p>
+        </div>
+      </div>
+      <pre><span class="c"># Claude Code에서 실행</span>
+claude plugin marketplace add onmiso-hash/namu-agent
+claude plugin install namu@namu-marketplace</pre>
+
+      <div class="note">
+        <b>주의:</b> NAMU repo는 현재 <b>private</b>이에요. 위 절차를 따라 설치하려면 저장소 소유자에게 <strong>collaborator로 초대받은 GitHub 계정</strong>과, 그 계정으로 로그인된 <strong>git 자격증명</strong>이 내 PC에 미리 준비돼 있어야 해요.
+      </div>
+
+      <div class="note" style="background:var(--blue-soft);border-color:#cfdef0;border-left-color:var(--blue);">
+        <b style="color:var(--blue);">📘 자세한 설치·문제해결은 설치 가이드에서</b><br>
+        로컬 경로 설치 방식, agy(안티그래비티) 설치, 업데이트 절차, 트러블슈팅까지는 이 안내서 범위를 넘어요. <a href="install_guide.html" style="color:var(--blue);font-weight:700;">→ install_guide.html 보러 가기</a>
+      </div>
+
+      <div class="usage-step">
+        <span class="num">2</span>
+        <div class="txt">
+          <h4>설치 확인</h4>
+          <p>Claude Code에서 <code class="inline">/mcp</code>를 치면 <code class="inline">plugin:namu:namu-memory ✔ connected · 3 tools</code>가 보여야 정상이에요.</p>
+        </div>
+      </div>
+      <div class="note">
+        <b>첫 세션은 조용한 게 정상이에요.</b> 설치 직후엔 보여줄 기억(교훈·진행 중 작업)이 아직 하나도 없어서, 환영 메시지도 브리핑도 안 떠요. 실패가 아니라 <strong>기억이 쌓인 뒤 다음 세션부터</strong> 브리핑이 시작되는 거예요.
+      </div>
+      <p style="font-size:14px;color:var(--ink-soft);">기기 이름(<code class="inline">NAMU_MACHINE</code>)은 이제 <strong>설정 안 해도 컴퓨터 호스트명으로 자동 인식</strong>돼요. 필수 설정이 아니고, 여러 PC를 쓸 때 라벨을 예쁘게 고정하고 싶을 때만 정해주면 돼요.</p>
+
+      <h3>🔄 ② 매번 하는 작업 흐름</h3>
+
+      <div class="tile" style="background:var(--soil);margin-bottom:14px;">
+        <div class="ico">💻</div>
+        <h4>설치형 — 대부분의 사용자</h4>
+        <p>그냥 <strong>내 프로젝트에서 Claude Code를 열면</strong> 돼요. 세션 브리핑이 자동으로 주입되고, <code class="inline">/namu-task</code>로 작업을 진행하고, 일반화할 교훈이 있으면 AI가 판단해 <code class="inline">namu_record</code>로 남겨요(이유 필수). 교훈은 <code class="inline">~/.namu</code>에 자동 저장되니 <strong>따로 pull·push할 필요가 없어요</strong> — 단, 그 폴더의 백업은 아직 스스로 챙겨야 해요(6장 참고).</p>
+      </div>
+
+      <div class="tile" style="background:var(--soil);">
+        <div class="ico">🛠️</div>
+        <h4>clone 개발형 — NAMU 저장소 자체를 개발할 때만</h4>
+        <p>이 경우엔 원래 하던 <strong>받아오기(pull) → 작업 → 올리기(push)</strong> 세 박자가 그대로 적용돼요. 저장소 자체가 기억 저장 위치가 되기 때문이에요. 일반 사용자는 해당하지 않아요.</p>
+      </div>
+
+      <div class="analogy">
+        <span class="tag">💡 저장 위치, 한 줄 정리</span>
+        <p>교훈(어느 프로젝트든 공통 지식)은 <code class="inline">~/.namu</code>(중앙)에, 작업 상태(tasks)는 그 프로젝트 폴더(그 프로젝트 git으로 공유 가능)에 나눠 담겨요. "데이터는 자기 공유 범위를 따라 산다"고 기억하면 쉬워요 — 자세한 이유는 4장 참고.</p>
+      </div>
+
+      <div class="note" style="background:var(--leaf-light);border-color:#cfe6d4;border-left-color:var(--leaf);">
+        <b style="color:var(--leaf-deep);">기억 도구를 직접 써보고 싶다면?</b><br>
+        · <b>꺼내기</b>: "예전에 SQLite 관련 작업 기록 있어?" → AI가 <code class="inline">namu_recall</code> 호출<br>
+        · <b>저장</b>: "이번 작업 성공으로 기록해줘, 이유는 ○○" → <code class="inline">namu_record</code> (이유 꼭 필요!)<br>
+        · <b>분석</b>: "테스트 관련 작업들 성공률 어때?" → <code class="inline">namu_search</code> (경향 요약까지)
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="tree">🌱</div>
+    <p>NAMU는 지금도 한 그루씩 자라는 중이에요.<br>
+    기억이 쌓일수록 더 똑똑해지는, 나만의 AI 시스템.</p>
+    <p style="opacity:.6;margin-top:14px;">📅 2026-07-10 갱신 · 초보자용 안내서</p>
+  </footer>
+
+</div>
+</body>
+</html>
