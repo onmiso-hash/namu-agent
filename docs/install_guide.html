@@ -293,6 +293,7 @@
       <li><a href="#install-cc">설치하기 — Claude Code (권장)</a></li>
       <li><a href="#install-agy">설치하기 — agy</a></li>
       <li><a href="#verify">잘 설치됐는지 확인하기</a></li>
+      <li><a href="#sync">선택: 교훈 원격 백업·멀티 PC 동기화</a></li>
       <li><a href="#update">업데이트할 때</a></li>
       <li><a href="#troubleshoot">문제가 생겼어요</a></li>
       <li><a href="#more">더 알아보기</a></li>
@@ -532,9 +533,65 @@
     </p>
   </section>
 
-  <!-- 6. 업데이트 -->
+  <!-- 6. 동기화 -->
+  <section id="sync">
+    <h2>6. 선택: 교훈 원격 백업·멀티 PC 동기화</h2>
+    <p>
+      지금까지의 설치만으로도 NAMU는 잘 동작합니다. 다만 <code>~/.namu</code>에 쌓이는 기억(교훈)은 기본적으로
+      <strong>그 컴퓨터의 로컬 폴더일 뿐</strong>이라, 디스크가 고장 나면 기억도 사라지고 컴퓨터를 두 대 이상
+      쓰면 기억이 기기마다 따로 쌓입니다. 이 절은 그 한계를 없애는 <strong>선택 기능</strong>을 안내합니다
+      (버전 0.1.11부터, 아래 절차로 설정해야만 켜집니다).
+    </p>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <h4>비공개 원격 저장소 준비 (내 몫)</h4>
+        <p class="muted">
+          GitHub 등에 기억을 백업할 <strong>비공개(private) 저장소</strong>를 하나 만들어 둡니다. 이 저장소를
+          만드는 것과 git 로그인(인증)은 NAMU가 대신해 주지 않는 부분입니다 — 미리 준비해 두세요.
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h4>AI에게 연결을 한 번만 부탁하기</h4>
+        <p class="muted">Claude Code나 agy 대화창에서 그냥 이렇게 말하면 됩니다.</p>
+        <pre><code>namu_sync_setup을 &lt;위에서 준비한 원격 저장소 주소&gt;로 실행해줘</code></pre>
+        <p class="muted">
+          AI가 <code>namu_sync_setup</code> MCP 도구를 호출해 로컬 <code>~/.namu</code>에 git 연결을 자동으로
+          준비합니다(초기화·원격 등록·설정 파일 작성·첫 백업까지). <strong>한 번만 하면 끝</strong>입니다.
+        </p>
+      </div>
+    </div>
+
+    <div class="box tip">
+      <strong>켠 뒤에는 무슨 일이 일어나나요?</strong>
+      <p style="margin-bottom:0">
+        교훈을 기록할 때마다(<code>namu_record</code>) 자동으로 백업(push)되고, Claude Code나 agy로 새 세션을
+        열 때마다 자동으로 다른 컴퓨터의 최신 기억을 받아옵니다(pull). 두 번째 컴퓨터에서도 <strong>위 1·2번
+        절차를 그대로 반복</strong>하면, 그 컴퓨터가 완전히 새 것이라도(클론이 아니어도) 원격에 있는 기존
+        기억과 자동으로 합쳐집니다 — 따로 병합 작업을 할 필요가 없습니다.
+      </p>
+    </div>
+
+    <div class="box note">
+      <strong>알아둘 점</strong>
+      <p style="margin-bottom:0">
+        "완전 무인 백업"은 아닙니다 — 원격 저장소 준비와 git 로그인은 여전히 사용자 몫이고, 로그인이
+        끊기면 조용히 실패하며 기억은 그 컴퓨터에만 계속 쌓입니다(겉으로 오류가 뜨지 않습니다). 문제가
+        있는지 확인하려면 <code>~/.namu/db/sync.log</code> 파일을 열어보세요 — 실패 사유가 한 줄씩 남습니다.
+        끄고 싶다면 환경변수 <code>NAMU_SYNC=0</code>을 설정하면 됩니다. 참고로 NAMU repo 자체를 clone해
+        개발하는 방식(이 문서의 대상이 아닌 방식)에서는 이 기능이 안전을 위해 자동으로 비활성화됩니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- 7. 업데이트 -->
   <section id="update">
-    <h2>6. 업데이트할 때</h2>
+    <h2>7. 업데이트할 때</h2>
     <p>NAMU 코드가 새로 바뀌었을 때 반영하는 방법은 <strong>어떻게 설치했는지에 따라 다릅니다.</strong></p>
     <table>
       <thead>
@@ -567,9 +624,9 @@
     </p>
   </section>
 
-  <!-- 7. 문제 해결 -->
+  <!-- 8. 문제 해결 -->
   <section id="troubleshoot">
-    <h2>7. 문제가 생겼어요</h2>
+    <h2>8. 문제가 생겼어요</h2>
     <p>자주 겪는 증상을 모았습니다. 해당하는 항목을 눌러 펼쳐 보세요.</p>
 
     <details>
@@ -577,7 +634,7 @@
       <div class="faq-block"><strong>원인</strong> Windows 환경에서 세션이 시작될 때 저장된 내용을 자동으로 불러오는 과정이
         한글·이모지가 섞인 내용을 화면에 표시하려다 인코딩 문제로 조용히 실패하는 오래된 버그입니다(버전 0.1.5 이하에서 발생).
         이 실패가 겉으로 오류 없이 조용히 일어나기 때문에, 그냥 "안 뜨네" 정도로만 보입니다.</div>
-      <div class="faq-block"><strong>해결</strong> NAMU를 <strong>0.1.6 이상</strong>으로 업데이트하세요(위 6절 참고). 이 버전부터
+      <div class="faq-block"><strong>해결</strong> NAMU를 <strong>0.1.6 이상</strong>으로 업데이트하세요(위 7절 참고). 이 버전부터
         해당 문제가 해소됐습니다.</div>
     </details>
 
@@ -586,7 +643,7 @@
       <div class="faq-block"><strong>원인</strong> 설치 방식에 따라 "업데이트"의 의미가 다릅니다. 로컬 폴더 방식은 원본을
         실시간으로 참조하지만, GitHub 원격 설치는 설치 당시 내용을 복사해 둔 것을 실행하는 방식이라, 원본만 최신화해서는
         복사본이 갱신되지 않습니다.</div>
-      <div class="faq-block"><strong>해결</strong> 6절 표에서 내 설치 방식에 맞는 절차를 따르세요. 특히 GitHub 원격 설치는
+      <div class="faq-block"><strong>해결</strong> 7절 표에서 내 설치 방식에 맞는 절차를 따르세요. 특히 GitHub 원격 설치는
         <code>claude plugin update namu@namu-marketplace</code>처럼 <strong>이름@마켓플레이스 전체 이름</strong>을 반드시 써야
         합니다.</div>
     </details>
@@ -626,9 +683,9 @@
     </details>
   </section>
 
-  <!-- 8. 더 알아보기 -->
+  <!-- 9. 더 알아보기 -->
   <section id="more">
-    <h2>8. 더 알아보기</h2>
+    <h2>9. 더 알아보기</h2>
     <p>
       NAMU가 실제 작업을 시킬 때 부르는 일꾼(워커, 서브에이전트)이 있습니다. 특별한 설정 없이도 기본값으로 잘 동작하므로,
       대부분의 설치형 사용자는 아래 내용을 몰라도 됩니다.

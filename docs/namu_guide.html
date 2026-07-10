@@ -477,7 +477,7 @@
         </div>
         <div class="step">
           <span class="dot done">✓</span>
-          <h4>플러그인 패키징(현재 0.1.9) + agy용 글루 <span class="st done">완료</span></h4>
+          <h4>플러그인 패키징(현재 0.1.11) + agy용 글루 <span class="st done">완료</span></h4>
           <p>한 번에 설치되는 Claude Code 플러그인으로 묶었어요. 같은 플러그인을 agy(안티그래비티)에 설치하면 <strong>제미나이에서도 같은 기억</strong>을 써요.</p>
         </div>
         <div class="step">
@@ -503,13 +503,13 @@
   <section id="next">
     <div class="card">
       <h2 class="sec"><span class="n">6</span>앞으로 할 일</h2>
-      <p class="lead">기억 코어와 자동화는 자리를 잡았어요. 이제 남은 건 "로컬 한계 넘기"와 "다듬기"예요</p>
+      <p class="lead">기억 코어와 자동화, 그리고 설치형 기억의 원격 백업까지 자리를 잡았어요. 이제 남은 건 "워커 다양화"와 "다듬기"예요</p>
 
       <div class="timeline">
         <div class="step">
-          <span class="dot now">▶</span>
-          <h4>설치형 기억의 자동 백업·멀티 PC 동기화 <span class="st now">다음 차례</span></h4>
-          <p>지금 설치형(<code class="inline">~/.namu</code>)은 <strong>그 기기의 로컬 폴더일 뿐</strong>이에요. 디스크가 죽으면 기억도 같이 사라지고, PC를 두 대 이상 쓰면 기억이 기기마다 따로 쌓여요. 지금은 사람이 직접 백업하거나 git 저장소로 만들어 수동으로 운영해야 해요 — 이 한계를 넘는 자동화가 다음 목표예요.</p>
+          <span class="dot done">✓</span>
+          <h4>설치형 기억의 자동 백업·멀티 PC 동기화 <span class="st done">완료</span></h4>
+          <p>설치형(<code class="inline">~/.namu</code>)에 <code class="inline">namu_sync_setup</code> 도구로 원격 저장소를 한 번만 연결해두면, 그 뒤로는 <strong>교훈을 기록할 때마다 자동 백업(push)</strong>되고 <strong>새 세션을 열 때마다 자동으로 다른 PC의 기억을 받아와요(pull)</strong>. 두 번째 PC도 같은 명령 한 번이면 기존 기억과 자동으로 합쳐져요. 연결해두지 않으면 여전히 그 기기의 로컬 폴더일 뿐이에요 — 원격 저장소 준비와 git 로그인은 여전히 내 몫이고, 로그인이 끊기면 조용히 로컬에만 쌓이는 점은 알아둬야 해요.</p>
         </div>
         <div class="step">
           <span class="dot todo">2</span>
@@ -526,6 +526,14 @@
           <h4>(먼 미래) 공개 배포 & 커뮤니티 메모리 풀 <span class="st todo">비전</span></h4>
           <p>개인 메모리는 그대로 두되, 일반적인 교훈은 선택적으로 공개 풀에 기여·구독할 수 있게요. 쓸수록 모두가 똑똑해지는 구조.</p>
         </div>
+      </div>
+
+      <div class="note" style="background:var(--leaf-light);border-color:#cfe6d4;border-left-color:var(--leaf);">
+        <b style="color:var(--leaf-deep);">🔄 동기화 켜는 법</b><br>
+        ① GitHub 같은 곳에 <strong>비공개 원격 저장소</strong>를 하나 준비해요(이건 내 몫이에요) →
+        ② AI에게 "<code class="inline">namu_sync_setup</code>을 이 주소로 실행해줘"라고 <strong>한 번만</strong> 부탁하면 끝이에요 →
+        ③ 그다음부턴 교훈을 기록할 때마다 <strong>자동 백업(push)</strong>, 새 세션을 열 때마다 <strong>자동 수신(pull)</strong>이 이뤄져요 →
+        ④ 두 번째 PC에서도 <strong>같은 명령 한 번</strong>이면 기존 기억과 자동으로 합쳐져요(따로 병합 작업 필요 없음).
       </div>
     </div>
   </section>
@@ -576,7 +584,7 @@ claude plugin install namu@namu-marketplace</pre>
       <div class="tile" style="background:var(--soil);margin-bottom:14px;">
         <div class="ico">💻</div>
         <h4>설치형 — 대부분의 사용자</h4>
-        <p>그냥 <strong>내 프로젝트에서 Claude Code를 열면</strong> 돼요. 세션 브리핑이 자동으로 주입되고, <code class="inline">/namu-task</code>로 작업을 진행하고, 일반화할 교훈이 있으면 AI가 판단해 <code class="inline">namu_record</code>로 남겨요(이유 필수). 교훈은 <code class="inline">~/.namu</code>에 자동 저장되니 <strong>따로 pull·push할 필요가 없어요</strong> — 단, 그 폴더의 백업은 아직 스스로 챙겨야 해요(6장 참고).</p>
+        <p>그냥 <strong>내 프로젝트에서 Claude Code를 열면</strong> 돼요. 세션 브리핑이 자동으로 주입되고, <code class="inline">/namu-task</code>로 작업을 진행하고, 일반화할 교훈이 있으면 AI가 판단해 <code class="inline">namu_record</code>로 남겨요(이유 필수). 교훈은 <code class="inline">~/.namu</code>에 자동 저장되니 <strong>따로 pull·push할 필요가 없어요</strong> — 원격 백업·멀티 PC 동기화까지 자동으로 하고 싶으면 켜는 방법이 따로 있고(6장 참고), 켜지 않으면 예전처럼 그 폴더의 백업은 스스로 챙겨야 해요.</p>
       </div>
 
       <div class="tile" style="background:var(--soil);">
