@@ -7,6 +7,7 @@ import sqlite3
 from contextlib import closing
 
 import config as cfg
+import memory_sync
 from mcp.server.fastmcp import FastMCP
 from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
@@ -106,7 +107,28 @@ def namu_record(
     Returns: the new entry's ULID (str)
     """
     _ensure_db()
-    return record(task, outcome, reason, task_type, verified_by, _normalize_tags(tags))
+    entry_id = record(task, outcome, reason, task_type, verified_by, _normalize_tags(tags))
+    # 설치형(~/.namu) 자동 동기화 활성 시에만 실제 push가 일어난다(sync_enabled 하드가드).
+    # 반환값이 False여도(비활성/실패) record 자체의 성공 결과에는 영향을 주지 않는다.
+    memory_sync.sync_push(f"learn: {task[:50]} ({cfg.NAMU_MACHINE})")
+    return entry_id
+
+
+@mcp.tool()
+def namu_sync_setup(remote_url: str) -> str:
+    """Enable git auto-sync for the standalone (~/.namu) learnings install.
+
+    Wires up local git (init/.gitignore/.gitattributes/remote/marker) so that
+    subsequent namu_record calls auto-push and session-start hooks auto-pull.
+    The remote git repository itself must already exist and be prepared by the
+    user beforehand (e.g. an empty private GitHub repo) — this tool only sets
+    up the local side, it does not create the remote.
+
+    Args:
+      remote_url: git remote URL to push learnings to
+    Returns: human-readable result string (per-step success/failure notes)
+    """
+    return memory_sync.sync_setup(remote_url)
 
 
 if __name__ == "__main__":

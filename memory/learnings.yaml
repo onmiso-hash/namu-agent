@@ -845,3 +845,35 @@ task: 'namu-29-hook-deps: CC SessionStart 훅(session_recall.py) PEP 723 블록 
 task_type: code
 timestamp: '2026-07-10T15:32:47.567908+00:00'
 verified_by: human
+---
+id: 01KX754HBSCBTFJV2C1047ADVH
+machine: hp
+outcome: success
+reason: '핵심 판단 4개. ① 온보딩 함정: 두 번째 PC는 클론이 아니라 빈 ~/.namu에서 setup을 부른다 — 독립 git init의
+  초기 커밋이 원격과 unrelated라 push 거부→upstream 미등록→pull "no tracking" 영구 무음 사망. 코더 테스트와
+  리뷰어 1차 PASS가 이를 놓친 건 테스트 픽스처가 두 번째 기기를 git clone으로 만들어 실사용자 진입 경로와 달랐기 때문 — 테스트가
+  green이어도 픽스처가 소비자의 실제 진입 경로(독립 init vs 클론)와 다르면 무의미하다. 오케스트레이터가 위임 전 사전 조사에서 이 경로를
+  의심 목록에 올려두고 라이브 실측을 정조준한 것이 적발의 핵심(namu-23·26·27·29 "라이브만이 실환경 결함을 잡는다" 계보, 이번엔
+  ''어디를 조준할지''까지 사전 설계). ② 해법 격리: --allow-unrelated-histories는 setup(1회성 온보딩)에만 허용하고
+  평상 sync_pull/push에는 금지 — 평상 운영에서 unrelated가 나타나면 진짜 사고라서 무음 병합하면 은폐가 된다. 위험한 플래그는
+  그것이 정당한 유일한 시점에 가둬라. ③ "ULID라 머지 충돌 0"은 논리 충돌 얘기고 git 텍스트 병합은 별개다 — 두 PC가 같은 파일
+  EOF에 append하면 텍스트 충돌이 난다. append-only 파일의 멀티 PC git 동기화는 .gitattributes merge=union(순서
+  무관, ULID가 시간순 보장)이 정답. ④ 자동 동기화 발동 조건은 "git 저장소 존재"가 아니라 명시적 활성화(마커)+하드가드(NAMU_HOME≠REPO_ROOT)여야
+  한다 — 개발 repo도 git 저장소라서, 존재 기반 발동이면 record 한 번에 개발 repo가 사용자 몰래 auto-push되는 사고가
+  난다.'
+tags:
+- namu-30
+- memory-sync
+- git-union-merge
+- onboarding
+- 라이브실측
+- unrelated-histories
+- 하드가드
+task: 'namu-30-memory-sync: 설치형(~/.namu) 교훈 풀자동 git 동기화(플러그인 0.1.11) — memory_sync.py
+  신규(sync_enabled 4중 가드/sync_pull/sync_push/sync_setup, stdlib만), 연결 3곳(namu_record
+  후 auto commit+push, CC·agy 세션 훅 2종에서 auto pull→기존 stale 캐시 재생성과 자연 연동), MCP 도구 namu_sync_setup
+  노출, merge=union+마커 활성화. 코더 2회·리뷰어 2회(1차 PASS 후 라이브 실측이 FAIL 적발→재실행 1회), 79 테스트,
+  라이브 실측 PASS(빈 홈 2대 온보딩 왕복·실훅 pull→브리핑 반영·개발 repo 오발동 0)'
+task_type: code
+timestamp: '2026-07-10T23:17:22.425727+00:00'
+verified_by: human

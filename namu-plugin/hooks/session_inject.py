@@ -121,8 +121,13 @@ def main() -> None:
         project_dir = workspace_paths[0] if workspace_paths else os.getcwd()
 
         import config as cfg
+        import memory_sync
         from session_context import build_context_markdown
 
+        # 활성화(marker)돼 있으면 다른 PC에서 쌓인 교훈을 먼저 당겨온다 — pull로
+        # yaml이 갱신되면 아래 _ensure_db의 cache_is_stale 판정이 db를 재생성한다.
+        # 비활성/실패는 무음(memory_sync.sync_pull이 보장) — 세션 시작을 막지 않는다.
+        memory_sync.sync_pull()
         _ensure_db(cfg)
 
         with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
