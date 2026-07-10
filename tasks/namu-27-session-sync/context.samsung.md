@@ -1,8 +1,8 @@
 # context @ samsung — namu-27-session-sync
-> 🔄 갱신 2026-07-10 09:56 [samsung]
+> 🔄 갱신 2026-07-10 [samsung]
 
 ## ▶ 다음 (한 줄)
-⑥ CC 새 세션 라이브 실측 — behind 재현(예: git reset --hard HEAD~1 후 세션 시작)→경고 브리핑→승인 pull→이월 안내 확인 → 통과 시 record·커밋
+⑥ 라이브 실측 판정 — 이 커밋이 pull로 보이면 behind 경고→승인 pull→재안내 사이클 성공. 결과를 오케스트레이터 세션에 보고 → record·마감
 
 ## 지금 어디까지
 - 완료조건 ①~⑤ 구현·검수 PASS(코더 1회, 리뷰어 결함 0). 미커밋 상태
