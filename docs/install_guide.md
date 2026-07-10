@@ -95,7 +95,7 @@ namu-plugin/scripts/agy_reinstall.ps1
 
 ### 켜는 법
 
-1. GitHub 등에 **비공개 원격 저장소**를 하나 준비한다(사용자 몫). git 인증(ssh key·credential manager 등)도 미리 준비돼 있어야 한다 — NAMU는 로컬 쪽 git 연결만 대신한다.
+1. GitHub 등에 **비공개 원격 저장소**를 하나 준비한다(사용자 몫). "준비"의 범위는 세 가지: ① 계정(GitHub 외 GitLab·사내 git 서버 등 git URL이 나오는 곳 전부 가능) ② 빈 비공개 저장소 생성(이름 자유, **Private**, README 등 초기화 없이 — 교훈에 프로젝트 내용이 그대로 담기므로 비공개 필수, GitHub은 비공개도 무료) ③ 그 기기의 git 인증(`gh auth login` 또는 SSH 키 — push 시 비밀번호를 묻지 않는 상태, `gh auth status`로 확인). 여기까지가 사용자 몫이고, NAMU는 로컬 쪽 git 연결만 대신한다.
 2. AI에게 "`namu_sync_setup`을 `<원격 URL>`로 실행해줘"라고 부탁한다(MCP 도구 직접 호출). 한 번만 하면 된다.
 
 `namu_sync_setup`이 하는 일: `~/.namu`에 `git init`(이미 있으면 스킵) → `.gitignore`에 `db/` 추가(검색 캐시는 동기화 대상이 아님) → `.gitattributes`에 `memory/learnings.yaml merge=union` 추가(여러 PC의 append-only 기록이 충돌 없이 합쳐지도록) → 원격 `origin` 등록 → 마커 파일(`.namu_sync`) 생성 → 초기 커밋·push 순으로 진행된다.
