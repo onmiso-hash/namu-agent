@@ -813,3 +813,35 @@ task: '플러그인 스코프 라이브 실측(hp): CC 스코프 3종 의미 확
 task_type: analysis
 timestamp: '2026-07-10T14:35:40.963271+00:00'
 verified_by: human
+---
+id: 01KX6AHVTF6GD918RMN18G7CFA
+machine: hp
+outcome: success
+reason: '세 가지. ① 근본 원인 패턴: uv run --script는 cwd가 의존성 갖춘 프로젝트(.venv)면 그 환경을 집어 쓰기 때문에,
+  PEP 723 누락이 개발 repo 안에서는 절대 안 드러난다 — 개발 환경이 빠진 의존성을 조용히 메워 버그를 가리는 구조. 자급자족이어야 하는
+  스크립트(훅·플러그인 동봉물)는 반드시 "빈 임시 폴더 cwd"에서 실측해야 하며, 재현법은 임시 폴더에서 echo ''{"cwd":"..."}''
+  | uv run --script <스크립트>로 stdout 유무 판정. mcp_server·session_inject에는 블록이 있었는데 session_recall에만
+  없던 것도 "파일별 산발 적용"이 원인 — 자급 규약은 uv 호출 대상 전수 점검으로 지켜야 한다. ② 진단 정정: namu-25의 "신규 환경
+  첫 세션 침묵=설계상 정상" 진단은 불완전했다 — 그 침묵의 일부는 이 버그였고, 0.1.8에 넣은 환영 브리핑조차 훅 사멸로 한 번도 소비자에게
+  나간 적이 없다. 무음 except(exit 0, 세션 안 막기) 정책이 고장과 설계 침묵을 구분 불가능하게 만든 공범 — namu-27이 git
+  체크에 "실패 무음+물증로그"를 넣었듯 훅 자체 실패에도 물증 로그가 필요하다(후속 개선 후보로 이월). ③ 검증 방법론: CC 무화면 사양에서
+  훅 주입을 관찰할 유일한 방법은 새 세션 AI에게 "컨텍스트에 🌳 블록 몇 개?"라고 묻는 것 — 존재 확인(0/1)과 이중 주입 검사(2)를
+  한 질문으로 겸하며, onnamu가 local+user 이중 설치라 "겹침 환경 훅 1회 실행"까지 이 한 번으로 실증됐다. 사용자의 소박한 질문
+  하나가 전 라이브 실측이 못 잡던 잠복 결함을 끌어냈다 — 실측은 "개발 폴더 밖 + 소비자 조건"이 갖춰져야 실환경 증거가 된다(namu-23·26·27
+  계보 강화)'
+tags:
+- namu-29
+- pep723
+- uv-script
+- hook
+- 무음실패
+- 라이브실측
+- 자급자족
+task: 'namu-29-hook-deps: CC SessionStart 훅(session_recall.py) PEP 723 블록 부재 수정(플러그인
+  0.1.10) — uv run --script가 개발 repo 밖 cwd에서 맨몸 환경으로 돌아 config.py의 dotenv import에서
+  ModuleNotFoundError → 무음 except(exit 0)로 설치형 사용자의 브리핑·환영·behind 경고·훅발 캐시 재생성이 전멸이던
+  버그. onnamu-project 라이브 0개(사용자 스크린샷) → 헤드리스 재현·traceback 물증 → 4줄 수정 → 새 세션 라이브 정확히
+  1개(교훈 5건+이월 안내 포함) PASS. 코더·리뷰어 각 1회, 재실행 0'
+task_type: code
+timestamp: '2026-07-10T15:32:47.567908+00:00'
+verified_by: human

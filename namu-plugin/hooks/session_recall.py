@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["PyYAML>=6.0", "python-ulid>=3.0.0", "python-dotenv>=1.0.0", "typing-extensions>=4.0"]
+# ///
 """SessionStart 훅 — 세션 컨텍스트(작업 상태 + 교훈) 자동 주입.
 
 세션 시작 시 실행돼 build_context_markdown() 결과를 Claude Code 컨텍스트에 주입한다.
