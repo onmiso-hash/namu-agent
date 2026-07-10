@@ -57,6 +57,7 @@ def namu_recall(query: str | None = None, task_type: str | None = None, limit: i
       limit: max entries (default 5, small for token efficiency)
     Returns: list of learning dicts (timestamp, task, outcome, reason, tags, ...)
     """
+    _ensure_db()
     with closing(get_conn()) as conn:
         return _recall(conn, query, task_type, limit)
 
@@ -75,6 +76,7 @@ def namu_search(query: str, outcome_filter: str | None = None, limit: int = 10):
       limit: max returned rows (default 10)
     Returns: {"results": [...dicts...], "summary": {"success": N, "failure": M, "partial": K}}
     """
+    _ensure_db()
     with closing(get_conn()) as conn:
         return _search(conn, query, outcome_filter, limit)
 
@@ -103,6 +105,7 @@ def namu_record(
       tags: list of string tags (optional)
     Returns: the new entry's ULID (str)
     """
+    _ensure_db()
     return record(task, outcome, reason, task_type, verified_by, _normalize_tags(tags))
 
 

@@ -1,6 +1,13 @@
 import pytest
 from pathlib import Path
-from task_resolve import _parse_log_ts, find_active_task, resolve_active_task
+from task_resolve import (
+    _parse_log_ts,
+    _line_tag,
+    _log_says_closed,
+    find_active_task,
+    find_latest_closed_task,
+    resolve_active_task,
+)
 
 def test_parse_log_ts():
     # 시각 있는 줄
@@ -92,3 +99,96 @@ def test_resolve_active_task_ignores_namu_home_env(monkeypatch, tmp_path):
 def test_resolve_active_task_empty_ws_returns_none():
     """ws가 비어있으면 안전 폴백으로 None."""
     assert resolve_active_task("") is None
+
+
+# ---------------------------------------------------------------------------
+# _line_tag / _log_says_closed — log=권위 판정 (namu-27)
+# ---------------------------------------------------------------------------
+
+def test_line_tag_extracts_bracket_prefix():
+    assert _line_tag("[시작] 2026-06-28 10:15:30 hp · 시작") == "시작"
+    assert _line_tag("[완료] 2026-06-29 hp · 완료") == "완료"
+    assert _line_tag("그냥 텍스트") is None
+    assert _line_tag("# log — task") is None
+
+
+def test_log_says_closed_done_only(tmp_path):
+    """[완료] 단독 -> 닫힘."""
+    log_path = tmp_path / "log.md"
+    log_path.write_text(
+        "[시작] 2026-06-28 10:00:00 hp · 시작\n"
+        "[완료] 2026-06-29 10:00:00 hp · 완료\n",
+        encoding="utf-8",
+    )
+    assert _log_says_closed(log_path) is True
+
+
+# 실물 함정: tasks/namu-25-usage-guide/log.md — [완료] 뒤에 [정정] 줄이 있다.
+# "마지막 줄이 [완료]인가"로 구현하면 이 task가 도로 유령(오탐지)이 된다.
+_NAMU25_LOG_FIXTURE = """# log — namu-25-usage-guide
+(append만. context 꼬이면 이걸로 복원)
+
+[시작] 2026-07-09 13:24:47 samsung · 계획 확정(사용자 결정): HP에서 타 프로젝트에 설치형 실사용 실측 → 채록 기반 사용 가이드 작성. 배경 = 현 html은 설치 설명서일 뿐 사용 설명서 부재(07-09 평가)
+[실측] 2026-07-09 19:37:54 hp · ① 원격 설치 헤드리스분 PASS — 대상=onnamu-project(사용자 확정). marketplace add(HTTPS clone 성공)→install user 스코프 0.1.7·sha ef8ca96(방금 pull 커밋=GitHub발 물증)·기존 local 0.1.1 무사→onnamu-project서 claude mcp list ✔Connected(0.1.7 캐시 경로).
+[실측] 2026-07-09 20:48:04 hp · ①② 완주 — 사용자 라이브: 세션 브리핑 없음(신규 환경 md=None 설계상 침묵+CC 무화면 사양 겹침, ~/.namu/db 19:37 생성 물증으로 경로·서버 정상 판정), /mcp 3도구 ✔, /namu-task 실작업 1건 전 사이클 완주.
+[결정] 2026-07-09 20:56:00 hp · ④⑤ 사용자 게이트 통과 — ④ 별도 문서(docs/usage_guide.md 신설, 8절+뺀 것 목록, 실측 채록만 사용) ⑤ 한계+임시 안내.
+[완료] 2026-07-09 21:10:32 hp · #25 종료 — 완료조건 ①~⑤ 전부 충족(사용자 검수 통과 처리). 이월: namu-26 후보 4건(데이터 루트 일원화·SKILL.md machine 문구·환영 브리핑·statusline 동봉). 커밋·푸시 진행
+[정정] 2026-07-10 09:14:43 samsung · 유령 해소 — hp 마감(21:10) 시 context 미닫음으로 활성 task 오탐지. context.samsung·context.hp의 '▶ 다음'을 (완료) 단독 표기로 정정 (마감 규약: 단독 표기·전 machine 파일)
+"""
+
+
+def test_log_says_closed_done_then_correction_is_still_closed(tmp_path):
+    """namu-25 실물 패턴: [완료] 뒤에 [정정] — 구간 존재 판정이므로 여전히 닫힘."""
+    log_path = tmp_path / "log.md"
+    log_path.write_text(_NAMU25_LOG_FIXTURE, encoding="utf-8")
+    assert _log_says_closed(log_path) is True
+
+
+def test_log_says_closed_done_then_restart_is_reopened(tmp_path):
+    """[완료] 뒤에 새 [시작](재개)이 붙으면 그 이후 구간만 보므로 열림(False)."""
+    log_path = tmp_path / "log.md"
+    log_path.write_text(
+        "[시작] 2026-06-28 10:00:00 hp · 시작\n"
+        "[완료] 2026-06-29 10:00:00 hp · 완료\n"
+        "[시작] 2026-06-30 10:00:00 hp · 재개\n"
+        "[결정] 2026-06-30 11:00:00 hp · 방향\n",
+        encoding="utf-8",
+    )
+    assert _log_says_closed(log_path) is False
+
+
+def test_log_says_closed_aborted(tmp_path):
+    """[중단] -> 닫힘."""
+    log_path = tmp_path / "log.md"
+    log_path.write_text(
+        "[시작] 2026-06-28 10:00:00 hp · 시작\n"
+        "[중단] 2026-06-29 10:00:00 hp · 보류\n",
+        encoding="utf-8",
+    )
+    assert _log_says_closed(log_path) is True
+
+
+def test_log_says_closed_no_closing_tag(tmp_path):
+    """[시작] 이후 완료/중단 태그가 전혀 없으면 열림(False)."""
+    log_path = tmp_path / "log.md"
+    log_path.write_text(
+        "[시작] 2026-06-28 10:00:00 hp · 시작\n"
+        "[결정] 2026-06-28 11:00:00 hp · 방향\n",
+        encoding="utf-8",
+    )
+    assert _log_says_closed(log_path) is False
+
+
+def test_find_active_task_ignores_ghost_when_log_says_closed(tmp_path):
+    """log=권위: context가 미닫혀 있어도([진행중]) log에 [완료]가 있으면 유령으로 잡히지 않는다."""
+    task_dir = tmp_path / "namu-25-usage-guide"
+    task_dir.mkdir()
+    (task_dir / "task.md").write_text("# namu-25-usage-guide\n", encoding="utf-8")
+    (task_dir / "log.md").write_text(_NAMU25_LOG_FIXTURE, encoding="utf-8")
+    # context가 미닫힘(마감 규약 위반 상황을 재현) — 그래도 log가 닫힘을 말하므로 유령 아님
+    (task_dir / "context.hp.md").write_text("## ▶ 다음\n진행중\n", encoding="utf-8")
+
+    assert find_active_task(tmp_path) is None
+    closed = find_latest_closed_task(tmp_path)
+    assert closed is not None
+    assert closed.name == "namu-25-usage-guide"
