@@ -374,25 +374,14 @@
   <section id="checklist">
     <h2>2. 시작 전 준비물 체크리스트</h2>
     <p>아래 항목을 하나씩 확인하고 넘어가세요. 하나라도 빠지면 설치 중간에 막힐 수 있습니다.</p>
+    <div class="box note">
+      <strong>참고</strong>
+      <p style="margin-bottom:0">
+        NAMU repo(<code>onmiso-hash/namu-agent</code>)는 공개(public) 저장소입니다. 별도의 초대나 git 자격증명 없이
+        누구나 바로 설치를 시작할 수 있습니다.
+      </p>
+    </div>
     <ul class="checklist">
-      <li>
-        <input type="checkbox" id="chk1">
-        <label for="chk1">
-          <div class="label">GitHub 계정과 repo 초대</div>
-          <div class="how">NAMU repo(<code>onmiso-hash/namu-agent</code>)는 비공개(private) 저장소입니다. 저장소 소유자에게
-            <strong>collaborator(공동작업자)</strong>로 초대받아 GitHub 계정으로 수락해야 합니다. 확인법: GitHub 웹사이트에서 해당 repo
-            페이지가 로그인 상태로 열리는지 확인하세요.</div>
-        </label>
-      </li>
-      <li>
-        <input type="checkbox" id="chk2">
-        <label for="chk2">
-          <div class="label">git 자격증명(credential) 설정</div>
-          <div class="how">위에서 초대받은 GitHub 계정으로, 내 컴퓨터의 git이 로그인돼 있어야 합니다(HTTPS credential manager 등).
-            확인법: 터미널에서 <code>git clone https://github.com/onmiso-hash/namu-agent</code>를 한 번 시도해서 인증 없이(또는 로그인 창을 거쳐)
-            성공하는지 봅니다. 성공했다면 만들어진 폴더는 지워도 됩니다 — 확인용입니다.</div>
-        </label>
-      </li>
       <li>
         <input type="checkbox" id="chk3">
         <label for="chk3">
@@ -452,8 +441,8 @@
     <div class="box tip">
       <strong>참고</strong>
       <p style="margin-bottom:0">
-        repo가 비공개(private)이므로, 앞서 체크리스트에서 확인한 <strong>초대받은 GitHub 계정 + git 자격증명</strong>이
-        이미 준비돼 있어야 이 단계가 성공합니다. 설치 범위는 기본적으로 "이 컴퓨터를 쓰는 나"(user 스코프)입니다.
+        repo가 공개(public)이므로 별도 초대나 git 자격증명 없이 바로 이 단계가 성공합니다. 설치 범위는 기본적으로
+        "이 컴퓨터를 쓰는 나"(user 스코프)입니다.
       </p>
     </div>
 
