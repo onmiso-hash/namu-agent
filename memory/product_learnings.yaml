@@ -994,3 +994,36 @@ task: samsung(Windows PowerShell) 개인 풀 sync 온보딩 실전 — namu_sync
 task_type: analysis
 timestamp: '2026-07-11T12:40:59.894519+00:00'
 verified_by: human
+---
+id: 01KX8S521DNGESDDA7N39WXQZC
+machine: hp
+outcome: success
+reason: 핵심 판단 5개. ① 오케스트레이터 추천(개발 모드만 예외로 현행 유지)보다 사용자 안(예외 0, 전부 이전)이 원칙에 더 충실했다
+  — 3원 분류상 tasks는 프로젝트상태이지 제품지식이 아니고, 개발 repo에 있던 건 원칙이 아니라 관성이었다. "기존 배치를 예외로 남기자"는
+  추천이 나올 때는 그 배치가 원칙의 결과인지 관성의 결과인지 먼저 물어야 한다. 특례를 없애자 코드 분기도 0이 됐다. ② 경로 규칙은 의존성이
+  가장 낮은 층(stdlib-only task_resolve)에 단일 구현하고 상위(config)가 위임하는 방향이 맞다 — plain python3
+  소비자(statusline)와 uv 환경 소비자가 문자 그대로 같은 함수를 실행해 이중 구현 드리프트가 원천 차단되고, statusline 사본
+  2개는 공유 모듈 변경만으로 거의 무변경으로 지나갔다(과거 statusLine 미동기화 혼란의 진범이 스크립트가 아니라 데이터 루트 3분열이었다는
+  진단이 이 설계를 이끌었다). ③ "저장 위치 이전"의 숨은 절반은 sync 트리거였다 — 자동 push가 memory/만 add했고 개발 세션의
+  record는 ~/.namu를 안 건드려서, 사전 조사에서 add 범위를 실물 확인하지 않았으면 "옮겼는데 동기화 안 되는" 반쪽 기능이 됐다.
+  위치를 옮기는 작업은 "누가 언제 그 위치를 push/pull하나"까지가 범위다. ④ 리뷰어 FAIL의 단일 사유(옛 경로에 SKILL.md 부재)는
+  산출물 결함이 아니라 기존 문서 드리프트(CLAUDE.md가 삭제된 경로를 계속 참조)의 신호였다 — 오탐이라도 뿌리를 고치면 수확이다(통과 처리
+  + 참조 2곳 정정). ⑤ 이관 순서는 복사→diff 무결 검증→새 저장소 push→라이브 실측→그다음에야 원본 git rm — 원본 제거를 마지막에
+  두면 각 단계가 회귀 가능해 게이트가 가벼워진다. 신설 push CLI를 이관 마무리에 실전 투입(dogfooding)한 것이 별도 실측을 겸했다.
+tags:
+- namu-34
+- tasks-pool
+- 경로규칙단일화
+- sync트리거
+- 이관절차
+- 특례제로
+- statusline
+task: 'namu-34-tasks-pool: task 저장 위치 개인 풀 통합 — 전 프로젝트 tasks를 ~/.namu/tasks/&lt;basename&gt;/으로
+  이전(개발 repo 예외 없음, NAMU_HOME 무관), namu-26 "프로젝트 cwd 귀속" 결정 정식 개정. 경로 규칙 task_resolve(stdlib)
+  단일 구현 + config 위임, .project 마커 충돌 감지, 구 위치 이관 안내, statusline 렌더 로그 tasks_dir, sync
+  확장(auto_push add 범위 + namu_tasks_push CLI + .gitattributes union 멱등 ensure + ~/.namu
+  behind 경고), 0.1.14. 테스트 83→122, 코더 2유닛·리뷰어 1회 재실행 0, 19개 폴더 이관(diff 무결)·repo git
+  rm·hp↔samsung 교차 확인 True·라이브 실측 3종+신설 CLI 실전 push PASS'
+task_type: code
+timestamp: '2026-07-11T14:26:25.454139+00:00'
+verified_by: human
