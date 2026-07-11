@@ -6,7 +6,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **machine 이름** — `config.py`의 `NAMU_MACHINE`. **환경변수 `NAMU_MACHINE` 또는 호스트명**으로 결정된다(우선순위: 환경변수 → `platform.node()` 호스트명 → `unknown`). `.env` 파일이 없다는 이유만으로 `unknown`으로 찍지 말 것 — 환경변수와 호스트명을 확인하라. `unknown`은 호스트명조차 빌 때의 최후 폴백이다.
 
-**작업 루트** — **개인 풀** `~/.namu/tasks/<basename(현재 프로젝트 폴더)>/`(`config.py`의 `tasks_dir_for(project_dir)`, 생략 시 `os.getcwd()` — 규칙 실구현은 `task_resolve.tasks_root_for()` 단일 함수, #34로 #26 개정). tasks는 메모리(`NAMU_HOME` — 설치형은 `~/.namu`)와 **별개 산출 기준**을 쓰지만(교훈·db=`NAMU_HOME`, tasks=항상 프로젝트 폴더명 하나) 물리적으로는 같은 `~/.namu` 계열에 모인다 — `NAMU_HOME`이 REPO_ROOT로 폴백돼도(개발 repo) tasks 위치엔 영향을 주지 않으며 특례가 없다. tasks는 여전히 성격상 **프로젝트 종속 데이터**이지만, 공유는 그 프로젝트의 git이 아니라 `~/.namu`의 **개인 전역 동기화**(record 후 auto-push 범위 확장 + `namu_tasks_push.py` CLI)에 편승한다. 아래 `TASKS_DIR` 표기는 이 규칙(개인 풀 tasks 루트)을 가리키는 약칭이다.
+**작업 루트** — **개인 풀** `~/.namu/tasks/<basename(현재 프로젝트 폴더)>/`(`config.py`의 `tasks_dir_for(project_dir)`, 생략 시 `os.getcwd()` — 규칙 실구현은 `task_resolve.tasks_root_for()` 단일 함수, #34로 #26 개정). tasks는 학습 기억(교훈·db, `~/.namu/memory`·`~/.namu/db`)과 **별개 산출 기준**을 쓰지만(교훈·db=고정 상수 `NAMU_DATA_ROOT`, tasks=항상 프로젝트 폴더명 하나) 물리적으로는 같은 `~/.namu` 계열에 모인다 — 어느 프로젝트(이 개발 repo 포함)에서 실행하든 tasks 위치엔 영향을 주지 않으며 특례가 없다(namu-35: 데이터 루트가 환경변수가 아닌 고정 상수가 되며 "개발 repo 예외" 자체가 존재하지 않게 됐다). tasks는 여전히 성격상 **프로젝트 종속 데이터**이지만, 공유는 그 프로젝트의 git이 아니라 `~/.namu`의 **개인 전역 동기화**(record 후 auto-push 범위 확장 + `namu_tasks_push.py` CLI)에 편승한다. 아래 `TASKS_DIR` 표기는 이 규칙(개인 풀 tasks 루트)을 가리키는 약칭이다.
 
 **tasks 저장 후 push** — 신규 3파일 생성, `context.<machine>.md` 덮어쓰기, `log.md` append 등 `TASKS_DIR` 아래 파일을 갱신한 직후마다(아래 "중간 상태 저장" 지점 포함) `namu_tasks_push.py` CLI를 호출한다 — 대상은 항상 `~/.namu`(git repo·origin 원격이 없으면 조용히 no-op, 실패해도 작업 절차를 막지 않는다). 개발 repo에서는 `python3 scripts/namu_tasks_push.py`(repo 루트 기준), 설치형 플러그인에서는 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/namu_tasks_push.py`를 쓴다.
 
@@ -40,7 +40,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **4. 작업 분할** — 코딩 워커에게 넘길 단위로 쪼갠다.
 
-**5. 워커 명단 확인** — `NAMU_HOME/namu_workers.yaml`을 읽는다. **파일이 없으면 engine=`native`로 간주하고 그대로 진행한다** (설치형 기본값 — 기본 워커는 현재 엔진의 네이티브 서브에이전트, 별도 설정 불필요). engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
+**5. 워커 명단 확인** — 현재 프로젝트 루트의 `namu_workers.yaml`을 읽는다. **파일이 없으면 engine=`native`로 간주하고 그대로 진행한다** (설치형 기본값 — 기본 워커는 현재 엔진의 네이티브 서브에이전트, 별도 설정 불필요). engine이 `native`면 지금 실행 중인 엔진의 서브에이전트 호출 도구를 쓴다:
 
 - Claude Code: `Agent` 도구. `subagent_type`은 **호출명 폴백 규칙**을 따른다 — 사용 가능한 에이전트 목록에 명단의 `agent` 값(예: `namu-coder`)이 있으면 그대로 쓰고, 없으면 플러그인 네임스페이스 이름 `namu:<agent>`(예: `namu:namu-coder`)를 쓴다. (개발 repo에선 프로젝트 `.claude/agents/`의 비네임스페이스 이름이 우선 존재하고, 설치형에선 플러그인 동봉 정의라 `namu:` 접두사가 강제로 붙기 때문)
 - agy(Antigravity): `invoke_subagent` (`TypeName` = 명단의 `agent` 값 그대로 — agy는 네임스페이스를 붙이지 않는다. 정의는 워크스페이스 `.agents/agents/<agent>/agent.md` 또는 플러그인 설치본 `agents/<agent>/agent.md`에서 자동 로드). 비동기이므로 서브에이전트의 `send_message` 수신까지 대기 후 다음 단계로.

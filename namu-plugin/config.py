@@ -7,37 +7,20 @@ from dotenv import load_dotenv, find_dotenv
 import task_resolve
 
 BASE_DIR = Path(__file__).parent
-REPO_ROOT = BASE_DIR.parent
 # 1. 사용자가 실행한 현재 작업 폴더(cwd) 기준의 .env를 찾아 최우선 로드 (플러그인 모드 지원)
 load_dotenv(find_dotenv(usecwd=True))
 # 2. 없으면 플러그인 자체 경로의 .env 로드 (하위 호환)
 load_dotenv(BASE_DIR / ".env")
 
-# NAMU_HOME: 데이터(learnings/tasks/db)가 놓이는 루트.
-# 우선순위:
-#   1. NAMU_HOME 환경변수 (.env 경유 포함) — 명시적 지정, 항상 최우선.
-#   2. REPO_ROOT/memory 가 실재하고 cwd가 REPO_ROOT 안쪽이면 REPO_ROOT —
-#      repo를 클론해 그 안에서 직접 실행하는 하위호환 경로. cwd 조건이 없으면
-#      플러그인을 directory 소스(개발 repo 라이브 참조)로 설치한 머신에서
-#      REPO_ROOT가 __file__(플러그인 설치 위치) 기준으로 고정돼, 타 프로젝트
-#      cwd에서 실행해도 항상 개발 repo로 라우팅되는 오배선이 발생한다(#33).
-#   3. 그 외엔 Path.home() / ".namu" — 플러그인 설치형 기본값(분리 모드).
-#      플러그인 캐시 폴더에는 memory/ 가 복사되지 않으므로, env 미설정 사용자가
-#      캐시 안에 데이터를 쓰는 "유령 경로" 사고(#13·#16)를 이 폴백이 방지한다.
-def _cwd_is_within(base: Path) -> bool:
-    try:
-        cwd = Path.cwd().resolve()
-    except OSError:
-        return False
-    return cwd.is_relative_to(base.resolve())
-
-
-if "NAMU_HOME" in os.environ:
-    NAMU_HOME = Path(os.environ["NAMU_HOME"])
-elif (REPO_ROOT / "memory").is_dir() and _cwd_is_within(REPO_ROOT):
-    NAMU_HOME = REPO_ROOT
-else:
-    NAMU_HOME = Path.home() / ".namu"
+# NAMU_DATA_ROOT: 데이터(learnings/db)가 놓이는 루트.
+# namu-35: "개발 모드/설치 모드" 구분 자체를 폐지 — 어디서 실행하든(개발 repo 안에서든
+# 밖에서든) 무조건 Path.home() / ".namu" 고정이다. 환경변수(NAMU_HOME)로 우회할 길도
+# 없다(사용자 확정 결정) — 변수명을 NAMU_DATA_ROOT로 바꾼 것도 "환경변수가 아니라
+# 고정 상수"임을 이름으로 드러내기 위함이다.
+# "유령 경로" 사고(#13·#16 — 플러그인 캐시 폴더 안에 데이터가 흩어지는 문제) 방지책은
+# 더 이상 폴백 순서가 아니라 이 고정 경로 자체다 — 분기할 여지가 없으니 오배선(#33)도
+# 구조적으로 성립하지 않는다.
+NAMU_DATA_ROOT = Path.home() / ".namu"
 
 # DB
 DB_PATH = BASE_DIR / "db" / "namu.sqlite"
@@ -69,19 +52,13 @@ OLLAMA_HOST: str = "http://localhost:11434"
 OLLAMA_DEFAULT_MODEL: str = "llama3"
 
 # 학습 기억
-LEARNINGS_PATH = NAMU_HOME / "memory" / "learnings.md"
-# 메모리 3원 분류(#32): 개발 repo(NAMU_HOME == REPO_ROOT)에서 쌓이는 교훈은
-# "제품지식"(NAMU 자체를 만들며 배운 것), 설치형(~/.namu 등)에서 쌓이는 교훈은
-# "개인전역지식"(NAMU를 도구로 다른 프로젝트 하며 배운 것) — 성격이 달라 병합하지
-# 않기로 하고, 파일명으로 구분을 명시한다. 이 조건은 memory_sync.py의
-# sync_enabled 하드가드(cfg.NAMU_HOME == cfg.REPO_ROOT)와 동일하다.
-if NAMU_HOME == REPO_ROOT:
-    LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "product_learnings.yaml"
-else:
-    LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "learnings.yaml"
+LEARNINGS_PATH = NAMU_DATA_ROOT / "memory" / "learnings.md"
+# namu-35: "개발 모드/설치 모드" 구분(#32의 "제품지식"/"개인전역지식" 파일명 분기)을
+# 폐지 — 메모리 풀이 ~/.namu 하나로 통합됐으므로 파일명은 항상 learnings.yaml이다.
+LEARNINGS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "learnings.yaml"
 
 # DB
-NAMU_DB_PATH = NAMU_HOME / "db" / "namu.db"
+NAMU_DB_PATH = NAMU_DATA_ROOT / "db" / "namu.db"
 
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
 # 해석 규칙:
@@ -99,11 +76,11 @@ def _resolve_machine(env_value: str | None) -> str:
 
 NAMU_MACHINE: str = _resolve_machine(os.getenv("NAMU_MACHINE"))
 
-# 작업 기록(tasks) — 메모리(NAMU_HOME)와 저장소를 분리한다.
+# 작업 기록(tasks) — 메모리(NAMU_DATA_ROOT)와 저장소를 분리한다.
 # tasks는 여전히 "프로젝트 귀속" 데이터지만, 저장 위치는 개인 풀
 # `~/.namu/tasks/<basename(project_dir)>/`로 통합한다(namu-34) — 공개 repo에 작업
 # 기록이 노출되는 것을 막고 PC 간 공유를 개인 전역 동기화에 편승시키기 위해서다.
-# NAMU_HOME은 이제 학습 기억(LEARNINGS_*/NAMU_DB_PATH) 전용으로만 남는다.
+# NAMU_DATA_ROOT는 이제 학습 기억(LEARNINGS_*/NAMU_DB_PATH) 전용으로만 남는다.
 # 규칙은 task_resolve.py(stdlib)에 단일 구현돼 있고, 여기서는 위임만 한다
 # (규칙 이중 구현 금지 — statusline 등 plain python3 소비자와 동일 결과를 보장).
 #

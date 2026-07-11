@@ -31,9 +31,10 @@ def _ensure_tasks_gitattributes() -> None:
     멱등 ensure한다(namu-34 ③-c). 신규 개통은 namu_sync_setup이 이미 챙기므로,
     이건 "sync_setup을 다시 부르지 않는 기존 사용자"를 위한 보정이다.
 
-    대상은 항상 `Path.home()/".namu"`(NAMU_HOME이 아니다 — tasks 개인 풀 규칙과
-    동일 근거, namu-34 ①). `.git`이 없으면(미개통) 완전 스킵하고, 그 외 모든
-    실패도 서버 부팅을 절대 막으면 안 되므로 전예외 무해 처리한다.
+    대상은 항상 `Path.home()/".namu"`다(tasks 개인 풀 규칙과 동일 근거, namu-34 ①
+    — namu-35 이후로는 cfg.NAMU_DATA_ROOT와도 같은 경로). `.git`이 없으면(미개통)
+    완전 스킵하고, 그 외 모든 실패도 서버 부팅을 절대 막으면 안 되므로 전예외
+    무해 처리한다.
     """
     try:
         home = Path.home() / ".namu"

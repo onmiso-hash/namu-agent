@@ -1,10 +1,7 @@
-"""설치형(~/.namu) 교훈 저장소의 git 자동 동기화 — record 시 auto commit+push,
-세션 시작 훅에서 auto pull.
+"""~/.namu(namu-35: 데이터 루트 고정, "개발 모드/설치 모드" 구분 폐지) 교훈 저장소의
+git 자동 동기화 — record 시 auto commit+push, 세션 시작 훅에서 auto pull.
 
-명시적 활성화(namu_sync_setup으로 마커 파일 생성) 전제. 개발 repo(clone형, config.py의
-NAMU_HOME이 REPO_ROOT로 폴백되는 경우)에서는 마커가 있어도 절대 발동하지 않는다 —
-그 경로는 이미 사람이 직접 git pull/push로 관리하는 대상이라, 자동 push가 끼어들면
-사용자 모르게 커밋/강제 상태가 만들어지는 사고가 된다(하드가드, sync_enabled 참조).
+명시적 활성화(namu_sync_setup으로 마커 파일 생성) 전제.
 
 db.py(코어)와 성격이 다른 인터페이스/훅 레이어 소관이라 stdlib만 사용한다 — 훅들의
 PEP 723 의존성 블록을 건드릴 필요가 없게 하기 위함.
@@ -19,17 +16,18 @@ from pathlib import Path
 
 
 def sync_enabled() -> bool:
-    """설치형 자동 동기화 활성 여부. 아래 4개를 전부 충족해야 True.
+    """자동 동기화 활성 여부. 아래 3개를 전부 충족해야 True.
 
     1. NAMU_SYNC 환경변수가 "0"이 아님 — 기본 켜짐, 끄기 스위치
        (session_context.check_git_behind의 NAMU_GIT_CHECK=0 패턴과 동일).
-    2. NAMU_HOME/.namu_sync 마커 파일 존재 — namu_sync_setup으로만 생성되므로
+    2. NAMU_DATA_ROOT/.namu_sync 마커 파일 존재 — namu_sync_setup으로만 생성되므로
        "명시적 활성화" 전제를 보장한다.
-    3. NAMU_HOME != REPO_ROOT — 하드가드. config.py는 REPO_ROOT/memory가 실재하면
-       NAMU_HOME을 REPO_ROOT로 폴백시키는데(클론해 직접 실행하는 개발 환경), 이
-       경로는 이미 기존 repo git으로 관리되는 대상이다. 마커가 실수로 남아있어도
-       auto-push가 그 repo에 조용히 끼어드는 사고를 여기서 원천 차단한다.
-    4. NAMU_HOME/.git 존재 — git 저장소로 초기화돼 있어야 pull/push가 의미 있다.
+    3. NAMU_DATA_ROOT/.git 존재 — git 저장소로 초기화돼 있어야 pull/push가 의미 있다.
+
+    namu-35: 데이터 루트가 Path.home()/".namu" 고정이 되며 "개발 repo(clone형)를
+    가리킬 수 있는 포인터" 자체가 사라졌다 — 그래서 이전에 있던 "NAMU_DATA_ROOT !=
+    REPO_ROOT" 하드가드는 지킬 대상이 없어져 삭제했다(더 이상 개발 repo로 오염될
+    경로가 존재하지 않는다).
 
     cfg는 함수 내부에서 import해 테스트가 config 모듈 속성을 monkeypatch로
     격리할 수 있게 한다(session_context.py 관례와 동일).
@@ -38,11 +36,9 @@ def sync_enabled() -> bool:
 
     if os.environ.get("NAMU_SYNC") == "0":
         return False
-    if not (cfg.NAMU_HOME / ".namu_sync").exists():
+    if not (cfg.NAMU_DATA_ROOT / ".namu_sync").exists():
         return False
-    if cfg.NAMU_HOME == cfg.REPO_ROOT:
-        return False
-    if not (cfg.NAMU_HOME / ".git").exists():
+    if not (cfg.NAMU_DATA_ROOT / ".git").exists():
         return False
     return True
 
@@ -52,15 +48,15 @@ def _append_sync_log(line: str, home: "Path | str | None" = None) -> None:
     되므로 전예외 무음 처리한다(session_context._append_git_check_log와 동일 원칙 —
     무음 실패가 잠복하지 않도록 사유만은 남긴다).
 
-    home 생략 시 cfg.NAMU_HOME(기존 sync_push/sync_pull 호출부와 동일). namu_tasks_push
-    CLI(namu-34 ③-b)처럼 대상이 항상 `~/.namu`로 고정돼 NAMU_HOME과 다를 수 있는
-    호출부는 home을 명시해 로그가 엉뚱한 위치(개발 repo의 NAMU_HOME 등)에 남지 않게 한다.
+    home 생략 시 cfg.NAMU_DATA_ROOT(기존 sync_push/sync_pull 호출부와 동일). namu_tasks_push
+    CLI(namu-34 ③-b)처럼 대상이 항상 `~/.namu`로 고정된(namu-35 이후로는 cfg.NAMU_DATA_ROOT와
+    동일 경로) 호출부도 명시적으로 home을 넘겨 호출 의도를 분명히 한다.
     """
     try:
         if home is None:
             import config as cfg
 
-            home = cfg.NAMU_HOME
+            home = cfg.NAMU_DATA_ROOT
         path = Path(home) / "db" / "sync.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -71,7 +67,7 @@ def _append_sync_log(line: str, home: "Path | str | None" = None) -> None:
 
 
 def sync_pull() -> bool:
-    """NAMU_HOME에서 git pull(union merge)로 다른 PC의 최신 교훈을 당겨온다.
+    """NAMU_DATA_ROOT에서 git pull(union merge)로 다른 PC의 최신 교훈을 당겨온다.
 
     세션 시작 훅에서 호출 — 여기서 yaml이 갱신되면 기존 cache_is_stale 로직이
     db를 자동 재생성하므로 이 함수는 pull만 책임진다. 훅을 절대 막지 않도록
@@ -82,7 +78,7 @@ def sync_pull() -> bool:
     if not sync_enabled():
         return False
 
-    home = str(cfg.NAMU_HOME)
+    home = str(cfg.NAMU_DATA_ROOT)
     try:
         result = subprocess.run(
             ["git", "-C", home, "pull", "--no-rebase", "--no-edit", "--quiet"],
@@ -268,15 +264,12 @@ def sync_push(message: str) -> bool:
     if not sync_enabled():
         return False
 
-    return _push(str(cfg.NAMU_HOME), message, ["memory/"], ["tasks/"])
+    return _push(str(cfg.NAMU_DATA_ROOT), message, ["memory/"], ["tasks/"])
 
 
 def tasks_pool_git_ready(home: "Path | str") -> bool:
-    """namu_tasks_push CLI 전용 게이팅(namu-34 ③-b) — sync_enabled(마커 파일+
-    NAMU_HOME==REPO_ROOT 하드가드)와는 무관하게, 대상(`~/.namu`) 자체가 git repo이고
-    origin 원격을 가졌는지만 본다. tasks push는 항상 고정 경로(`~/.namu`)만 대상으로
-    삼으므로 sync_enabled의 "개발 repo 오염 방지" 하드가드가 적용될 이유가 없다 —
-    대상이 애초에 프로젝트 repo가 아니라 그 사고 유형이 구조적으로 성립하지 않는다.
+    """namu_tasks_push CLI 전용 게이팅(namu-34 ③-b) — sync_enabled(마커 파일 게이트)와는
+    무관하게, 대상(`~/.namu`) 자체가 git repo이고 origin 원격을 가졌는지만 본다.
     """
     home_path = Path(home)
     if not (home_path / ".git").exists():
@@ -300,25 +293,16 @@ def push_tasks_pool(home: "Path | str", message: str) -> bool:
 
 
 def sync_setup(remote_url: str) -> str:
-    """설치형(~/.namu) 교훈 저장소를 git 원격 백업용으로 초기화한다.
+    """~/.namu(NAMU_DATA_ROOT) 교훈 저장소를 git 원격 백업용으로 초기화한다.
 
     이 함수만 예외적으로 무음이 아니다 — 사람이 읽고 다음 행동(인증 설정 등)을
     판단해야 하는 결과이므로 문자열로 그대로 보고한다.
 
-    개발 repo(NAMU_HOME == REPO_ROOT)는 거부한다 — 그 경로는 이미 기존 repo의
-    git pull/push로 동기화되는 대상이라 별도 초기화가 오히려 사고를 만든다.
     원격 repo 자체는 사용자가 미리 준비해야 한다(이 함수는 로컬 wiring만 담당).
     """
     import config as cfg
 
-    if cfg.NAMU_HOME == cfg.REPO_ROOT:
-        return (
-            "거부: NAMU_HOME이 개발 repo(REPO_ROOT)와 같습니다. 이 환경은 이미 "
-            "기존 repo의 git pull/push로 동기화하세요. namu_sync_setup은 "
-            "설치형(~/.namu 등 분리된 데이터 루트) 전용입니다."
-        )
-
-    home = cfg.NAMU_HOME
+    home = cfg.NAMU_DATA_ROOT
     home.mkdir(parents=True, exist_ok=True)
     notes: list[str] = []
 

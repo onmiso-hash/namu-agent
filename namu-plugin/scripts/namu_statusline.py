@@ -7,10 +7,10 @@
 내용을 복사해 동봉했다. 두 파일은 import 경로 계산(아래 sys.path 라인)만 다르고
 나머지 로직은 동일해야 한다 — 한쪽을 고치면 반드시 다른 쪽도 맞출 것.
 
-관측성: 매 렌더를 NAMU_HOME/db/statusline.log에 남긴다 — statusLine 미동기화
-증상이 재발하면 이 로그와 화면을 대조해 "스크립트가 안 돎(하네스) vs 돌았는데
-틀림(스크립트)"을 판정한다. 실패는 '진행 task 없음'으로 위장하지 않고
-'⚠ task 조회 오류'로 구분 표시한다.
+관측성: 매 렌더를 ~/.namu/db/statusline.log에 남긴다(namu-35: 데이터 루트 고정, 환경변수
+NAMU_HOME 폐지) — statusLine 미동기화 증상이 재발하면 이 로그와 화면을 대조해
+"스크립트가 안 돎(하네스) vs 돌았는데 틀림(스크립트)"을 판정한다. 실패는
+'진행 task 없음'으로 위장하지 않고 '⚠ task 조회 오류'로 구분 표시한다.
 """
 import sys
 import json
@@ -38,11 +38,10 @@ LOG_KEEP_LINES = 200
 
 
 def _log_path(ws: str) -> Path | None:
-    """렌더 로그 경로 — task 탐지와 같은 규칙(NAMU_HOME 우선, 없으면 ws)으로 계산."""
-    root = os.environ.get("NAMU_HOME") or ws
-    if not root:
-        return None
-    return Path(root) / "db" / "statusline.log"
+    """렌더 로그 경로 — namu-35: 데이터 루트가 `Path.home()/".namu"` 고정이라
+    ws와 무관하게 항상 이 경로다(환경변수 NAMU_HOME은 더 이상 참조하지 않는다).
+    """
+    return Path.home() / ".namu" / "db" / "statusline.log"
 
 
 def _append_log(ws: str, line: str) -> None:

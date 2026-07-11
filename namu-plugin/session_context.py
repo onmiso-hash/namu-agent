@@ -80,13 +80,17 @@ def _extract_carryover(log_path: Path) -> str | None:
 
 
 def _git_check_log_path(project_dir: str | Path) -> Path | None:
-    """git 동기화 체크 물증 로그 경로 — namu_statusline.py의 _log_path와 같은 규칙
-    (NAMU_HOME 우선, 없으면 대상 디렉터리) + db/ 아래(렌더 로그 옆).
+    """git 동기화 체크 물증 로그 경로 — namu_statusline.py의 _log_path와 같은 규칙으로
+    cfg.NAMU_DATA_ROOT(namu-35: 고정 `~/.namu`) 아래 db/에 남긴다(렌더 로그 옆).
+
+    project_dir는 더 이상 폴백으로 쓰이지 않는다 — 데이터 루트가 고정 상수라 항상
+    존재하므로, 예전처럼 "값이 없을 때 project_dir로 대체" 분기를 둘 이유가 없다.
+    cfg는 함수 내부에서 import해 테스트가 config 모듈 속성을 monkeypatch로
+    격리할 수 있게 한다(모듈 관례와 동일).
     """
-    root = os.environ.get("NAMU_HOME") or str(project_dir)
-    if not root:
-        return None
-    return Path(root) / "db" / "git_check.log"
+    import config as cfg
+
+    return cfg.NAMU_DATA_ROOT / "db" / "git_check.log"
 
 
 def _append_git_check_log(project_dir: str | Path, line: str) -> None:
@@ -156,7 +160,7 @@ def find_active_task(project_dir: str | Path) -> Path | None:
     없으면 None.
 
     tasks 저장 위치는 `cfg.tasks_dir_for(project_dir)` = `~/.namu/tasks/<basename>/`
-    (namu-34)이며, 메모리(NAMU_HOME)와는 별개다.
+    (namu-34)이며, 메모리(cfg.NAMU_DATA_ROOT)와는 별개다.
     """
     import config as cfg
 
@@ -181,7 +185,7 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
 
     project_dir(현재 프로젝트 폴더) 기준 개인 풀 tasks 루트(`cfg.tasks_dir_for`,
     `~/.namu/tasks/<basename>/`, namu-34)에서 진행 중 task를 찾는다 — tasks는
-    저장 위치가 메모리(conn, NAMU_HOME 기준)와 분리돼 있다.
+    저장 위치가 메모리(conn, cfg.NAMU_DATA_ROOT 기준)와 분리돼 있다.
 
     진행 중 task도 교훈도 0건이면 완전한 침묵(None) 대신 짧은 환영 안내를 반환한다
     (신규 설치 사용자가 무응답을 "설치 실패"로 오인하는 문제 방지, namu-25/26).

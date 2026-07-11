@@ -1,9 +1,10 @@
 """session_context 단위 테스트 — 실제 tasks/db 건드리지 않음.
 
-repo 루트 .env(NAMU_MACHINE=samsung, NAMU_HOME=repo 루트)가 config 모듈 로드 시
-os.environ에 주입돼(find_dotenv(usecwd=True)) 테스트를 오염시킬 수 있다(#26/#27
-반복 함정) — git 체크·물증 로그 경로에 의존하는 부분은 반드시 monkeypatch.setenv로
-NAMU_HOME을 tmp_path로 명시 격리하거나, check_git_behind 자체를 스텁으로 무력화한다.
+namu-35: 데이터 루트(config.NAMU_DATA_ROOT)는 `Path.home() / ".namu"` 고정 상수로,
+config 모듈이 처음 import될 때 딱 한 번 계산된다 — 이후 테스트에서 HOME 환경변수를
+바꿔도 이미 계산된 값은 갱신되지 않는다. 그래서 git 체크·물증 로그 경로에 의존하는
+부분은 monkeypatch.setattr(_cfg, "NAMU_DATA_ROOT", tmp_path)로 직접 격리하거나(#26/#27
+반복 함정 방지), check_git_behind 자체를 스텁으로 무력화한다.
 """
 import os
 import sqlite3
@@ -29,7 +30,7 @@ _real_check_git_behind = _sc.check_git_behind
 @pytest.fixture(autouse=True)
 def _stub_git_check(monkeypatch):
     """대부분의 테스트는 git 체크와 무관 — 기본적으로 무력화(None)해 실제
-    subprocess/.env NAMU_HOME에 의존하지 않게 한다. git 체크 자체를 검증하는
+    subprocess/.env 상태에 의존하지 않게 한다. git 체크 자체를 검증하는
     테스트는 _real_check_git_behind를 직접 호출하거나 이 스텁을 재정의(override)한다."""
     monkeypatch.setattr(_sc, "check_git_behind", lambda project_dir: None)
 
@@ -38,10 +39,16 @@ def _stub_git_check(monkeypatch):
 def _fake_home(tmp_path, monkeypatch):
     """tasks 저장 위치가 개인 풀(~/.namu/tasks/<basename>/, namu-34)로 바뀌어 tasks
     조회·마커 기록이 Path.home()을 거친다 — 실제 ~/.namu를 절대 건드리지 않도록
-    모든 테스트에서 HOME을 tmp_path 아래 가짜 홈으로 격리한다(namu-33 교훈)."""
+    모든 테스트에서 HOME을 tmp_path 아래 가짜 홈으로 격리한다(namu-33 교훈).
+
+    config.NAMU_DATA_ROOT는 config 모듈이 처음 import될 때 `Path.home()/".namu"`로
+    딱 한 번 계산되는 고정 상수라, 여기서 HOME만 바꿔도 이미 계산된 값은 갱신되지
+    않는다 — _git_check_log_path 등 cfg.NAMU_DATA_ROOT를 참조하는 코드가 실 ~/.namu에
+    쓰는 사고(namu-35 회귀 발견)를 막기 위해 이 속성도 함께 monkeypatch한다."""
     home = tmp_path / "_fake_home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(_cfg, "NAMU_DATA_ROOT", home / ".namu")
     return home
 
 
@@ -109,8 +116,9 @@ def test_find_active_all_complete_returns_none(tmp_path):
     assert _sc.find_active_task(tmp_path) is None
 
 def test_find_active_ignores_namu_home_uses_project_dir(monkeypatch, tmp_path):
-    """NAMU_HOME이 설정돼 있어도 tasks는 project_dir 기준 개인 풀에서 찾는다
-    (이원화 — namu-26, 저장 위치는 namu-34로 개인 풀 통합)."""
+    """NAMU_HOME 환경변수(namu-35: 완전 폐지)를 설정해도 아무 효과가 없고, tasks는
+    항상 project_dir 기준 개인 풀에서 찾는다(이원화 — namu-26, 저장 위치는 namu-34로
+    개인 풀 통합)."""
     namu_home = tmp_path / "namu_home"
     namu_home_tasks = namu_home / "tasks"
     _make_task(namu_home_tasks, "memory-root-task", "hp", "여기는 안 보여야 함")
@@ -288,7 +296,7 @@ def test_check_git_behind_up_to_date_is_zero(monkeypatch, tmp_path):
 
 def test_check_git_behind_none_and_silent_on_fetch_failure(monkeypatch, tmp_path):
     """비 git 폴더 등 fetch 실패 → None, 물증 로그는 남지만 예외는 전파 안 함."""
-    monkeypatch.setenv("NAMU_HOME", str(tmp_path))
+    monkeypatch.setattr(_cfg, "NAMU_DATA_ROOT", tmp_path)
 
     def fake_run(cmd, **kwargs):
         if "fetch" in cmd:
@@ -306,7 +314,7 @@ def test_check_git_behind_none_and_silent_on_fetch_failure(monkeypatch, tmp_path
 
 def test_check_git_behind_none_on_no_upstream(monkeypatch, tmp_path):
     """upstream 미설정 → rev-list 실패 → None."""
-    monkeypatch.setenv("NAMU_HOME", str(tmp_path))
+    monkeypatch.setattr(_cfg, "NAMU_DATA_ROOT", tmp_path)
 
     def fake_run(cmd, **kwargs):
         if "fetch" in cmd:
@@ -321,7 +329,7 @@ def test_check_git_behind_none_on_timeout(monkeypatch, tmp_path):
     """타임아웃 → None, 예외 전파 안 함."""
     import subprocess as _subprocess
 
-    monkeypatch.setenv("NAMU_HOME", str(tmp_path))
+    monkeypatch.setattr(_cfg, "NAMU_DATA_ROOT", tmp_path)
 
     def fake_run(cmd, **kwargs):
         raise _subprocess.TimeoutExpired(cmd=cmd, timeout=3)

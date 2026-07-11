@@ -64,7 +64,7 @@ def _read_yaml(path: Path) -> str:
 def test_sync_enabled_false_without_marker(monkeypatch, tmp_path):
     home = tmp_path / "home"
     _init_git_repo(home)
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
     assert ms.sync_enabled() is False
 
 
@@ -72,18 +72,8 @@ def test_sync_enabled_false_when_namu_sync_zero(monkeypatch, tmp_path):
     home = tmp_path / "home"
     _init_git_repo(home)
     (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
     monkeypatch.setenv("NAMU_SYNC", "0")
-    assert ms.sync_enabled() is False
-
-
-def test_sync_enabled_false_when_home_equals_repo_root(monkeypatch, tmp_path):
-    """개발 repo(클론형) 하드가드 — 마커가 있어도 NAMU_HOME==REPO_ROOT면 절대 False."""
-    home = tmp_path / "home"
-    _init_git_repo(home)
-    (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
-    monkeypatch.setattr(cfg, "REPO_ROOT", home)
     assert ms.sync_enabled() is False
 
 
@@ -91,7 +81,7 @@ def test_sync_enabled_true_when_all_conditions_met(monkeypatch, tmp_path):
     home = tmp_path / "home"
     _init_git_repo(home)
     (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
     assert ms.sync_enabled() is True
 
 
@@ -103,7 +93,7 @@ def test_sync_pull_without_marker_returns_false_silently(monkeypatch, tmp_path):
     """마커가 없으면 sync_enabled()이 False라 로그 없이 조용히 실패한다."""
     home = tmp_path / "home"
     _init_git_repo(home)
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
 
     assert ms.sync_pull() is False
     assert not (home / "db" / "sync.log").exists()
@@ -117,7 +107,7 @@ def test_sync_pull_git_repo_without_remote_logs_failure(monkeypatch, tmp_path):
     (home / "README.md").write_text("x", encoding="utf-8")
     _commit_all(home, "init")
     (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
 
     assert ms.sync_pull() is False
     log = (home / "db" / "sync.log").read_text(encoding="utf-8")
@@ -132,7 +122,7 @@ def test_sync_push_git_repo_without_memory_dir_logs_failure(monkeypatch, tmp_pat
     (home / "README.md").write_text("x", encoding="utf-8")
     _commit_all(home, "init")
     (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
 
     assert ms.sync_push("test message") is False
     log = (home / "db" / "sync.log").read_text(encoding="utf-8")
@@ -163,7 +153,7 @@ def test_sync_push_includes_tasks_dir_when_present(monkeypatch, tmp_path):
         check=True, capture_output=True,
     )
     (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
 
     (home / "memory").mkdir()
     (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
@@ -186,7 +176,7 @@ def test_sync_push_add_scope_unaffected_when_tasks_dir_absent(monkeypatch, tmp_p
     home = tmp_path / "home"
     _init_git_repo(home)
     (home / ".namu_sync").touch()
-    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
 
     (home / "memory").mkdir()
     (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
@@ -331,7 +321,7 @@ def test_setup_push_reaches_other_clone_via_pull(monkeypatch, tmp_path):
 
     home_a = tmp_path / "a"
     _init_git_repo(home_a)
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_a)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_a)
     monkeypatch.setattr(cfg, "NAMU_MACHINE", "machine-a")
 
     result = ms.sync_setup(str(bare))
@@ -366,7 +356,7 @@ def test_setup_push_reaches_other_clone_via_pull(monkeypatch, tmp_path):
     assert ms.sync_push("learn: 테스트 교훈 (machine-a)") is True
 
     # b에서 pull하면 도착해야 한다.
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_b)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_b)
     assert ms.sync_pull() is True
     assert "FAKE0001" in _read_yaml(home_b)
 
@@ -426,11 +416,11 @@ def test_sync_push_recovers_from_divergence_via_union_merge(monkeypatch, tmp_pat
     _commit_all(home_b, "from b")
 
     # a가 먼저 push — fast-forward라 그냥 성공.
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_a)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_a)
     assert ms.sync_push("learn: from a") is True
 
     # b는 origin과 갈라진 상태 — 최초 push 실패 → 내부 pull(union)→재push로 성공해야 함.
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_b)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_b)
     assert ms.sync_push("learn: from b") is True
 
     merged = _read_yaml(home_b)
@@ -438,7 +428,7 @@ def test_sync_push_recovers_from_divergence_via_union_merge(monkeypatch, tmp_pat
     assert "FROM_B" in merged
 
     # a도 pull하면 b가 추가한 내용까지 받아야 한다(양쪽 최종 상태 일치 확인).
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_a)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_a)
     assert ms.sync_pull() is True
     merged_a = _read_yaml(home_a)
     assert "FROM_A" in merged_a
@@ -461,7 +451,7 @@ def test_sync_setup_onboards_second_pc_from_truly_empty_home(monkeypatch, tmp_pa
 
     home_a = tmp_path / "a"
     _init_git_repo(home_a)
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_a)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_a)
     monkeypatch.setattr(cfg, "NAMU_MACHINE", "machine-a")
     assert "push 완료" in ms.sync_setup(str(bare))
 
@@ -479,7 +469,7 @@ def test_sync_setup_onboards_second_pc_from_truly_empty_home(monkeypatch, tmp_pa
     monkeypatch.setenv("GIT_AUTHOR_EMAIL", "b@example.com")
     monkeypatch.setenv("GIT_COMMITTER_NAME", "B")
     monkeypatch.setenv("GIT_COMMITTER_EMAIL", "b@example.com")
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_b)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_b)
     monkeypatch.setattr(cfg, "NAMU_MACHINE", "machine-b")
 
     setup_b = ms.sync_setup(str(bare))
@@ -494,7 +484,7 @@ def test_sync_setup_onboards_second_pc_from_truly_empty_home(monkeypatch, tmp_pa
     assert ms.sync_push("learn: from b") is True
 
     # upstream이 실제로 등록됐는지 — 원격에 B의 커밋까지 도착했는지 A가 pull로 확인.
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_a)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_a)
     assert ms.sync_pull() is True
     assert "FROM_B" in _read_yaml(home_a)
 
@@ -512,7 +502,7 @@ def test_sync_setup_merges_pre_existing_local_learnings_via_unrelated_histories(
 
     home_a = tmp_path / "a"
     _init_git_repo(home_a)
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_a)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_a)
     monkeypatch.setattr(cfg, "NAMU_MACHINE", "machine-a")
     assert "push 완료" in ms.sync_setup(str(bare))
     (home_a / "memory").mkdir(exist_ok=True)
@@ -526,7 +516,7 @@ def test_sync_setup_merges_pre_existing_local_learnings_via_unrelated_histories(
     (home_b / "memory" / "learnings.yaml").write_text("---\nid: FROM_B_LOCAL\n", encoding="utf-8")
     _commit_all(home_b, "local learning before setup")
 
-    monkeypatch.setattr(cfg, "NAMU_HOME", home_b)
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home_b)
     monkeypatch.setattr(cfg, "NAMU_MACHINE", "machine-b")
     setup_b = ms.sync_setup(str(bare))
     assert "push 완료" in setup_b
@@ -536,12 +526,6 @@ def test_sync_setup_merges_pre_existing_local_learnings_via_unrelated_histories(
     merged = _read_yaml(home_b)
     assert "FROM_A" in merged
     assert "FROM_B_LOCAL" in merged
-
-
-def test_sync_setup_rejects_when_namu_home_equals_repo_root(monkeypatch, tmp_path):
-    monkeypatch.setattr(cfg, "NAMU_HOME", cfg.REPO_ROOT)
-    result = ms.sync_setup("git@example.com:user/repo.git")
-    assert result.startswith("거부")
 
 
 if __name__ == "__main__":

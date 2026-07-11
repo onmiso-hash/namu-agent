@@ -336,7 +336,7 @@
 
         <rect class="box2" x="20" y="196" width="260" height="46" rx="8"></rect>
         <text x="150" y="220" font-size="12.5" text-anchor="middle">기억 저장소</text>
-        <text x="150" y="235" font-size="11" text-anchor="middle" class="soft">~/.namu (기본) 또는 NAMU_HOME</text>
+        <text x="150" y="235" font-size="11" text-anchor="middle" class="soft">~/.namu (고정)</text>
 
         <!-- 오른쪽: clone 개발형 -->
         <text x="360" y="26" font-size="15" font-weight="700">② clone 개발형</text>
@@ -347,15 +347,15 @@
         <text x="490" y="112" font-size="12" text-anchor="middle">namu-plugin/ (원본)</text>
 
         <rect class="box" x="380" y="140" width="220" height="42" rx="8"></rect>
-        <text x="490" y="166" font-size="12" text-anchor="middle">memory/ (기억, repo 안)</text>
+        <text x="490" y="166" font-size="12" text-anchor="middle">기억 저장소: ~/.namu</text>
 
-        <text x="490" y="212" font-size="10.5" text-anchor="middle" class="soft">repo 폴더 자체가</text>
-        <text x="490" y="226" font-size="10.5" text-anchor="middle" class="soft">기억 저장소 위치</text>
+        <text x="490" y="212" font-size="10.5" text-anchor="middle" class="soft">기억 위치는 설치형과</text>
+        <text x="490" y="226" font-size="10.5" text-anchor="middle" class="soft">완전히 동일 (~/.namu 고정)</text>
       </svg>
     </div>
     <ul>
       <li><strong>설치형</strong> — NAMU repo와 무관한 <em>내 프로젝트</em>에 NAMU를 플러그인으로 설치해서 씁니다.
-        설치되는 것은 원본의 <strong>복사본</strong>이며, 기억은 기본적으로 <code>~/.namu</code>라는 별도 폴더에 저장됩니다.
+        설치되는 것은 원본의 <strong>복사본</strong>이며, 기억은 항상 <code>~/.namu</code>라는 별도 폴더에 저장됩니다.
         이 문서가 안내하는 방식입니다.</li>
       <li><strong>clone 개발형</strong> — NAMU repo 자체를 내려받아(clone) 그 안에서 직접 개발하며 씁니다. NAMU를 직접 고치고 싶은
         개발자용이며, 이 문서의 대상이 아닙니다.</li>
@@ -363,9 +363,9 @@
     <div class="box note">
       <strong>기억은 어디에 저장되나요?</strong>
       <p style="margin-bottom:0">
-        특별히 설정하지 않으면 내 컴퓨터의 <code>~/.namu</code> 폴더(사용자 홈 폴더 아래 <code>.namu</code>)에 저장됩니다.
+        내 컴퓨터의 <code>~/.namu</code> 폴더(사용자 홈 폴더 아래 <code>.namu</code>)에 저장됩니다 — 설치형이든 clone 개발형이든,
+        어느 프로젝트에서 쓰든 항상 이 한 곳입니다(위치는 고정이며 바꾸는 설정이 없습니다).
         이 폴더는 미리 만들어 둘 필요 없이, NAMU가 처음 무언가를 기억할 때 자동으로 생깁니다.
-        저장 위치를 바꾸고 싶다면 <code>NAMU_HOME</code>이라는 환경변수(프로그램 실행 전에 미리 정해 두는 값)를 지정하면 됩니다.
       </p>
     </div>
   </section>

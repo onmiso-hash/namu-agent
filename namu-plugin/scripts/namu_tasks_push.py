@@ -6,11 +6,10 @@
 동일해야 한다. 한쪽을 고치면 반드시 다른 쪽도 맞출 것.
 
 `/namu-task` 절차(오케스트레이터)가 task 3파일(task.md/context.<machine>.md/log.md)을
-갱신한 직후 호출하는 push 경로다. 대상은 항상 `Path.home()/".namu"`다 — NAMU_HOME이
-아니다. tasks는 저장 위치가 개인 풀로 통합됐고(namu-34 ①), 개발 세션(NAMU_HOME==
-REPO_ROOT)에서도 tasks는 여전히 ~/.namu에 있으므로 memory_sync.sync_enabled()의
-"NAMU_HOME==REPO_ROOT면 금지" 하드가드(개발 repo 오염 방지)가 여기엔 적용될 이유가
-없다 — 대상 자체가 고정 경로라 그 사고 유형이 구조적으로 성립하지 않는다.
+갱신한 직후 호출하는 push 경로다. 대상은 항상 `Path.home()/".namu"`다(namu-35 이후로는
+cfg.NAMU_DATA_ROOT와 동일 경로). tasks는 저장 위치가 개인 풀로 통합됐고(namu-34 ①),
+memory_sync.sync_enabled()의 마커 파일 게이트와는 무관하게 이 CLI는 대상(`~/.namu`)
+자체가 git repo이고 origin 원격을 가졌는지만 본다(tasks_pool_git_ready).
 
 동작: ~/.namu가 git repo이고 origin 원격이 있으면 tasks/(+memory/) add → 변경
 있으면 commit → push. 아니면(신규 sync 미개통 등) 조용히 no-op. 어느 경로든 항상

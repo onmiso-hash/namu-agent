@@ -3,13 +3,15 @@
 > 📅 2026-07-06~07 · #20 namu-20-deploy-design 결과물
 > 설계(samsung)·실측(samsung+hp) 완료. 설치형 사용설명서(별건)의 토대.
 
-NAMU가 "repo가 곧 NAMU_HOME"인 clone 기반을 벗어나, **임의 프로젝트에서 플러그인으로 설치해 쓰는 형태**의 3대 미결정 요소를 확정한다.
+NAMU가 clone 기반을 벗어나, **임의 프로젝트에서 플러그인으로 설치해 쓰는 형태**의 3대 미결정 요소를 확정한다.
 
 ---
 
 ## 결정 ① 사용자 메모리 위치 — NAMU_HOME 3분기 폴백
 
-`namu-plugin/config.py`가 데이터 루트(NAMU_HOME)를 다음 우선순위로 정한다:
+> ⚠️ **namu-35(2026-07-12) 개정 안내** — 아래 결정 ①은 #20 당시(2026-07-06~07)의 확정 내용을 그대로 남긴 **역사 기록**이다. namu-35로 `NAMU_HOME` 환경변수 자체가 **완전 폐지**되고 데이터 루트가 `config.py`의 고정 상수 `NAMU_DATA_ROOT = Path.home() / ".namu"` 하나로 통합됐다 — 아래 3분기 폴백(환경변수 → `REPO_ROOT` → `~/.namu`)은 더 이상 존재하지 않는다. 상세 개정 사유는 `docs/plan.md` namu-35 항목 참조. 결정 ②·③과 아래 함정 목록·설치 절차 표는 이 개정과 무관하게 유효하다.
+
+`namu-plugin/config.py`가 데이터 루트(NAMU_HOME)를 다음 우선순위로 정했었다(**namu-35로 폐지, 위 개정 안내 참고**):
 
 1. **`NAMU_HOME` 환경변수** (.env 경유 포함) — 명시 지정, 항상 최우선
 2. **`REPO_ROOT/memory`가 실재하면 `REPO_ROOT`** — repo를 클론해 직접 실행하는 하위호환(개발 기기)
@@ -75,5 +77,5 @@ repo 밖 임시 워크스페이스 실측(hp, 2026-07-07, agy 1.0.16):
 | 설치 (원격 GitHub, 실측 확정) | `claude plugin marketplace add onmiso-hash/namu-agent` → `claude plugin install namu@namu-marketplace` (기본 user 스코프, repo 루트 `.claude-plugin/marketplace.json` 필요 — e2fba2e부터 포함) | — (agy 원격 설치는 미실측 — 현행 확정 절차는 directory 설치뿐) |
 | 업데이트 (개발 기기, directory 소스) | git pull + CC 재시작 | `namu-plugin/scripts/agy_reinstall.ps1` 실행 (수동: `uninstall → install → --heal`, 비파괴 병합 함정 회피 + mcp_config 절대경로 첫 세션부터 교정) |
 | 업데이트 (원격 설치) | `claude plugin update namu@namu-marketplace` — 전체 식별자 필수(짧은 이름 `update namu`는 not found 실패) + CC 재시작. 실측(2026-07-08): 0.1.5→0.1.6·sha 6daad22 반영 확인 | `namu-plugin/scripts/agy_reinstall.ps1` 실행 (수동: `uninstall → install → --heal`) |
-| 메모리 위치 | 기본 `~/.namu`, `NAMU_HOME` env로 변경 | 동일 (config.py 공용) |
-| 기기 식별 | `NAMU_MACHINE` env (미설정 시 `unknown`) | 동일 |
+| 메모리 위치 | 고정 `~/.namu`(namu-35, 환경변수로 변경 불가) | 동일 (config.py 공용) |
+| 기기 식별 | `NAMU_MACHINE` env (미설정 시 호스트명, 그마저 없으면 `unknown`) | 동일 |

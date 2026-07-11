@@ -164,8 +164,9 @@ def find_latest_closed_task(tasks_dir: Path) -> Path | None:
 def tasks_root_for(project_dir: str | Path) -> Path:
     """tasks 저장 루트 = 개인 풀 `~/.namu/tasks/<basename(project_dir)>/` (namu-34).
 
-    규칙 한 줄, 특례 0 — NAMU_HOME(교훈·db 전용)과는 무관하며 개발 모드(이 repo)도
-    예외를 두지 않는다. tasks는 여전히 "프로젝트 귀속" 데이터지만 저장 위치만
+    규칙 한 줄, 특례 0 — 메모리 데이터 루트(cfg.NAMU_DATA_ROOT, 교훈·db 전용)와는
+    무관하며 개발 repo(이 repo)도 예외를 두지 않는다. tasks는 여전히 "프로젝트 귀속"
+    데이터지만 저장 위치만
     개인 풀로 통합해, PC 간 공유를 개인 전역 동기화에 편승시킨다(공개 repo에
     작업 기록이 노출되는 것도 원천 차단).
 
@@ -180,9 +181,10 @@ def resolve_active_task(ws: str) -> tuple[str, str] | None:
     """statusline용: 현재 프로젝트(ws) 기준으로 tasks 루트 계산 후 active task 반환.
 
     tasks 저장 위치는 개인 풀(`tasks_root_for(ws)` = `~/.namu/tasks/<basename(ws)>/`,
-    namu-34)이며, NAMU_HOME(메모리 루트)과는 무관하게 ws의 폴더명만 키로 쓴다
-    (NAMU_HOME이 설정돼 있어도 무시 — statusLine은 항상 "지금 이 프로젝트"의 tasks를 본다).
-    ws가 비어있을 때만 탐지 불가로 None을 반환하는 안전 폴백을 둔다.
+    namu-34)이며, 메모리 루트(cfg.NAMU_DATA_ROOT)와는 무관하게 ws의 폴더명만 키로 쓴다
+    (namu-35: NAMU_HOME 환경변수 자체가 폐지됐으므로 설정해도 애초에 아무 효과가 없다
+    — statusLine은 항상 "지금 이 프로젝트"의 tasks를 본다). ws가 비어있을 때만
+    탐지 불가로 None을 반환하는 안전 폴백을 둔다.
     """
     if not ws:
         return None
