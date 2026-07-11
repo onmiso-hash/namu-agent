@@ -123,3 +123,7 @@ Claude Code(`claude plugin update ...`)와 agy(`agy plugin install ./namu-plugin
 ## 참고·감사
 
 NAMU의 플러그인 방식 제작은 [netwaif/multi-agent-starter](https://github.com/netwaif/multi-agent-starter)의 「MultiAgent 한국어 매뉴얼 v2.1」에서 영감을 받았다.
+
+## 라이선스
+
+Apache-2.0 — [LICENSE](LICENSE) 참조.
