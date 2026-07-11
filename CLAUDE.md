@@ -6,7 +6,7 @@
 
 | 폴더 | 역할 |
 |------|------|
-| `namu-plugin/` | 현역 코드 — MCP 메모리 서버(`mcp_server.py`), 코어 로직(`db.py`), 설정(`config.py`), CLI 진입점(`main.py`) |
+| `namu-plugin/` | 현역 코드 — MCP 메모리 서버(`mcp_server.py`), 코어 로직(`db.py`), 설정(`config.py`) |
 | `tasks/` | (namu-34로 저장 위치 이전 — namu-26 개정) 작업별 상태 기록의 실제 원본은 개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`에 있다(이 repo를 포함해 어떤 프로젝트도 예외 없음). `task.md`(불변 목적) / `context.<machine>.md`(기기별 스냅샷) / `log.md`(append-only 원본) 3파일 구조는 유지하며, git 추적은 이 repo가 아니라 `~/.namu`의 개인 전역 동기화에 편승한다 |
 | `.claude/` | Claude Code 글루 — 서브에이전트(`agents/`), 로컬 설정(`settings.local.json`). 작업 절차 스킬은 `namu-plugin/skills/namu-task/`로 이전됨(플러그인 동봉) |
 
