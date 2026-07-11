@@ -32,7 +32,7 @@
   - 이유 있는 기록 → 정확한 기준 도출 가능
 
 ## 📌 참조
-- Harness MultiAgent 2.1 매뉴얼 (netwaif/multi-agent-starter)
+- MultiAgent 한국어 매뉴얼 v2.1 (netwaif/multi-agent-starter) — 플러그인 방식 제작의 영감(README 감사 절에 명시, #36)
 
 ---
 

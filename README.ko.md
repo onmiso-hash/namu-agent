@@ -119,3 +119,7 @@ Claude Code(`claude plugin update ...`)와 agy(`agy plugin install ./namu-plugin
 - **1단계 (현재):** 개인용 시스템 완성
 - **2단계:** 공개 배포 + 개인 메모리 연동
 - **3단계:** 공개 메모리 풀 (커뮤니티 집단지성, 선택적 기여/구독)
+
+## 참고·감사
+
+NAMU의 플러그인 방식 제작은 [netwaif/multi-agent-starter](https://github.com/netwaif/multi-agent-starter)의 「MultiAgent 한국어 매뉴얼 v2.1」에서 영감을 받았다.

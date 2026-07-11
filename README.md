@@ -85,6 +85,11 @@ A short list of gotchas hit in practice — see the full write-up in
    after installing requires a reinstall/update to take effect — it isn't
    live-reloaded like the workspace-native worker definitions are.
 
+## Acknowledgments
+
+NAMU's plugin-style packaging was inspired by the *MultiAgent Korean Manual v2.1*
+from [netwaif/multi-agent-starter](https://github.com/netwaif/multi-agent-starter).
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
