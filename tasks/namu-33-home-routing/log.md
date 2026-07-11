@@ -8,3 +8,4 @@
 [완료] 2026-07-11 17:46:22 hp · 완료조건 5/5 충족, record 01KX85NWRZ8ZVHQ35CH11XGVDF 저장(verified_by: human, 제품지식 풀 착지 확인). 커밋은 미수행 — 사용자 요청 시 별도
 [이월] 2026-07-11 21:40:23 hp · 다음 task 후보 ①: 세션 훅 오배선 감지 — env NAMU_HOME이 개발 repo를 가리키는데 cwd가 repo 밖이면 브리핑에 경고 1줄 추가(제품지식 풀 오염 재발 방지, namu-33이 고친 갭의 감시장치)
 [이월] 2026-07-11 21:40:23 hp · 다음 task 후보 ②: namu_sync_setup Windows(PowerShell) 무응답 조사 — samsung 온보딩에서 6분+ 멈춤(사용자 중단). 도구 내부는 전 git 호출 타임아웃 5~10초 + --no-edit 확보돼 있어 멈춤 지점은 MCP 호출 계층/Windows 환경 추정(root cause 미확정). namu-30 라이브 실측이 Linux/WSL만 커버한 플랫폼 갭. 잔여 단계는 PowerShell 수동 완주로 해소, 양방향 개통 실증 완료
+[이월] 2026-07-11 22:02:31 hp · 다음 task 후보 ③: task 저장 위치를 개인 풀로 통합 — 전 프로젝트의 tasks/를 ~/.namu/tasks/<프로젝트>/로 이전해 개인 풀 자동 동기화에 편승. 효과: 공개 repo 노출 원천 차단(namu-31 논점 해법) + PC 간 task 공유 전자동 + "프로젝트 repo 조건부 자동 pull" 아이디어 불필요화(사용자 판단: 공유 영역 무조건 pull이 기본이면 조건부 pull은 군더더기). 대가: namu-26 "task는 프로젝트 귀속" 결정의 정식 재검토 필요. 세부 논점: log.md merge=union 확장, 프로젝트명 충돌, 기존 task 이관
