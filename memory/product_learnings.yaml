@@ -966,3 +966,31 @@ task: 'namu-33-home-routing: NAMU_HOME 라우팅 갭 해소 — hp의 타 프로
 task_type: code
 timestamp: '2026-07-11T08:46:05.599353+00:00'
 verified_by: human
+---
+id: 01KX8K40QPZPVRPNG38DRTXPHS
+machine: hp
+outcome: success
+reason: '세 가지. ① 화면 없는 도구가 멈추면 "어디까지 갔나"를 실물(git log·status -sb의 tracking 유무·마커 파일)로
+  재구성하라 — setup의 단계들이 전부 멱등에 가까운 git 명령이라, 상태만 정확히 알면 잔여 단계를 터미널에서 눈에 보이게 수동 완주할 수
+  있다. 불투명한 도구 재실행보다 투명한 수동 완주가 원격 진단에선 우월했다. ② 오케스트레이터의 중간 가설 2개(인증 팝업 대기 → ls-remote
+  즉답으로 기각, 병합 편집기 대기 → 코드 실물에서 기각: memory_sync.py는 모든 git 호출에 5~10초 타임아웃과 --no-edit가
+  이미 있어 도구 내부는 6분을 멈출 수 없는 구조)가 연달아 틀렸다 — 멈춤 증상의 원인 후보를 말하기 전에 해당 코드의 타임아웃 설계부터 확인했어야
+  했다. 진짜 멈춤 지점은 도구 밖(MCP 호출 계층/Windows 환경)으로 추정, root cause 미확정 — namu-30 라이브 실측이
+  Linux/WSL만 커버해 Windows 소비자 경로는 이번이 첫 실전이었다(플랫폼별 실측 갭, 후속 조사 이월). ③ 사용자 중계 원격 진단에서는
+  전달 오타(.namu_sunc)와 실제 고장을 구분해야 한다 — 긴 출력 눈대중 대신 Test-Path 같은 True/False 단답 명령이 전달
+  오류에 강한 판정 도구다.'
+tags:
+- sync-onboarding
+- windows
+- powershell
+- mcp무응답
+- 수동완주
+- 원격진단
+- 플랫폼실측갭
+task: samsung(Windows PowerShell) 개인 풀 sync 온보딩 실전 — namu_sync_setup 호출이 6분+ 무응답(사용자
+  중단) 후, 실물 상태 재구성(초기 커밋·마커 생성됨 / 원격·upstream 미등록)으로 남은 단계를 PowerShell 수동 완주(remote
+  add → merge --allow-unrelated --no-edit → push -u), hp 측 pull 교차 확인으로 hp↔samsung
+  양방향 개통 실증. user 스코프 설치·환경변수 정리 포함 전 과정을 사용자 중계(원격 진단)로 진행
+task_type: analysis
+timestamp: '2026-07-11T12:40:59.894519+00:00'
+verified_by: human

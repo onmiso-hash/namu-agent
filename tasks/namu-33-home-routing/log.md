@@ -6,3 +6,5 @@
 [분담] 2026-07-11 17:40:00 hp · 코더 1회(config.py 폴백 ② cwd 조건 + 테스트 2건 + 0.1.13 범프, 83/83) → 리뷰어 1회 PASS(라이브 실측 3종: repo 밖→~/.namu, repo 안→product_, 임시 HOME record 왕복). 재실행 0
 [결정] 2026-07-11 17:45:00 hp · bashrc 정리는 오케스트레이터 직접 수행(사용자 홈 파일이라 워커 미경유) — NAMU_HOME export 제거, NAMU_MACHINE=hp 유지, fresh shell 실측(env -u + bash -ic)으로 NAMU_HOME 빈 값 확인
 [완료] 2026-07-11 17:46:22 hp · 완료조건 5/5 충족, record 01KX85NWRZ8ZVHQ35CH11XGVDF 저장(verified_by: human, 제품지식 풀 착지 확인). 커밋은 미수행 — 사용자 요청 시 별도
+[이월] 2026-07-11 21:40:23 hp · 다음 task 후보 ①: 세션 훅 오배선 감지 — env NAMU_HOME이 개발 repo를 가리키는데 cwd가 repo 밖이면 브리핑에 경고 1줄 추가(제품지식 풀 오염 재발 방지, namu-33이 고친 갭의 감시장치)
+[이월] 2026-07-11 21:40:23 hp · 다음 task 후보 ②: namu_sync_setup Windows(PowerShell) 무응답 조사 — samsung 온보딩에서 6분+ 멈춤(사용자 중단). 도구 내부는 전 git 호출 타임아웃 5~10초 + --no-edit 확보돼 있어 멈춤 지점은 MCP 호출 계층/Windows 환경 추정(root cause 미확정). namu-30 라이브 실측이 Linux/WSL만 커버한 플랫폼 갭. 잔여 단계는 PowerShell 수동 완주로 해소, 양방향 개통 실증 완료
