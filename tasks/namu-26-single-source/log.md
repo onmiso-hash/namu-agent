@@ -1,8 +1,0 @@
-# log — namu-26-single-source
-(append만. context 꼬이면 이걸로 복원)
-
-[시작] 2026-07-09 21:18:00 hp · 작업 생성, 목적·완료조건 확정. 소재=#25 이월 4건(SKILL.md↔config 정합·환영 브리핑·statusline 동봉·데이터 루트 재설계). 사용자 게이트: 4건 전부 착수 + tasks 위치는 config 현행(NAMU_HOME/tasks) 정본 확정. 근본 원인 = 시스템 불변식이 config에 있는데 SKILL.md가 낡게 재서술 → 오케스트레이터가 cwd·unknown으로 오작동
-[분담] 2026-07-09 21:48:58 hp · 1차 코더 위임 완료(SKILL.md machine·작업루트 정합·환영 브리핑·statusline 동봉·0.1.8, 테스트 36 통과) → 리뷰어 검수 FAIL(완료조건 ①~⑤는 PASS, usage_guide 2·4절 낡은 서술만 미달)
-[결정] 2026-07-09 21:48:58 hp · 검수 게이트 중 근본 방향 전환(사용자 결정) — tasks 저장 위치를 '중앙(~/.namu)'에서 '프로젝트 로컬(cwd)'로 확정. 근거: 제품 비전=로컬 중앙 메모리+향후 git 크로스PC 공유인데, 교훈=프로젝트 독립 지식(중앙 공유 마땅)이지만 tasks=프로젝트 종속 데이터라 중앙에 모으면 ① 여러 프로젝트 task가 섞여 statusLine '진행 중 task'가 프로젝트 경계를 넘고 ② ~/.namu git 공유 시 코드 없는 프로젝트 task가 딸려옴. 이원화(교훈=~/.namu, tasks=프로젝트 cwd)가 데이터 성격과 git 스코프를 일치시킴. namu-25에서 tasks가 우발적으로 cwd에 생긴 게 실은 개념적으로 옳았음 → 의도된 설계로 확정. task.md 완료조건 재정의(②③⑥ 재작업, ①④⑤ 유지). 2차 코더 재위임 예정
-[분담] 2026-07-09 22:13:59 hp · 2차 코더 재위임(이원화 방향) → 리뷰어 검수 PASS. config.TASKS_DIR→tasks_dir_for(project_dir) 헬퍼, resolve_active_task=ws 기준(NAMU_HOME 무시), session_recall 훅 stdin cwd 읽어 project_dir 주입, 호출부 전수(session_context·session_inject·orchestrator·namu_active_task) 통일. 메모리 상수 5개 불변·TASKS_DIR 참조 0건·43 테스트 통과. 리뷰어 실증: NAMU_HOME=/tmp에서도 statusLine·브리핑이 프로젝트 tasks 탐지(중앙 미유출)
-[완료] 2026-07-09 22:13:59 hp · #26 종료 — 완료조건 ①~⑥ 전부 충족(리뷰어 PASS + 사용자 라이브 실측 PASS). 라이브: 새 CC 세션(Opus 4.8)서 '진행 중 task?' 질문에 AI가 namu-26 정확 인용(방향전환·다음할일까지)=stdin cwd 훅 실환경 작동 증거 + statusLine 동일 task 표시(스크린샷 물증). 이원화 확정: 교훈·db=~/.namu 중앙, tasks=프로젝트 cwd 로컬. 플러그인 0.1.8. record 1건(01KX3G58SQRP8RKPBAAHMXFENE, human). 이월: agy 라이브 재설치 실측(새 코드 반영)·소비자 환경 재실측·~/.namu git 자동동기화(로드맵). 커밋·푸시 진행

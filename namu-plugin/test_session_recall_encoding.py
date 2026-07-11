@@ -7,10 +7,11 @@ cp949 회귀: 훅은 🌳📌 등 이모지가 섞인 JSON을 print하는데, Wi
 main() 초입에서 sys.stdout.reconfigure(encoding="utf-8")로 고쳤는지 subprocess
 레벨에서 검증한다.
 
-이원화 통일: tasks는 프로젝트 로컬 저장소(NAMU_HOME과 별개)라, 훅은 stdin JSON의
-`cwd` 필드로 현재 프로젝트 경로를 얻어 그 프로젝트의 tasks/를 봐야 한다
-(statusLine과 동일 규칙). NAMU_HOME(교훈·db)은 별도로 tmp_path로 격리해
-실 데이터를 절대 건드리지 않는다.
+이원화 통일: tasks는 프로젝트 귀속 데이터이지만 저장 위치는 개인 풀
+`~/.namu/tasks/<basename(cwd)>/`로 통합됐다(namu-34). 훅은 stdin JSON의 `cwd`
+필드로 현재 프로젝트 경로를 얻어 그 basename을 키로 개인 풀에서 찾는다
+(statusLine과 동일 규칙). NAMU_HOME(교훈·db)뿐 아니라 HOME도 별도로 tmp_path로
+격리해 실 데이터를 절대 건드리지 않는다.
 """
 import json
 import os
@@ -51,11 +52,17 @@ def _make_namu_home(tmp_path: Path) -> Path:
 
 
 def _run_hook(
-    namu_home: Path, machine: str, stdin_data: dict, extra_env: dict
+    namu_home: Path,
+    machine: str,
+    stdin_data: dict,
+    extra_env: dict,
+    fake_home: Path | None = None,
 ) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["NAMU_HOME"] = str(namu_home)
     env["NAMU_MACHINE"] = machine
+    if fake_home is not None:
+        env["HOME"] = str(fake_home)
     env.update(extra_env)
 
     # 부모(pytest) 프로세스 측 로케일이 cp949일 수 있어(한글 Windows 기본값),
@@ -76,11 +83,12 @@ def test_cp949_env_still_produces_json_output(tmp_path):
     """cp949 강제 환경에서도 stdout이 비어있지 않고 유효 JSON이며 🌳가 포함된다(수정 효과)."""
     machine = "hp"
     namu_home = _make_namu_home(tmp_path)
+    fake_home = tmp_path / "fake_home"
     project_dir = tmp_path / "project"
-    _make_active_task(project_dir / "tasks", "encoding-test-task", machine)
+    _make_active_task(fake_home / ".namu" / "tasks" / "project", "encoding-test-task", machine)
 
     result = _run_hook(
-        namu_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "cp949"}
+        namu_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "cp949"}, fake_home
     )
 
     assert result.returncode == 0
@@ -95,11 +103,12 @@ def test_output_is_valid_session_start_json(tmp_path):
     """출력이 유효 JSON이고 hookSpecificOutput.hookEventName == 'SessionStart'."""
     machine = "hp"
     namu_home = _make_namu_home(tmp_path)
+    fake_home = tmp_path / "fake_home"
     project_dir = tmp_path / "project"
-    _make_active_task(project_dir / "tasks", "encoding-test-task", machine)
+    _make_active_task(fake_home / ".namu" / "tasks" / "project", "encoding-test-task", machine)
 
     result = _run_hook(
-        namu_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "cp949"}
+        namu_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "cp949"}, fake_home
     )
 
     assert result.returncode == 0
@@ -108,19 +117,21 @@ def test_output_is_valid_session_start_json(tmp_path):
 
 
 def test_reads_project_dir_from_stdin_cwd_ignores_namu_home_tasks(tmp_path):
-    """stdin의 cwd로 지정된 프로젝트의 tasks만 보인다 — NAMU_HOME 아래 tasks는 무시된다
-    (namu-26 이원화: 브리핑도 statusLine과 동일하게 프로젝트 로컬 tasks만 봐야 함).
+    """stdin의 cwd로 지정된 프로젝트의 개인 풀 tasks만 보인다 — NAMU_HOME 아래 tasks는
+    무시된다(namu-26 이원화 + namu-34 저장 위치 통합: 브리핑도 statusLine과 동일하게
+    ws 기준 개인 풀 tasks만 봐야 함).
     """
     machine = "hp"
     namu_home = _make_namu_home(tmp_path)
+    fake_home = tmp_path / "fake_home"
     # NAMU_HOME 아래에도 (구 동작이면 잡혔을) task를 심어둔다 — 새 동작에서는 안 보여야 함.
     _make_active_task(namu_home / "tasks", "memory-root-task", machine)
 
     project_dir = tmp_path / "project"
-    _make_active_task(project_dir / "tasks", "project-task", machine)
+    _make_active_task(fake_home / ".namu" / "tasks" / "project", "project-task", machine)
 
     result = _run_hook(
-        namu_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "utf-8"}
+        namu_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "utf-8"}, fake_home
     )
 
     assert result.returncode == 0
@@ -134,13 +145,15 @@ def test_missing_stdin_cwd_falls_back_to_process_cwd(tmp_path):
     """stdin JSON에 cwd가 없으면 os.getcwd() 폴백 — subprocess의 cwd로 지정한 프로젝트를 본다."""
     machine = "hp"
     namu_home = _make_namu_home(tmp_path)
+    fake_home = tmp_path / "fake_home"
     project_dir = tmp_path / "project"
     project_dir.mkdir()
-    _make_active_task(project_dir / "tasks", "fallback-task", machine)
+    _make_active_task(fake_home / ".namu" / "tasks" / "project", "fallback-task", machine)
 
     env = os.environ.copy()
     env["NAMU_HOME"] = str(namu_home)
     env["NAMU_MACHINE"] = machine
+    env["HOME"] = str(fake_home)
 
     result = subprocess.run(
         [sys.executable, str(_HOOK_SRC)],

@@ -12,6 +12,23 @@ from pathlib import Path
 from task_resolve import _extract_next_section, _extract_task_title, _line_tag
 from task_resolve import find_active_task as _resolve_task
 from task_resolve import find_latest_closed_task as _find_latest_closed_task
+from task_resolve import (
+    check_project_marker_conflict,
+    has_legacy_tasks,
+    record_project_marker,
+)
+
+
+def _same_resolved_path(a: str | Path, b: str | Path) -> bool:
+    """두 경로가 같은 실제 위치를 가리키는지(realpath 비교). ~/.namu behind 경고가
+    project_dir(현재 프로젝트)와 우연히 같은 저장소일 때(예: 개발 repo 자체를
+    ~/.namu로 쓰는 극단적 설정) 같은 fetch를 두 번 하지 않기 위한 중복 방지용이다.
+    비교 자체가 실패해도(존재하지 않는 경로 등) 예외를 전파하지 않고 다르다고 본다
+    (실패 시 두 번 체크되는 게 아예 안 되는 것보다 안전)."""
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return False
 
 
 def _extract_log_tail(log_path: Path, n: int = 5) -> str:
@@ -135,9 +152,11 @@ def check_git_behind(project_dir: str | Path) -> int | None:
 
 
 def find_active_task(project_dir: str | Path) -> Path | None:
-    """project_dir/tasks/ 아래에서 가장 최근에 진행 중인 task 폴더 반환. 없으면 None.
+    """project_dir 기준 개인 풀 tasks 루트에서 가장 최근에 진행 중인 task 폴더 반환.
+    없으면 None.
 
-    tasks는 프로젝트 로컬 저장소(project_dir 기준)이며 메모리(NAMU_HOME)와는 별개다.
+    tasks 저장 위치는 `cfg.tasks_dir_for(project_dir)` = `~/.namu/tasks/<basename>/`
+    (namu-34)이며, 메모리(NAMU_HOME)와는 별개다.
     """
     import config as cfg
 
@@ -160,8 +179,9 @@ _WELCOME_MARKDOWN = (
 def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str | None:
     """세션 컨텍스트 마크다운 조립.
 
-    project_dir(현재 프로젝트 폴더) 아래 tasks/에서 진행 중 task를 찾는다 — tasks는
-    프로젝트 로컬 저장소라 메모리(conn, NAMU_HOME 기준)와는 저장 위치가 분리돼 있다.
+    project_dir(현재 프로젝트 폴더) 기준 개인 풀 tasks 루트(`cfg.tasks_dir_for`,
+    `~/.namu/tasks/<basename>/`, namu-34)에서 진행 중 task를 찾는다 — tasks는
+    저장 위치가 메모리(conn, NAMU_HOME 기준)와 분리돼 있다.
 
     진행 중 task도 교훈도 0건이면 완전한 침묵(None) 대신 짧은 환영 안내를 반환한다
     (신규 설치 사용자가 무응답을 "설치 실패"로 오인하는 문제 방지, namu-25/26).
@@ -169,19 +189,55 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
     원격 저장소가 behind 상태면(fetch로 감지) 브리핑 맨 앞에 경고 섹션을 붙인다 —
     사용자가 CC를 켜기 전 git pull을 잊으면 이 브리핑 자체가 낡은 상태로 만들어지는
     문제(namu-27) 방지. 감지 불가/실패는 무음 스킵(check_git_behind가 보장).
+    tasks·개인전역지식이 실제로 놓이는 `~/.namu`(개인 풀, namu-34) 저장소도 같은
+    방식으로 behind 여부를 확인해 경고를 덧붙인다 — project_dir 저장소와 `~/.namu`는
+    별개 git 저장소라 하나만 pull해선 다른 쪽 낡은 상태를 못 잡기 때문이다.
+
+    프로젝트 키 충돌(다른 경로의 동명 프로젝트가 같은 machine에서 같은 키를 쓰는
+    경우, namu-34 ②)과 구 위치(`project_dir/tasks/`) 잔존(namu-34 ⑤)도 여기서
+    감지해 경고 1줄씩 붙인다 — 둘 다 감지·보고 전용이며 자동 조치는 하지 않는다.
     """
     import db
     import config as cfg
 
+    tasks_dir = cfg.tasks_dir_for(project_dir)
+
     behind = check_git_behind(project_dir)
-    warning = None
+    warnings: list[str] = []
     if behind is not None and behind > 0:
-        warning = (
+        warnings.append(
             f"### ⚠ 원격 미동기화 — 원격에 새 커밋 {behind}개\n\n"
             "이 브리핑은 낡은 상태일 수 있습니다. AI는 다른 작업 전에: "
             "① 사용자에게 보고하고 승인받아 `git pull --ff-only` 실행 "
             "② pull 후 tasks/ 상태를 다시 읽어 진행 중 task·다음 작업을 재안내할 것.\n"
         )
+
+    home_namu = Path.home() / ".namu"
+    if not _same_resolved_path(project_dir, home_namu):
+        home_behind = check_git_behind(home_namu)
+        if home_behind is not None and home_behind > 0:
+            warnings.append(
+                f"### ⚠ 개인 풀(~/.namu) 미동기화 — 원격에 새 커밋 {home_behind}개\n\n"
+                "tasks·개인전역지식이 낡은 상태일 수 있습니다. AI는 다른 작업 전에: "
+                "① 사용자에게 보고하고 승인받아 `git -C ~/.namu pull --ff-only` 실행 "
+                "② pull 후 tasks/ 상태를 다시 읽어 진행 중 task·다음 작업을 재안내할 것.\n"
+            )
+
+    conflict = check_project_marker_conflict(tasks_dir, machine, str(project_dir))
+    if conflict is not None:
+        registered, current = conflict
+        warnings.append(
+            f"⚠ 프로젝트 키 충돌 — 다른 경로의 동명 프로젝트가 이 키"
+            f"({tasks_dir.name})를 사용 중입니다 (등록: {registered} / 현재: {current}).\n"
+        )
+    record_project_marker(tasks_dir, machine, str(project_dir))
+
+    if has_legacy_tasks(project_dir):
+        warnings.append(
+            f"⚠ 구 위치 task 발견 — `~/.namu/tasks/{tasks_dir.name}/`로 이관 필요.\n"
+        )
+
+    warning = "\n".join(warnings) if warnings else None
 
     active = find_active_task(project_dir)
     parts: list[str] = ["## 🌳 NAMU — 세션 컨텍스트 자동 로딩\n"]
@@ -220,7 +276,6 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
     else:
         learnings = db.recall(conn, limit=5)
 
-        tasks_dir = cfg.tasks_dir_for(project_dir)
         closed_task = _find_latest_closed_task(tasks_dir)
         carryover = _extract_carryover(closed_task / "log.md") if closed_task else None
 

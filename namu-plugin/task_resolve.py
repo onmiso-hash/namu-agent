@@ -3,7 +3,11 @@
 단일 출처(single source of truth): active task 찾기 로직.
   - scripts/namu_statusline.py (plain python3) 에서 직접 import
   - session_context.py (uv/namu env) 에서도 여기서 import해 재사용
+
+tasks 저장 위치 규칙(namu-34)도 이 모듈에 단일 구현한다: 규칙 한 줄, 특례 0
+(`tasks_root_for`) — config.py는 이를 위임 호출할 뿐 규칙을 다시 구현하지 않는다.
 """
+import os
 import re
 from pathlib import Path
 
@@ -157,13 +161,108 @@ def find_latest_closed_task(tasks_dir: Path) -> Path | None:
     return None
 
 
-def resolve_active_task(ws: str) -> tuple[str, str] | None:
-    """statusline용: 현재 프로젝트(ws) 기준으로 tasks_dir 계산 후 active task 반환.
+def tasks_root_for(project_dir: str | Path) -> Path:
+    """tasks 저장 루트 = 개인 풀 `~/.namu/tasks/<basename(project_dir)>/` (namu-34).
 
-    tasks는 프로젝트 로컬 데이터이므로 NAMU_HOME(메모리 루트)과는 무관하게 ws만 본다
+    규칙 한 줄, 특례 0 — NAMU_HOME(교훈·db 전용)과는 무관하며 개발 모드(이 repo)도
+    예외를 두지 않는다. tasks는 여전히 "프로젝트 귀속" 데이터지만 저장 위치만
+    개인 풀로 통합해, PC 간 공유를 개인 전역 동기화에 편승시킨다(공개 repo에
+    작업 기록이 노출되는 것도 원천 차단).
+
+    Path.home()은 HOME 환경변수를 존중하므로(POSIX) 테스트는 monkeypatch로
+    가짜 HOME을 주입해 실제 ~/.namu를 건드리지 않고 격리할 수 있다.
+    """
+    key = os.path.basename(str(project_dir).rstrip("/\\"))
+    return Path.home() / ".namu" / "tasks" / key
+
+
+def resolve_active_task(ws: str) -> tuple[str, str] | None:
+    """statusline용: 현재 프로젝트(ws) 기준으로 tasks 루트 계산 후 active task 반환.
+
+    tasks 저장 위치는 개인 풀(`tasks_root_for(ws)` = `~/.namu/tasks/<basename(ws)>/`,
+    namu-34)이며, NAMU_HOME(메모리 루트)과는 무관하게 ws의 폴더명만 키로 쓴다
     (NAMU_HOME이 설정돼 있어도 무시 — statusLine은 항상 "지금 이 프로젝트"의 tasks를 본다).
     ws가 비어있을 때만 탐지 불가로 None을 반환하는 안전 폴백을 둔다.
     """
     if not ws:
         return None
-    return find_active_task(Path(ws) / "tasks")
+    return find_active_task(tasks_root_for(ws))
+
+
+_MARKER_FILENAME = ".project"
+
+
+def _marker_path(tasks_root: Path) -> Path:
+    return tasks_root / _MARKER_FILENAME
+
+
+def _last_marker_path_for_machine(lines: list[str], machine: str) -> str | None:
+    last: str | None = None
+    for line in lines:
+        m, sep, path = line.partition("=")
+        if sep and m == machine:
+            last = path
+    return last
+
+
+def record_project_marker(tasks_root: Path, machine: str, project_dir: str) -> None:
+    """`<machine>=<project_dir 절대경로>` 줄을 append-only로 기록한다(namu-34 ②).
+
+    키 폴더 하나(basename 충돌)를 여러 프로젝트가 같은 machine에서 사용하면
+    이력이 남도록 기존 줄은 절대 수정·삭제하지 않는다. 단, 해당 machine의 마지막
+    줄이 이미 같은 경로(realpath 비교)면 재기록하지 않는다(멱등 — 매 세션 호출
+    가정이라 재기록하면 무한히 불어난다).
+    """
+    marker_path = _marker_path(tasks_root)
+    resolved = os.path.realpath(str(project_dir))
+
+    try:
+        existing_lines = marker_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        existing_lines = []
+
+    last_for_machine = _last_marker_path_for_machine(existing_lines, machine)
+    if last_for_machine is not None and os.path.realpath(last_for_machine) == resolved:
+        return
+
+    try:
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        with marker_path.open("a", encoding="utf-8") as f:
+            f.write(f"{machine}={resolved}\n")
+    except OSError:
+        pass
+
+
+def check_project_marker_conflict(
+    tasks_root: Path, machine: str, project_dir: str
+) -> tuple[str, str] | None:
+    """현재 machine의 마지막 등록 경로 ≠ project_dir(realpath)이면 (등록경로, 현재경로) 반환.
+
+    마커 파일이 없거나 해당 machine 줄이 아직 없으면 충돌 없음(None). 감지·보고
+    전용이며 자동 조치(수정·병합 등)는 하지 않는다.
+    """
+    marker_path = _marker_path(tasks_root)
+    try:
+        lines = marker_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    last_for_machine = _last_marker_path_for_machine(lines, machine)
+    if last_for_machine is None:
+        return None
+
+    current = os.path.realpath(str(project_dir))
+    if os.path.realpath(last_for_machine) == current:
+        return None
+    return (last_for_machine, current)
+
+
+def has_legacy_tasks(project_dir: str | Path) -> bool:
+    """`project_dir/tasks/*/log.md`가 남아있으면 True(namu-34 이전 구 위치, ⑤).
+
+    이관 여부만 감지하며 자동 이동은 하지 않는다 — 호출자가 안내 문구를 붙인다.
+    """
+    try:
+        return any(Path(project_dir).glob("tasks/*/log.md"))
+    except OSError:
+        return False

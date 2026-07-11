@@ -33,6 +33,18 @@ def _stub_git_check(monkeypatch):
     테스트는 _real_check_git_behind를 직접 호출하거나 이 스텁을 재정의(override)한다."""
     monkeypatch.setattr(_sc, "check_git_behind", lambda project_dir: None)
 
+
+@pytest.fixture(autouse=True)
+def _fake_home(tmp_path, monkeypatch):
+    """tasks 저장 위치가 개인 풀(~/.namu/tasks/<basename>/, namu-34)로 바뀌어 tasks
+    조회·마커 기록이 Path.home()을 거친다 — 실제 ~/.namu를 절대 건드리지 않도록
+    모든 테스트에서 HOME을 tmp_path 아래 가짜 홈으로 격리한다(namu-33 교훈)."""
+    home = tmp_path / "_fake_home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
 def _make_task(
     tasks_root: Path,
     slug: str,
@@ -71,8 +83,9 @@ def _setup_mem_db(rows: list[tuple]) -> sqlite3.Connection:
     return conn
 
 def test_find_active_skips_completed(tmp_path):
-    """완료 task가 더 최신이어도 건너뛰고 진행 중 task 반환. tasks는 project_dir/tasks/ 아래."""
-    tasks_root = tmp_path / "tasks"
+    """완료 task가 더 최신이어도 건너뛰고 진행 중 task 반환.
+    tasks는 개인 풀 ~/.namu/tasks/<basename(project_dir)>/ 아래(namu-34)."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
     _make_task(tasks_root, "done-task", "hp", "(완료)", log_lines=["[완료] 2026-06-29 10:00:00 hp · 완료"])
     _make_task(tasks_root, "active-task", "hp", "다음 단계 구현", log_lines=["[시작] 2026-06-28 10:00:00 hp · 시작"])
     result = _sc.find_active_task(tmp_path)
@@ -81,7 +94,7 @@ def test_find_active_skips_completed(tmp_path):
 
 def test_find_active_most_recent_in_progress(tmp_path):
     """진행 중 task 여럿일 때 가장 최근 log_ts task 반환."""
-    tasks_root = tmp_path / "tasks"
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
     _make_task(tasks_root, "older-task", "hp", "이전 할 일", log_lines=["[시작] 2026-06-28 10:00:00 hp · 시작"])
     _make_task(tasks_root, "newer-task", "hp", "최신 할 일", log_lines=["[시작] 2026-06-29 10:00:00 hp · 시작"])
     result = _sc.find_active_task(tmp_path)
@@ -90,19 +103,21 @@ def test_find_active_most_recent_in_progress(tmp_path):
 
 def test_find_active_all_complete_returns_none(tmp_path):
     """전부 완료면 None."""
-    tasks_root = tmp_path / "tasks"
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
     _make_task(tasks_root, "done1", "hp", "(완료)", log_lines=["[완료] 2026-06-29 10:00:00 hp · 완료"])
     _make_task(tasks_root, "done2", "hp", "(완료)", log_lines=["[완료] 2026-06-29 10:00:00 hp · 완료"])
     assert _sc.find_active_task(tmp_path) is None
 
 def test_find_active_ignores_namu_home_uses_project_dir(monkeypatch, tmp_path):
-    """NAMU_HOME이 설정돼 있어도 tasks는 project_dir 기준(이원화 — namu-26)."""
+    """NAMU_HOME이 설정돼 있어도 tasks는 project_dir 기준 개인 풀에서 찾는다
+    (이원화 — namu-26, 저장 위치는 namu-34로 개인 풀 통합)."""
     namu_home = tmp_path / "namu_home"
     namu_home_tasks = namu_home / "tasks"
     _make_task(namu_home_tasks, "memory-root-task", "hp", "여기는 안 보여야 함")
 
     project_dir = tmp_path / "project"
-    project_tasks = project_dir / "tasks"
+    project_dir.mkdir()
+    project_tasks = _cfg.tasks_dir_for(project_dir)
     _make_task(project_tasks, "project-task", "hp", "여기가 보여야 함")
 
     monkeypatch.setenv("NAMU_HOME", str(namu_home))
@@ -113,7 +128,7 @@ def test_find_active_ignores_namu_home_uses_project_dir(monkeypatch, tmp_path):
 
 def test_build_markdown_has_task_and_learnings(tmp_path):
     """진행 중 task + 교훈 → '📌 진행 중'과 '💡' 둘 다 포함."""
-    tasks_root = tmp_path / "tasks"
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
     _make_task(
         tasks_root, "my-task", "hp", "헬퍼 통합 구현",
         log_lines=[
@@ -204,7 +219,7 @@ def test_extract_carryover_none_when_no_done_line(tmp_path):
 
 def test_build_markdown_shows_carryover_when_all_closed_no_active(tmp_path):
     """활성 task 없고 마감 task에 이월 마커가 있으면 '⏭ 다음 작업 후보' 섹션 표시."""
-    tasks_root = tmp_path / "tasks"
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
     _make_task(
         tasks_root,
         "namu-26-single-source",
@@ -376,6 +391,229 @@ def test_build_markdown_warning_prepended_to_welcome(monkeypatch, tmp_path):
     assert md is not None
     assert md.startswith("### ⚠ 원격 미동기화")
     assert "NAMU" in md
+
+
+# ---------------------------------------------------------------------------
+# ①-d ~/.namu(개인 풀) behind 경고 확장 (namu-34 ③-d)
+# ---------------------------------------------------------------------------
+
+def test_build_markdown_warns_when_home_namu_behind(monkeypatch, tmp_path, _fake_home):
+    """project_dir 저장소는 최신이어도 ~/.namu가 behind면 별도 경고가 붙는다."""
+    home_namu = _fake_home / ".namu"
+
+    def fake_check(project_dir):
+        return 5 if str(project_dir) == str(home_namu) else None
+
+    monkeypatch.setattr(_sc, "check_git_behind", fake_check)
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "⚠ 개인 풀(~/.namu) 미동기화" in md
+    assert "새 커밋 5개" in md
+
+
+def test_build_markdown_no_home_namu_warning_when_up_to_date(monkeypatch, tmp_path, _fake_home):
+    monkeypatch.setattr(_sc, "check_git_behind", lambda project_dir: 0)
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "개인 풀(~/.namu) 미동기화" not in md
+
+
+def test_build_markdown_dedupes_check_when_project_dir_is_home_namu(
+    monkeypatch, tmp_path, _fake_home
+):
+    """project_dir가 우연히 ~/.namu와 같은 실제 경로면 같은 저장소를 두 번
+    fetch하지 않는다(_same_resolved_path 중복 방지)."""
+    home_namu = _fake_home / ".namu"
+    home_namu.mkdir(parents=True)
+    calls: list[str] = []
+
+    def fake_check(project_dir):
+        calls.append(str(project_dir))
+        return None
+
+    monkeypatch.setattr(_sc, "check_git_behind", fake_check)
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", home_namu)
+    conn.close()
+
+    assert md is not None
+    assert len(calls) == 1
+
+
+def _init_git_repo_for_check(path):
+    import subprocess as _subp
+
+    path.mkdir(parents=True, exist_ok=True)
+    _subp.run(["git", "init", "-q", "-b", "main", str(path)], check=True, capture_output=True)
+    _subp.run(
+        ["git", "-C", str(path), "config", "user.email", "t@example.com"],
+        check=True, capture_output=True,
+    )
+    _subp.run(
+        ["git", "-C", str(path), "config", "user.name", "T"], check=True, capture_output=True
+    )
+
+
+def test_build_markdown_real_git_detects_home_namu_behind(monkeypatch, tmp_path, _fake_home):
+    """실제 git(스텁 없이) — ~/.namu가 bare 원격보다 behind면 경고가 뜨고,
+    project_dir(비 git 폴더)는 감지 불가로 무음 스킵된다(회귀 방지: 두 체크가
+    서로 간섭하지 않는지)."""
+    import subprocess as _subp
+
+    monkeypatch.setattr(_sc, "check_git_behind", _real_check_git_behind)
+
+    bare = tmp_path / "remote.git"
+    _subp.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+
+    seed = tmp_path / "seed"
+    _init_git_repo_for_check(seed)
+    (seed / "f.txt").write_text("1", encoding="utf-8")
+    _subp.run(["git", "-C", str(seed), "add", "-A"], check=True, capture_output=True)
+    _subp.run(
+        ["git", "-C", str(seed), "commit", "-q", "-m", "c1"], check=True, capture_output=True
+    )
+    _subp.run(
+        ["git", "-C", str(seed), "remote", "add", "origin", str(bare)],
+        check=True, capture_output=True,
+    )
+    _subp.run(
+        ["git", "-C", str(seed), "push", "-q", "-u", "origin", "main"],
+        check=True, capture_output=True,
+    )
+
+    home_namu = _fake_home / ".namu"
+    _subp.run(
+        ["git", "clone", "-q", str(bare), str(home_namu)], check=True, capture_output=True
+    )
+    _subp.run(
+        ["git", "-C", str(home_namu), "config", "user.email", "t@example.com"],
+        check=True, capture_output=True,
+    )
+    _subp.run(
+        ["git", "-C", str(home_namu), "config", "user.name", "T"], check=True, capture_output=True
+    )
+
+    # seed에서 추가 커밋을 만들어 push — home_namu(클론)는 아직 fetch 전이라 behind.
+    (seed / "f.txt").write_text("2", encoding="utf-8")
+    _subp.run(["git", "-C", str(seed), "add", "-A"], check=True, capture_output=True)
+    _subp.run(
+        ["git", "-C", str(seed), "commit", "-q", "-m", "c2"], check=True, capture_output=True
+    )
+    _subp.run(["git", "-C", str(seed), "push", "-q"], check=True, capture_output=True)
+
+    project_dir = tmp_path / "not_a_git_repo"
+    project_dir.mkdir()
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", project_dir)
+    conn.close()
+
+    assert md is not None
+    assert "⚠ 개인 풀(~/.namu) 미동기화" in md
+    assert "새 커밋 1개" in md
+    assert "### ⚠ 원격 미동기화" not in md  # project_dir 쪽은 비 git이라 감지 불가·무음
+
+
+# ---------------------------------------------------------------------------
+# ② .project 마커 충돌 감지 (namu-34)
+# ---------------------------------------------------------------------------
+
+
+def test_build_markdown_no_conflict_warning_on_first_use(tmp_path):
+    """이 키를 처음 쓰는 machine이면(.project 마커 없음) 충돌 경고가 없다."""
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "프로젝트 키 충돌" not in md
+
+
+def test_build_markdown_records_marker_after_first_call(tmp_path):
+    """첫 호출 후 .project 마커가 현재 프로젝트 경로로 기록된다."""
+    import os
+
+    conn = _setup_mem_db([])
+    _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    tasks_dir = _cfg.tasks_dir_for(tmp_path)
+    marker = (tasks_dir / ".project").read_text(encoding="utf-8")
+    assert marker.strip() == f"hp={os.path.realpath(tmp_path)}"
+
+
+def test_build_markdown_warns_on_project_marker_conflict(tmp_path):
+    """같은 키를 같은 machine에서 다른 경로 프로젝트가 쓰면 경고 1줄이 붙는다."""
+    from task_resolve import record_project_marker
+
+    project_a = tmp_path / "namesame"
+    project_a.mkdir()
+    project_b = tmp_path / "other" / "namesame"
+    project_b.mkdir(parents=True)
+
+    # project_a가 먼저 이 키를 등록해둔 상태를 재현.
+    tasks_dir = _cfg.tasks_dir_for(project_a)
+    record_project_marker(tasks_dir, "hp", str(project_a))
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", project_b)
+    conn.close()
+
+    assert md is not None
+    assert "프로젝트 키 충돌" in md
+    assert str(project_a.resolve()) in md
+    assert str(project_b.resolve()) in md
+
+
+def test_build_markdown_no_conflict_warning_when_second_call_matches(tmp_path):
+    """같은 프로젝트로 두 번째 호출하면(경로 그대로) 충돌 경고가 없다(멱등 기록 확인)."""
+    conn = _setup_mem_db([])
+    _sc.build_context_markdown(conn, "hp", tmp_path)
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "프로젝트 키 충돌" not in md
+
+
+# ---------------------------------------------------------------------------
+# ⑤ 구 위치(project_dir/tasks/) 감지 (namu-34)
+# ---------------------------------------------------------------------------
+
+
+def test_build_markdown_warns_on_legacy_tasks(tmp_path):
+    """project_dir/tasks/*/log.md가 남아있으면 이관 안내 경고가 붙는다."""
+    legacy_task = tmp_path / "tasks" / "old-task"
+    legacy_task.mkdir(parents=True)
+    (legacy_task / "log.md").write_text(
+        "[시작] 2026-06-28 10:00:00 hp · 시작\n", encoding="utf-8"
+    )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "구 위치" in md
+    assert "이관 필요" in md
+
+
+def test_build_markdown_no_legacy_warning_when_absent(tmp_path):
+    """구 위치 tasks/가 아예 없으면 이관 경고가 없다."""
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "구 위치" not in md
 
 
 if __name__ == "__main__":

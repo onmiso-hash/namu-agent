@@ -6,7 +6,9 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **machine 이름** — `config.py`의 `NAMU_MACHINE`. **환경변수 `NAMU_MACHINE` 또는 호스트명**으로 결정된다(우선순위: 환경변수 → `platform.node()` 호스트명 → `unknown`). `.env` 파일이 없다는 이유만으로 `unknown`으로 찍지 말 것 — 환경변수와 호스트명을 확인하라. `unknown`은 호스트명조차 빌 때의 최후 폴백이다.
 
-**작업 루트** — **현재 프로젝트 폴더(cwd) 기준** `tasks/`(`config.py`의 `tasks_dir_for(project_dir)`, 생략 시 `os.getcwd()`). tasks는 메모리(`NAMU_HOME` — 설치형은 `~/.namu`)와 **별개 저장소**다 — `NAMU_HOME`이 설정돼 있어도 tasks 위치에는 영향을 주지 않으며, 그 프로젝트의 git으로 함께 공유된다(프로젝트 종속 데이터라서). 아래 `TASKS_DIR` 표기는 이 규칙(cwd/tasks)을 가리키는 약칭이다.
+**작업 루트** — **개인 풀** `~/.namu/tasks/<basename(현재 프로젝트 폴더)>/`(`config.py`의 `tasks_dir_for(project_dir)`, 생략 시 `os.getcwd()` — 규칙 실구현은 `task_resolve.tasks_root_for()` 단일 함수, #34로 #26 개정). tasks는 메모리(`NAMU_HOME` — 설치형은 `~/.namu`)와 **별개 산출 기준**을 쓰지만(교훈·db=`NAMU_HOME`, tasks=항상 프로젝트 폴더명 하나) 물리적으로는 같은 `~/.namu` 계열에 모인다 — `NAMU_HOME`이 REPO_ROOT로 폴백돼도(개발 repo) tasks 위치엔 영향을 주지 않으며 특례가 없다. tasks는 여전히 성격상 **프로젝트 종속 데이터**이지만, 공유는 그 프로젝트의 git이 아니라 `~/.namu`의 **개인 전역 동기화**(record 후 auto-push 범위 확장 + `namu_tasks_push.py` CLI)에 편승한다. 아래 `TASKS_DIR` 표기는 이 규칙(개인 풀 tasks 루트)을 가리키는 약칭이다.
+
+**tasks 저장 후 push** — 신규 3파일 생성, `context.<machine>.md` 덮어쓰기, `log.md` append 등 `TASKS_DIR` 아래 파일을 갱신한 직후마다(아래 "중간 상태 저장" 지점 포함) `namu_tasks_push.py` CLI를 호출한다 — 대상은 항상 `~/.namu`(git repo·origin 원격이 없으면 조용히 no-op, 실패해도 작업 절차를 막지 않는다). 개발 repo에서는 `python3 scripts/namu_tasks_push.py`(repo 루트 기준), 설치형 플러그인에서는 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/namu_tasks_push.py`를 쓴다.
 
 ---
 
@@ -31,6 +33,8 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 ```
 [시작] YYYY-MM-DD HH:MM:SS <machine> · 작업 생성, 목적·완료조건 확정
 ```
+
+3파일 생성·append 직후 `namu_tasks_push.py`(위 "tasks 저장 후 push" 참조) 호출.
 
 **3. recall** — `namu_recall`로 관련 과거 교훈 조회. 신규는 항상 실행.
 
@@ -57,12 +61,14 @@ fail이면 멈추고 사용자에게 보여준다:
 > **중간 상태 저장** — 검수 게이트 통과 직후, 또는 작업을 끊을 때마다:
 > - `context.<machine>.md` 덮어쓰기 ("▶ 다음" 갱신)
 > - 결정·분담·막힘 발생 시 `log.md` append
+> - 위 두 파일 갱신 직후 `namu_tasks_push.py` 호출
 
 **9. 기록 및 마무리**
 
 - `namu_record`로 결과·판단 이유 저장. 사용자가 게이트를 통과시킨 경우 `verified_by: human`.
 - `log.md`에 `[완료]` 또는 `[중단]` 줄 append.
 - 완료조건이 모두 체크됐으면 **모든** `context.*.md`(다른 machine 것 포함)의 "▶ 다음"을 `(완료)` **단독으로** 갱신 — 뒷말을 붙이면(예: `(완료) — 후속 이월: ...`) 완료 판정(정확 일치)에 안 걸려 statusLine에 유령 task로 남는다. 이월·후속 메모는 "지금 어디까지"나 log에 쓸 것. 폴더는 그대로 둔다.
+- 위 log·context 갱신 직후 `namu_tasks_push.py` 호출로 마무리.
 
 ---
 

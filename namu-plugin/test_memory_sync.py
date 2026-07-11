@@ -140,6 +140,183 @@ def test_sync_push_git_repo_without_memory_dir_logs_failure(monkeypatch, tmp_pat
 
 
 # ---------------------------------------------------------------------------
+# sync_push add 범위 확장(namu-34 ③-a) — tasks/ 실재 시 커밋에 포함
+# ---------------------------------------------------------------------------
+
+def test_sync_push_includes_tasks_dir_when_present(monkeypatch, tmp_path):
+    """tasks/가 실재하면 memory/와 함께 add 대상에 포함돼 커밋·push된다."""
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / "README.md").write_text("x", encoding="utf-8")
+    _commit_all(home, "init")
+    subprocess.run(
+        ["git", "-C", str(home), "remote", "add", "origin", str(bare)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(home), "push", "-q", "-u", "origin", "main"],
+        check=True, capture_output=True,
+    )
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+
+    (home / "memory").mkdir()
+    (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
+    (home / "tasks" / "proj-a").mkdir(parents=True)
+    (home / "tasks" / "proj-a" / "log.md").write_text("# log\n[시작] ...\n", encoding="utf-8")
+
+    assert ms.sync_push("learn: with tasks") is True
+
+    show = subprocess.run(
+        ["git", "-C", str(home), "show", "--stat", "--name-only", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    assert "tasks/proj-a/log.md" in show.stdout
+    assert "memory/learnings.yaml" in show.stdout
+
+
+def test_sync_push_add_scope_unaffected_when_tasks_dir_absent(monkeypatch, tmp_path):
+    """tasks/가 없는(신규 환경) 상태에서도 add가 실패하지 않고 memory/만 정상 커밋된다
+    (namu-34 ③-a — tasks/ 부재가 add 자체를 실패시키면 안 된다는 요구 확인)."""
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_HOME", home)
+
+    (home / "memory").mkdir()
+    (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
+
+    # push 자체는 원격이 없어 결국 False가 되지만(재시도까지 소진), commit은
+    # add/diff/commit 단계에서 이미 끝나 있어야 한다(tasks/ 부재로 add가 실패하면
+    # 애초에 commit 전 단계에서 False가 나 log에 "PUSH FAIL add"가 남는다).
+    ms.sync_push("learn: no tasks dir")
+    log_path = home / "db" / "sync.log"
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "PUSH FAIL add" not in log
+
+    show = subprocess.run(
+        ["git", "-C", str(home), "log", "--oneline"],
+        check=True, capture_output=True, text=True,
+    )
+    assert "learn: no tasks dir" in show.stdout
+
+
+# ---------------------------------------------------------------------------
+# .gitattributes union ensure 멱등성(namu-34 ③-c)
+# ---------------------------------------------------------------------------
+
+def test_ensure_gitattributes_union_appends_all_lines(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+
+    notes = ms.ensure_gitattributes_union(home)
+
+    content = (home / ".gitattributes").read_text(encoding="utf-8")
+    assert "memory/learnings.yaml merge=union" in content
+    assert "tasks/**/log.md merge=union" in content
+    assert "tasks/*/.project merge=union" in content
+    assert any("추가" in n for n in notes)
+
+
+def test_ensure_gitattributes_union_idempotent_on_second_call(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+
+    ms.ensure_gitattributes_union(home)
+    content_after_first = (home / ".gitattributes").read_text(encoding="utf-8")
+
+    notes_second = ms.ensure_gitattributes_union(home)
+    content_after_second = (home / ".gitattributes").read_text(encoding="utf-8")
+
+    assert content_after_first == content_after_second
+    assert any("이미 존재" in n for n in notes_second)
+
+
+def test_ensure_gitattributes_union_preserves_unrelated_existing_lines(tmp_path):
+    """이미 다른 관례로 .gitattributes를 쓰고 있어도 기존 줄은 건드리지 않고
+    누락된 union 라인만 append한다."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
+
+    ms.ensure_gitattributes_union(home)
+
+    content = (home / ".gitattributes").read_text(encoding="utf-8")
+    assert "*.png binary" in content
+    assert "tasks/**/log.md merge=union" in content
+
+
+# ---------------------------------------------------------------------------
+# namu_tasks_push CLI 전용 게이팅·push(namu-34 ③-b) — 함수 단위
+# ---------------------------------------------------------------------------
+
+def test_tasks_pool_git_ready_false_when_not_git_repo(tmp_path):
+    home = tmp_path / "not_a_repo"
+    home.mkdir()
+    assert ms.tasks_pool_git_ready(home) is False
+
+
+def test_tasks_pool_git_ready_false_when_no_origin_remote(tmp_path):
+    home = tmp_path / "repo"
+    _init_git_repo(home)
+    assert ms.tasks_pool_git_ready(home) is False
+
+
+def test_tasks_pool_git_ready_true_when_origin_configured(tmp_path):
+    home = tmp_path / "repo"
+    _init_git_repo(home)
+    subprocess.run(
+        ["git", "-C", str(home), "remote", "add", "origin", "https://example.invalid/x.git"],
+        check=True, capture_output=True,
+    )
+    assert ms.tasks_pool_git_ready(home) is True
+
+
+def test_push_tasks_pool_noop_returns_false_when_not_ready(tmp_path):
+    home = tmp_path / "not_a_repo"
+    home.mkdir()
+    assert ms.push_tasks_pool(home, "tasks: sync") is False
+
+
+def test_push_tasks_pool_pushes_tasks_and_memory_to_bare_remote(tmp_path):
+    """tasks/(+실재하는 memory/)가 실제 bare 원격까지 도착하는지 종단 검증."""
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / "README.md").write_text("x", encoding="utf-8")
+    _commit_all(home, "init")
+    subprocess.run(
+        ["git", "-C", str(home), "remote", "add", "origin", str(bare)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(home), "push", "-q", "-u", "origin", "main"],
+        check=True, capture_output=True,
+    )
+
+    (home / "tasks" / "proj-a").mkdir(parents=True)
+    (home / "tasks" / "proj-a" / "log.md").write_text("# log\n[시작] ...\n", encoding="utf-8")
+    (home / "memory").mkdir()
+    (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
+
+    assert ms.push_tasks_pool(home, "tasks: sync") is True
+
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(bare), str(clone)], check=True, capture_output=True)
+    assert (clone / "tasks" / "proj-a" / "log.md").exists()
+    assert (clone / "memory" / "learnings.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
 # 실전 git 시나리오 — bare 원격 + 두 클론
 # ---------------------------------------------------------------------------
 

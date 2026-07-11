@@ -5,6 +5,7 @@
 import json
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 
 import config as cfg
 import memory_sync
@@ -25,7 +26,25 @@ def _ensure_db() -> None:
         rebuild_from_yaml()
 
 
+def _ensure_tasks_gitattributes() -> None:
+    """기존 개통분(hp·samsung)의 `~/.namu/.gitattributes`에 tasks union 라인을
+    멱등 ensure한다(namu-34 ③-c). 신규 개통은 namu_sync_setup이 이미 챙기므로,
+    이건 "sync_setup을 다시 부르지 않는 기존 사용자"를 위한 보정이다.
+
+    대상은 항상 `Path.home()/".namu"`(NAMU_HOME이 아니다 — tasks 개인 풀 규칙과
+    동일 근거, namu-34 ①). `.git`이 없으면(미개통) 완전 스킵하고, 그 외 모든
+    실패도 서버 부팅을 절대 막으면 안 되므로 전예외 무해 처리한다.
+    """
+    try:
+        home = Path.home() / ".namu"
+        if (home / ".git").exists():
+            memory_sync.ensure_gitattributes_union(home)
+    except Exception:
+        pass
+
+
 _ensure_db()
+_ensure_tasks_gitattributes()
 
 
 def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:

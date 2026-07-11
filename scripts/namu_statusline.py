@@ -21,7 +21,7 @@ from pathlib import Path
 # namu-plugin을 path에 추가 — task_resolve는 stdlib only이므로 plain python3로 import 가능
 sys.path.insert(0, str(Path(__file__).parent.parent / "namu-plugin"))
 
-from task_resolve import resolve_active_task
+from task_resolve import resolve_active_task, tasks_root_for
 
 # cp949 파이프 안전망 — 호출 측이 -X utf8 없이 부르면 📌(비BMP 이모지) print가
 # UnicodeEncodeError로 죽고, 한글만 있는 '진행 task 없음'은 살아남아
@@ -60,6 +60,19 @@ def _append_log(ws: str, line: str) -> None:
         pass
 
 
+def _resolved_tasks_dir(ws: str) -> Path | None:
+    """렌더 로그 관측용 — tasks 저장 위치(namu-34, ~/.namu/tasks/<basename>/) 계산.
+
+    실패해도 statusline 출력을 막으면 안 되므로 전예외 무음(None).
+    """
+    if not ws:
+        return None
+    try:
+        return tasks_root_for(ws)
+    except Exception:
+        return None
+
+
 def main() -> None:
     try:
         raw = sys.stdin.read()
@@ -82,7 +95,7 @@ def main() -> None:
         _append_log(ws, "ERROR | " + traceback.format_exc().strip().replace("\n", " ⏎ "))
 
     out = f"[{model}] {folder} | {task_part} | {ctx}"
-    _append_log(ws, out)
+    _append_log(ws, f"{out} | tasks_dir={_resolved_tasks_dir(ws)}")
     print(out)
 
 

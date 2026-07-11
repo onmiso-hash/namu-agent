@@ -4,6 +4,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv, find_dotenv
 
+import task_resolve
+
 BASE_DIR = Path(__file__).parent
 REPO_ROOT = BASE_DIR.parent
 # 1. 사용자가 실행한 현재 작업 폴더(cwd) 기준의 .env를 찾아 최우선 로드 (플러그인 모드 지원)
@@ -98,15 +100,18 @@ def _resolve_machine(env_value: str | None) -> str:
 NAMU_MACHINE: str = _resolve_machine(os.getenv("NAMU_MACHINE"))
 
 # 작업 기록(tasks) — 메모리(NAMU_HOME)와 저장소를 분리한다.
-# tasks는 프로젝트 종속 데이터라 "실행 시점의 프로젝트 폴더(cwd)" 아래 tasks/에 둔다
-# (그 프로젝트의 git으로 공유됨). 반대로 학습 기억(LEARNINGS_*/NAMU_DB_PATH)은 계속
-# NAMU_HOME(설치형은 ~/.namu 중앙) 기준으로 프로젝트 독립 지식으로 취급한다.
+# tasks는 여전히 "프로젝트 귀속" 데이터지만, 저장 위치는 개인 풀
+# `~/.namu/tasks/<basename(project_dir)>/`로 통합한다(namu-34) — 공개 repo에 작업
+# 기록이 노출되는 것을 막고 PC 간 공유를 개인 전역 동기화에 편승시키기 위해서다.
+# NAMU_HOME은 이제 학습 기억(LEARNINGS_*/NAMU_DB_PATH) 전용으로만 남는다.
+# 규칙은 task_resolve.py(stdlib)에 단일 구현돼 있고, 여기서는 위임만 한다
+# (규칙 이중 구현 금지 — statusline 등 plain python3 소비자와 동일 결과를 보장).
 #
 # 모듈 로드 시점 상수로 고정하면 cwd가 import 시점에 박혀버리므로, 고정 상수 대신
 # 호출자가 프로젝트 경로를 넘기는 헬퍼로 둔다. project_dir 생략 시 os.getcwd() 사용.
 def tasks_dir_for(project_dir: str | os.PathLike | None = None) -> Path:
     base = Path(project_dir) if project_dir else Path.cwd()
-    return base / "tasks"
+    return task_resolve.tasks_root_for(base)
 
 # GitHub 동기화 (2단계 이후)
 GITHUB_SYNC_ENABLED: bool = False

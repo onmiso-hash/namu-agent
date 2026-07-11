@@ -29,6 +29,7 @@ from pathlib import Path
 _NAMU_PLUGIN_DIR = Path(__file__).parent
 _REPO_ROOT = _NAMU_PLUGIN_DIR.parent
 _CONFIG_PY = _NAMU_PLUGIN_DIR / "config.py"
+_TASK_RESOLVE_PY = _NAMU_PLUGIN_DIR / "task_resolve.py"
 
 _PROBE = (
     "import config; "
@@ -52,6 +53,9 @@ def test_cwd_inside_repo_without_env_falls_back_to_repo_root(tmp_path):
     fake_plugin_dir = fake_repo / "namu-plugin"
     fake_plugin_dir.mkdir(parents=True)
     shutil.copy(_CONFIG_PY, fake_plugin_dir / "config.py")
+    # config.py가 tasks_dir_for()를 task_resolve.tasks_root_for()에 위임(namu-34)하므로
+    # 가짜 plugin 디렉터리에도 동봉해야 import가 성립한다.
+    shutil.copy(_TASK_RESOLVE_PY, fake_plugin_dir / "task_resolve.py")
     (fake_repo / "memory").mkdir()
 
     env = _clean_env(tmp_path)

@@ -1,7 +1,0 @@
-# log — namu-29-hook-deps
-(append만. context 꼬이면 이걸로 복원)
-
-[시작] 2026-07-10 23:46:25 hp · 작업 생성. 소재 = onnamu-project 라이브에서 브리핑 0개 발견(사용자 스크린샷) → 헤드리스 재현 → 근본 원인 확정: session_recall.py PEP 723 블록 부재로 개발 repo 밖 cwd에서 dotenv ModuleNotFoundError 무음 사멸. 개발 repo .venv가 그간 버그를 가림
-[분담] 2026-07-10 23:52:14 hp · 코더 1회(PEP 723 블록 4줄+0.1.10, 코드 무변경) → 리뷰어 PASS(재현 역전·회귀 없음·67 테스트 통과 — 기저 6건은 Windows 전용이라 리눅스선 미발현 확인). 남은 것=⑦ onnamu 라이브 실측(사용자). directory 소스 라이브 참조라 커밋·재설치 없이 새 세션만 열면 수정 반영
-[완료] 2026-07-11 00:33:04 hp · #29 종료 — 완료조건 ①~⑦ 전부 충족. ⑦ 라이브 실측 PASS: onnamu 새 세션 브리핑 정확히 1개(교훈 5건+이월 안내, 스크린샷 물증) — 버그 수정과 이중 설치 훅 1회 실행 동시 확정. record 1건(01KX6AHVTF, human). 이월: 설치 가이드 보강(스코프 3종 설명·statusLine 가시성 혼란·usage_guide 1절 침묵 서술 0.1.10 기준 재점검 — namu-30 후보)·훅 무음 실패 물증 로그 부재(고장과 설계 침묵 구분 불가 문제)·statusLine 플러그인 활성 감지 표시·namu 브리핑 스킬 python→python3 표기 정정·기저 테스트 실패 6건 정리(Windows 전용: test_cache_stale temp·test_mcp_selfheal cp949)·statusLine 제목 중복 표시 cosmetic. 커밋·푸시 진행
-[완료] 2026-07-11 00:38:25 hp · #29 이월 목록 추가(마감 후 정정) — 협업 스타일 기억의 나무 흡수 후보 등록(사용자 지시). 이월: 협업 스타일 기억 나무 흡수 검토(승인 절차·보고 형식 같은 사용자 소통 피드백이 현재 CC 자체 메모리에 쌓여 벤더 종속 — 엔진 교체 시 못 따라가므로 이식 가능한 나무 레이어로 흡수할지 설계 결정 필요)·설치 가이드 보강(스코프 3종 설명·statusLine 가시성 혼란·usage_guide 1절 침묵 서술 0.1.10 기준 재점검 — namu-30 후보)·훅 무음 실패 물증 로그 부재(고장과 설계 침묵 구분 불가 문제)·statusLine 플러그인 활성 감지 표시·namu 브리핑 스킬 python→python3 표기 정정·기저 테스트 실패 6건 정리(Windows 전용: test_cache_stale temp·test_mcp_selfheal cp949)·statusLine 제목 중복 표시 cosmetic. 후속 메모 없음

@@ -47,14 +47,21 @@ def sync_enabled() -> bool:
     return True
 
 
-def _append_sync_log(line: str) -> None:
+def _append_sync_log(line: str, home: "Path | str | None" = None) -> None:
     """동기화 실패/스킵 사유 1줄 기록(물증). record·세션 시작을 절대 막으면 안
     되므로 전예외 무음 처리한다(session_context._append_git_check_log와 동일 원칙 —
-    무음 실패가 잠복하지 않도록 사유만은 남긴다)."""
-    try:
-        import config as cfg
+    무음 실패가 잠복하지 않도록 사유만은 남긴다).
 
-        path = cfg.NAMU_HOME / "db" / "sync.log"
+    home 생략 시 cfg.NAMU_HOME(기존 sync_push/sync_pull 호출부와 동일). namu_tasks_push
+    CLI(namu-34 ③-b)처럼 대상이 항상 `~/.namu`로 고정돼 NAMU_HOME과 다를 수 있는
+    호출부는 home을 명시해 로그가 엉뚱한 위치(개발 repo의 NAMU_HOME 등)에 남지 않게 한다.
+    """
+    try:
+        if home is None:
+            import config as cfg
+
+            home = cfg.NAMU_HOME
+        path = Path(home) / "db" / "sync.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with path.open("a", encoding="utf-8") as f:
@@ -107,40 +114,57 @@ def _run(args: list[str], timeout: int):
     )
 
 
-def sync_push(message: str) -> bool:
-    """memory/를 add→(변경 있으면) commit→push. namu_record 성공 직후 호출.
+def _add_targets(home: str, required: list[str], optional: list[str]) -> list[str]:
+    """git add 대상 목록 조립(namu-34 ③-a). required는 무조건 포함(없으면 git add
+    자체가 실패해 물증이 남는 기존 sync_push 회귀를 그대로 유지 — memory/가 없는
+    설치는 이미 뭔가 잘못된 상태라 실패로 드러나야 한다). optional은 실재할 때만
+    포함한다 — tasks/는 아직 한 번도 안 생겼을 수 있는 신규 환경이라, 없다고 git
+    add 자체를 실패시키면 안 되기 때문이다."""
+    targets = list(required)
+    for rel in optional:
+        if (Path(home) / rel.rstrip("/")).exists():
+            targets.append(rel)
+    return targets
+
+
+def _push(
+    home: str, message: str, required_paths: list[str], optional_paths: list[str]
+) -> bool:
+    """add(required 전부 + optional 실재분)→(변경 있으면) commit→push 공통 로직.
+
+    sync_push(설치형 자동, namu_record 직후)와 push_tasks_pool(namu_tasks_push CLI,
+    namu-34 ③-b)이 이 함수를 공유한다 — 게이팅 조건(sync_enabled 마커+하드가드 vs
+    대상 git/origin 실재)만 호출자가 각자 다르게 검사하고, git 호출 시퀀스·재시도·
+    로그 규약은 하나로 유지한다(중복 구현 금지).
 
     변경이 없어도 commit 단계만 건너뛰고 push는 계속 진행한다 — 밀린 커밋을
-    flush하는 목적(예: 오프라인 중 쌓인 로컬 커밋을 다음 record 때 push).
+    flush하는 목적(예: 오프라인 중 쌓인 로컬 커밋을 다음 호출 때 push).
     push 실패 시 pull(--no-rebase, union merge로 충돌 해소)→push 1회만 재시도한다
     (양쪽 PC가 오프라인 상태에서 각자 기록해 divergence가 생긴 경우 복구).
     commit author는 사용자 git 전역 설정을 그대로 쓴다(별도 설정 안 함).
-    각 단계 실패는 물증 로그 + False, 예외는 절대 전파하지 않는다(record 결과에
+    각 단계 실패는 물증 로그 + False, 예외는 절대 전파하지 않는다(호출자 결과에
     영향 주면 안 됨).
     """
-    import config as cfg
+    targets = _add_targets(home, required_paths, optional_paths)
 
-    if not sync_enabled():
-        return False
-
-    home = str(cfg.NAMU_HOME)
-
-    try:
-        add_res = _run(["git", "-C", home, "add", "memory/"], 5)
-        if add_res.returncode != 0:
-            _append_sync_log(
-                f"PUSH FAIL add rc={add_res.returncode} err={(add_res.stderr or '').strip()[:200]}"
-            )
+    if targets:
+        try:
+            add_res = _run(["git", "-C", home, "add", *targets], 5)
+            if add_res.returncode != 0:
+                _append_sync_log(
+                    f"PUSH FAIL add rc={add_res.returncode} err={(add_res.stderr or '').strip()[:200]}",
+                    home=home,
+                )
+                return False
+        except Exception as exc:
+            _append_sync_log(f"PUSH FAIL add {type(exc).__name__}: {exc}", home=home)
             return False
-    except Exception as exc:
-        _append_sync_log(f"PUSH FAIL add {type(exc).__name__}: {exc}")
-        return False
 
     try:
         diff_res = _run(["git", "-C", home, "diff", "--cached", "--quiet"], 5)
         has_changes = diff_res.returncode != 0
     except Exception as exc:
-        _append_sync_log(f"PUSH FAIL diff-check {type(exc).__name__}: {exc}")
+        _append_sync_log(f"PUSH FAIL diff-check {type(exc).__name__}: {exc}", home=home)
         return False
 
     if has_changes:
@@ -149,11 +173,12 @@ def sync_push(message: str) -> bool:
             if commit_res.returncode != 0:
                 _append_sync_log(
                     f"PUSH FAIL commit rc={commit_res.returncode} "
-                    f"err={(commit_res.stderr or '').strip()[:200]}"
+                    f"err={(commit_res.stderr or '').strip()[:200]}",
+                    home=home,
                 )
                 return False
         except Exception as exc:
-            _append_sync_log(f"PUSH FAIL commit {type(exc).__name__}: {exc}")
+            _append_sync_log(f"PUSH FAIL commit {type(exc).__name__}: {exc}", home=home)
             return False
 
     try:
@@ -162,10 +187,11 @@ def sync_push(message: str) -> bool:
             return True
         _append_sync_log(
             f"PUSH retry-trigger rc={push_res.returncode} "
-            f"err={(push_res.stderr or '').strip()[:200]}"
+            f"err={(push_res.stderr or '').strip()[:200]}",
+            home=home,
         )
     except Exception as exc:
-        _append_sync_log(f"PUSH retry-trigger {type(exc).__name__}: {exc}")
+        _append_sync_log(f"PUSH retry-trigger {type(exc).__name__}: {exc}", home=home)
 
     # 복구 재시도: divergence를 union merge로 정리한 뒤 1회만 다시 push
     try:
@@ -173,11 +199,12 @@ def sync_push(message: str) -> bool:
         if pull_res.returncode != 0:
             _append_sync_log(
                 f"PUSH FAIL recovery-pull rc={pull_res.returncode} "
-                f"err={(pull_res.stderr or '').strip()[:200]}"
+                f"err={(pull_res.stderr or '').strip()[:200]}",
+                home=home,
             )
             return False
     except Exception as exc:
-        _append_sync_log(f"PUSH FAIL recovery-pull {type(exc).__name__}: {exc}")
+        _append_sync_log(f"PUSH FAIL recovery-pull {type(exc).__name__}: {exc}", home=home)
         return False
 
     try:
@@ -186,12 +213,90 @@ def sync_push(message: str) -> bool:
             return True
         _append_sync_log(
             f"PUSH FAIL retry-push rc={retry_res.returncode} "
-            f"err={(retry_res.stderr or '').strip()[:200]}"
+            f"err={(retry_res.stderr or '').strip()[:200]}",
+            home=home,
         )
         return False
     except Exception as exc:
-        _append_sync_log(f"PUSH FAIL retry-push {type(exc).__name__}: {exc}")
+        _append_sync_log(f"PUSH FAIL retry-push {type(exc).__name__}: {exc}", home=home)
         return False
+
+
+_GITATTRIBUTES_UNION_LINES = [
+    "memory/learnings.yaml merge=union",
+    # namu-34 ③-c: tasks가 개인 풀(~/.namu/tasks/<프로젝트키>/)로 통합되며 log.md
+    # (append-only 사건 기록)와 .project(machine=경로 매핑, 역시 append-only)도
+    # 양쪽 PC가 오프라인 중 각자 추가한 줄이 서로를 지우지 않게 union 병합이 필요하다.
+    "tasks/**/log.md merge=union",
+    "tasks/*/.project merge=union",
+]
+
+
+def ensure_gitattributes_union(home: Path) -> list[str]:
+    """`.gitattributes`에 union 병합 라인들을 멱등 ensure한다(namu-34 ③-c).
+
+    있으면 무변경, 없으면 append만 — 신규 개통(sync_setup)과 기존 개통분(hp·samsung,
+    서버 부팅 시 mcp_server.py)이 이 함수 하나를 공유해 라인 목록이 어긋나지 않게 한다.
+    반환값은 사람이 읽는 notes 리스트(sync_setup 보고용) — 부팅 경로 호출자는 무시해도
+    무방하다. 파일 I/O 실패는 예외를 전파하지 않고 notes에 사유만 남긴다.
+    """
+    gitattributes = home / ".gitattributes"
+    notes: list[str] = []
+    try:
+        existing = gitattributes.read_text(encoding="utf-8") if gitattributes.exists() else ""
+        existing_lines = existing.splitlines()
+        missing = [ln for ln in _GITATTRIBUTES_UNION_LINES if ln not in existing_lines]
+        if missing:
+            with gitattributes.open("a", encoding="utf-8") as f:
+                if existing and not existing.endswith("\n"):
+                    f.write("\n")
+                for ln in missing:
+                    f.write(ln + "\n")
+            notes.append(f".gitattributes에 {len(missing)}개 union 라인 추가")
+        else:
+            notes.append(".gitattributes: union 라인 이미 존재 (스킵)")
+    except OSError as exc:
+        notes.append(f".gitattributes 기록 실패: {exc}")
+    return notes
+
+
+def sync_push(message: str) -> bool:
+    """memory/(+실재하면 tasks/, namu-34 ③-a)를 add→(변경 있으면) commit→push.
+    namu_record 성공 직후 호출. 실제 git 시퀀스는 `_push()` 참조."""
+    import config as cfg
+
+    if not sync_enabled():
+        return False
+
+    return _push(str(cfg.NAMU_HOME), message, ["memory/"], ["tasks/"])
+
+
+def tasks_pool_git_ready(home: "Path | str") -> bool:
+    """namu_tasks_push CLI 전용 게이팅(namu-34 ③-b) — sync_enabled(마커 파일+
+    NAMU_HOME==REPO_ROOT 하드가드)와는 무관하게, 대상(`~/.namu`) 자체가 git repo이고
+    origin 원격을 가졌는지만 본다. tasks push는 항상 고정 경로(`~/.namu`)만 대상으로
+    삼으므로 sync_enabled의 "개발 repo 오염 방지" 하드가드가 적용될 이유가 없다 —
+    대상이 애초에 프로젝트 repo가 아니라 그 사고 유형이 구조적으로 성립하지 않는다.
+    """
+    home_path = Path(home)
+    if not (home_path / ".git").exists():
+        return False
+    try:
+        remote_res = _run(["git", "-C", str(home_path), "remote", "get-url", "origin"], 5)
+    except Exception:
+        return False
+    return remote_res.returncode == 0
+
+
+def push_tasks_pool(home: "Path | str", message: str) -> bool:
+    """`~/.namu`(개인 풀) 대상 tasks/(+실재하면 memory/) push(namu-34 ③-b, CLI 전용).
+
+    `tasks_pool_git_ready(home)`가 False면(신규 sync 미개통 등) 조용히 no-op으로
+    False를 반환한다 — 호출자(namu_tasks_push.py)는 이를 정상 종료(exit 0)로 취급한다.
+    """
+    if not tasks_pool_git_ready(home):
+        return False
+    return _push(str(home), message, [], ["tasks/", "memory/"])
 
 
 def sync_setup(remote_url: str) -> str:
@@ -244,20 +349,7 @@ def sync_setup(remote_url: str) -> str:
     except OSError as exc:
         notes.append(f".gitignore 기록 실패: {exc}")
 
-    gitattributes = home / ".gitattributes"
-    union_line = "memory/learnings.yaml merge=union"
-    try:
-        existing = gitattributes.read_text(encoding="utf-8") if gitattributes.exists() else ""
-        if union_line not in existing.splitlines():
-            with gitattributes.open("a", encoding="utf-8") as f:
-                if existing and not existing.endswith("\n"):
-                    f.write("\n")
-                f.write(union_line + "\n")
-            notes.append(".gitattributes에 merge=union 추가")
-        else:
-            notes.append(".gitattributes: merge=union 이미 존재 (스킵)")
-    except OSError as exc:
-        notes.append(f".gitattributes 기록 실패: {exc}")
+    notes.extend(ensure_gitattributes_union(home))
 
     try:
         remote_check = _run(["git", "-C", str(home), "remote", "get-url", "origin"], 5)
