@@ -14,13 +14,25 @@ load_dotenv(BASE_DIR / ".env")
 # NAMU_HOME: 데이터(learnings/tasks/db)가 놓이는 루트.
 # 우선순위:
 #   1. NAMU_HOME 환경변수 (.env 경유 포함) — 명시적 지정, 항상 최우선.
-#   2. REPO_ROOT/memory 가 실재하면 REPO_ROOT — repo를 클론해 직접 실행하는 하위호환 경로.
+#   2. REPO_ROOT/memory 가 실재하고 cwd가 REPO_ROOT 안쪽이면 REPO_ROOT —
+#      repo를 클론해 그 안에서 직접 실행하는 하위호환 경로. cwd 조건이 없으면
+#      플러그인을 directory 소스(개발 repo 라이브 참조)로 설치한 머신에서
+#      REPO_ROOT가 __file__(플러그인 설치 위치) 기준으로 고정돼, 타 프로젝트
+#      cwd에서 실행해도 항상 개발 repo로 라우팅되는 오배선이 발생한다(#33).
 #   3. 그 외엔 Path.home() / ".namu" — 플러그인 설치형 기본값(분리 모드).
 #      플러그인 캐시 폴더에는 memory/ 가 복사되지 않으므로, env 미설정 사용자가
 #      캐시 안에 데이터를 쓰는 "유령 경로" 사고(#13·#16)를 이 폴백이 방지한다.
+def _cwd_is_within(base: Path) -> bool:
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return False
+    return cwd.is_relative_to(base.resolve())
+
+
 if "NAMU_HOME" in os.environ:
     NAMU_HOME = Path(os.environ["NAMU_HOME"])
-elif (REPO_ROOT / "memory").is_dir():
+elif (REPO_ROOT / "memory").is_dir() and _cwd_is_within(REPO_ROOT):
     NAMU_HOME = REPO_ROOT
 else:
     NAMU_HOME = Path.home() / ".namu"
