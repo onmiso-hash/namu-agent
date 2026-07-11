@@ -170,6 +170,7 @@
 | 2026-07-06 | **#20 agents 레이아웃 분리(실측·삼성)** | 한 `agents/` 폴더 양 엔진 공용 불가 판명(agy가 플랫 .md까지 통째 스캔, 깨진 정의 2벌 공존) → **`agents/<name>/agent.md`=agy 전용 / `cc-agents/*.md`+plugin.json `"agents"` 필드=CC 전용**(공식 문서: 필드가 자동 스캔을 대체). ⚠️ agy plugin install=**비파괴 병합**(삭제 파일 잔존) → 정석=`uninstall→install`(hp 실측 완전 청소 확인). 플러그인 0.1.2 |
 | 2026-07-07 | **#20 실측 전판 통과(hp)** | **CC**: `namu:namu-coder` 네임스페이스 등재+라이브 호출 성공(파일 물증), agy 전용 폴더 미로드="agents" 필드 대체 확증, **directory 마켓플레이스=소스 라이브 참조**(설치 기록 0.1.1인데 0.1.2 로드 = 개발 기기는 pull+재시작만으로 반영). **~/.namu 분리 모드**: 가짜 캐시+가짜 HOME 시뮬레이션으로 3분기 폴백·record→recall 왕복·tasks 층·스캐폴딩 전부 동작. **agy repo 밖**: 스킬·훅·워커·MCP(대화형, 사용자 라이브+스크린샷) 전부 PASS — 유일 한계=**`-p` 비대화 모드+MCP=세션 멈춤**(1.0.16, 경로 방식·권한 스킵 무관, 서버는 수동 부팅 1초 정상 → agy 쪽 문제. 오케스트레이터=대화형이라 실영향 제한) |
 | 2026-07-07 | **#20 워커 호출명 폴백 확정 + 종료** | namu-task 스킬에 규칙 내장(설정 파일 불필요): **CC=에이전트 목록에 `namu-coder` 있으면 그대로(개발 repo), 없으면 `namu:<agent>`(설치형) / agy=그대로**(네임스페이스 없음). `namu_workers.yaml` 부재 시 **engine=native 간주 진행**(설치형 기본, 추가 설정·비용 0). 산출물: **docs/deploy_design.md 신설**(결정 3건+함정 5종+설치 절차), 플러그인 0.1.3 |
+| 2026-07-11 | **메모리 3원 분류 확정(#32)** | 교훈 풀은 제품지식(개발 repo product_learnings.yaml)/개인전역지식(~/.namu learnings.yaml)/프로젝트상태(cwd tasks, #26 기결정) 3갈래. 제품지식·개인전역은 성격이 다른 지식이라 병합·연합조회 안 함, 파일명 분기(config.py, 개발 모드=NAMU_HOME==REPO_ROOT일 때만 product_)로 구분 명시 |
 
 ## 🏗️ 저장소 구조 (GitHub 기반)
 ```

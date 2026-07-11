@@ -56,7 +56,15 @@ OLLAMA_DEFAULT_MODEL: str = "llama3"
 
 # 학습 기억
 LEARNINGS_PATH = NAMU_HOME / "memory" / "learnings.md"
-LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "learnings.yaml"
+# 메모리 3원 분류(#32): 개발 repo(NAMU_HOME == REPO_ROOT)에서 쌓이는 교훈은
+# "제품지식"(NAMU 자체를 만들며 배운 것), 설치형(~/.namu 등)에서 쌓이는 교훈은
+# "개인전역지식"(NAMU를 도구로 다른 프로젝트 하며 배운 것) — 성격이 달라 병합하지
+# 않기로 하고, 파일명으로 구분을 명시한다. 이 조건은 memory_sync.py의
+# sync_enabled 하드가드(cfg.NAMU_HOME == cfg.REPO_ROOT)와 동일하다.
+if NAMU_HOME == REPO_ROOT:
+    LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "product_learnings.yaml"
+else:
+    LEARNINGS_YAML_PATH = NAMU_HOME / "memory" / "learnings.yaml"
 
 # DB
 NAMU_DB_PATH = NAMU_HOME / "db" / "namu.db"
