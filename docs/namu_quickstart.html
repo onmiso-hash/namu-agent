@@ -210,6 +210,7 @@
     <span class="eyebrow">🌳 초보자용 · Claude Code &amp; agy</span>
     <h1>NAMU 설치 &amp; 업데이트 가이드</h1>
     <p class="lead">따라만 하면 됩니다. 명령을 복사해 붙여넣고, 각 단계의 <b>“성공하면 이렇게 보여요”</b>만 확인하세요.</p>
+    <p class="lead" style="margin-top:14px">NAMU는 어느 엔진에서든 <b>항상 플러그인으로 설치</b>됩니다. 다른 건 소스를 가져오는 방법뿐 — <b>Claude Code</b>는 GitHub에서 바로 설치하고, <b>agy</b>는 아직 원격 설치가 없어 소스를 먼저 내려받은 뒤 그 폴더를 설치합니다.</p>
   </header>
 
   <!-- 준비물 -->
@@ -243,7 +244,7 @@
       <a class="choice" href="#agy">
         <span class="tool">agy (Antigravity)</span>
         <span class="go">B로 이동 →</span>
-        <small>저장소를 내려받아 설치.</small>
+        <small>소스를 내려받은 뒤 플러그인으로 설치.</small>
       </a>
     </div>
   </section>
@@ -261,7 +262,7 @@
   <!-- PART A: Claude Code -->
   <section id="cc">
     <h2><span class="kicker">A</span> Claude Code에 설치</h2>
-    <p class="sec-note">공개 저장소라 로그인·초대 없이 바로 설치됩니다.</p>
+    <p class="sec-note">GitHub에서 바로 플러그인으로 설치합니다 — 공개 저장소라 로그인·초대·수동 clone 없이 끝납니다.</p>
     <div class="card">
 
       <div class="step">
@@ -304,7 +305,7 @@ claude plugin install namu@namu-marketplace</pre>
   <!-- PART B: agy -->
   <section id="agy">
     <h2><span class="kicker">B</span> agy(Antigravity)에 설치</h2>
-    <p class="sec-note">저장소를 내려받아 그 안의 <code>namu-plugin</code> 폴더를 설치합니다.</p>
+    <p class="sec-note">agy는 아직 GitHub 원격 설치가 없어, 소스를 먼저 내려받은 뒤(clone) 그 <code>namu-plugin</code> 폴더를 <b>플러그인으로 설치</b>합니다. clone은 설치 방식이 아니라 소스를 가져오는 준비 단계입니다.</p>
     <div class="card">
 
       <div class="step">
@@ -368,10 +369,10 @@ claude plugin install namu@namu-marketplace</pre>
   <!-- 업데이트 -->
   <section id="update">
     <h2><span class="kicker">↻</span> 업데이트 — 새 버전 반영하기</h2>
-    <p class="sec-note">설치한 방식에 따라 방법이 다릅니다. 자기 방식 하나만 보면 됩니다.</p>
+    <p class="sec-note">엔진에 따라 방법이 다릅니다. 자기 것 하나만 보면 됩니다.</p>
 
     <div class="card">
-      <div class="upd-head"><span class="pill">A</span><b>Claude Code · GitHub으로 설치한 경우</b></div>
+      <div class="upd-head"><span class="pill">A</span><b>Claude Code</b></div>
       <div class="cmd">
         <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
         <pre>claude plugin update namu@namu-marketplace</pre>
@@ -381,21 +382,14 @@ claude plugin install namu@namu-marketplace</pre>
     </div>
 
     <div class="card">
-      <div class="upd-head"><span class="pill">A′</span><b>Claude Code · 직접 <code>git clone</code>한 폴더를 쓰는 경우</b></div>
-      <div class="cmd">
-        <div class="bar"><span class="where term">🖥 터미널에서 (내려받은 폴더 안)</span><button class="copy" type="button">복사</button></div>
-        <pre>git pull</pre>
-      </div>
-      <p>재시작만 하면 끝. 소스를 바로 참조하므로 재설치가 필요 없습니다.</p>
-    </div>
-
-    <div class="card">
       <div class="upd-head"><span class="pill">B</span><b>agy</b></div>
+      <p style="margin:0 0 12px;color:var(--soft)">먼저 내려받은 폴더에서 <code>git pull</code>로 소스를 최신화한 뒤, 재설치 스크립트를 실행합니다.</p>
       <div class="cmd">
-        <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
-        <pre>namu-agent/namu-plugin/scripts/agy_reinstall.ps1</pre>
+        <div class="bar"><span class="where term">🖥 터미널에서 (내려받은 namu-agent 폴더에서)</span><button class="copy" type="button">복사</button></div>
+        <pre>git -C namu-agent pull
+namu-agent/namu-plugin/scripts/agy_reinstall.ps1</pre>
       </div>
-      <p>이 스크립트가 <code>제거 → 재설치 → 경로 교정</code>을 한 번에 처리합니다.</p>
+      <p>재설치 스크립트가 <code>제거 → 재설치 → 경로 교정</code>을 한 번에 처리합니다.</p>
     </div>
 
     <div class="tip" style="margin-top:16px"><span class="ic">💡</span><span>상태줄(statusLine)을 쓰고 있다면, 업데이트 뒤 <code>/namu:statusline-setup</code>을 한 번 더 부르세요. 버전이 바뀌면 상태줄이 조용히 사라질 수 있는데, 이 한 번으로 새 경로에 다시 연결됩니다.</span></div>
