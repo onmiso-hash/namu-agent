@@ -7,10 +7,14 @@ db.py(코어)와 성격이 다른 인터페이스/훅 레이어 소관이라 std
 PEP 723 의존성 블록을 건드릴 필요가 없게 하기 위함.
 
 subprocess 호출 공통 규약(session_context.check_git_behind와 동일 패턴):
-capture_output=True, encoding="utf-8", errors="replace", shell=False, timeout 명시.
+capture_output=True, encoding="utf-8", errors="replace", shell=False, timeout 명시,
+stdin=subprocess.DEVNULL — MCP 서버(stdio)의 stdin은 JSON-RPC 파이프라, 자식 git이
+이를 상속하면 Windows에서 git이 작업을 끝내고도 종료/EOF를 못 해 communicate가
+타임아웃되고, 이어지는 무타임아웃 reaping 대기로 서버가 수 분씩 멈춘다(namu-38 실측).
 """
 import os
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -87,6 +91,7 @@ def sync_pull() -> bool:
             errors="replace",
             timeout=5,
             shell=False,
+            stdin=subprocess.DEVNULL,  # 서버 stdin(파이프) 상속 차단 (namu-38)
         )
         if result.returncode != 0:
             _append_sync_log(
@@ -100,6 +105,7 @@ def sync_pull() -> bool:
 
 
 def _run(args: list[str], timeout: int):
+    # stdin=DEVNULL 필수 — 모듈 docstring의 subprocess 공통 규약 참조(namu-38).
     return subprocess.run(
         args,
         capture_output=True,
@@ -107,6 +113,7 @@ def _run(args: list[str], timeout: int):
         errors="replace",
         timeout=timeout,
         shell=False,
+        stdin=subprocess.DEVNULL,
     )
 
 
@@ -140,12 +147,37 @@ def _push(
     commit author는 사용자 git 전역 설정을 그대로 쓴다(별도 설정 안 함).
     각 단계 실패는 물증 로그 + False, 예외는 절대 전파하지 않는다(호출자 결과에
     영향 주면 안 됨).
+
+    namu-38: 단계별(add/diff/commit/push/재시도) 소요를 perf_counter로 재서 성공·
+    실패 무관하게 함수 종료 시 "PUSH timing ..." 1줄을 추가로 남긴다 — samsung에서
+    관측된 "git subprocess만 수십 배 느림" 재현·원인 특정용 물증이다. 기존 FAIL/
+    retry-trigger 로그 라인은 그대로 두고(회귀 금지) timing 라인만 덧붙인다.
     """
+    timings: dict[str, float] = {}
+    start_total = time.perf_counter()
+
+    def _timed(key: str, args: list[str], timeout: int):
+        t0 = time.perf_counter()
+        res = _run(args, timeout)
+        timings[key] = time.perf_counter() - t0
+        return res
+
+    ok = _push_steps(home, message, required_paths, optional_paths, _timed)
+
+    total = time.perf_counter() - start_total
+    parts = " ".join(f"{k}={v:.2f}s" for k, v in timings.items())
+    _append_sync_log(f"PUSH timing {parts} total={total:.2f}s ok={ok}", home=home)
+    return ok
+
+
+def _push_steps(home, message, required_paths, optional_paths, _timed) -> bool:
+    """_push의 실제 git 호출 시퀀스(namu-38: timing 계측을 위해 _push에서 분리).
+    반환값과 각 단계 실패 시 물증 로그는 분리 전과 동일하다."""
     targets = _add_targets(home, required_paths, optional_paths)
 
     if targets:
         try:
-            add_res = _run(["git", "-C", home, "add", *targets], 5)
+            add_res = _timed("add", ["git", "-C", home, "add", *targets], 5)
             if add_res.returncode != 0:
                 _append_sync_log(
                     f"PUSH FAIL add rc={add_res.returncode} err={(add_res.stderr or '').strip()[:200]}",
@@ -157,7 +189,7 @@ def _push(
             return False
 
     try:
-        diff_res = _run(["git", "-C", home, "diff", "--cached", "--quiet"], 5)
+        diff_res = _timed("diff", ["git", "-C", home, "diff", "--cached", "--quiet"], 5)
         has_changes = diff_res.returncode != 0
     except Exception as exc:
         _append_sync_log(f"PUSH FAIL diff-check {type(exc).__name__}: {exc}", home=home)
@@ -165,7 +197,7 @@ def _push(
 
     if has_changes:
         try:
-            commit_res = _run(["git", "-C", home, "commit", "-m", message], 5)
+            commit_res = _timed("commit", ["git", "-C", home, "commit", "-m", message], 5)
             if commit_res.returncode != 0:
                 _append_sync_log(
                     f"PUSH FAIL commit rc={commit_res.returncode} "
@@ -178,7 +210,7 @@ def _push(
             return False
 
     try:
-        push_res = _run(["git", "-C", home, "push"], 10)
+        push_res = _timed("push", ["git", "-C", home, "push"], 10)
         if push_res.returncode == 0:
             return True
         _append_sync_log(
@@ -191,7 +223,9 @@ def _push(
 
     # 복구 재시도: divergence를 union merge로 정리한 뒤 1회만 다시 push
     try:
-        pull_res = _run(["git", "-C", home, "pull", "--no-rebase", "--no-edit"], 10)
+        pull_res = _timed(
+            "retry_pull", ["git", "-C", home, "pull", "--no-rebase", "--no-edit"], 10
+        )
         if pull_res.returncode != 0:
             _append_sync_log(
                 f"PUSH FAIL recovery-pull rc={pull_res.returncode} "
@@ -204,7 +238,7 @@ def _push(
         return False
 
     try:
-        retry_res = _run(["git", "-C", home, "push"], 10)
+        retry_res = _timed("retry_push", ["git", "-C", home, "push"], 10)
         if retry_res.returncode == 0:
             return True
         _append_sync_log(

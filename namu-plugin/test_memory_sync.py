@@ -130,6 +130,68 @@ def test_sync_push_git_repo_without_memory_dir_logs_failure(monkeypatch, tmp_pat
 
 
 # ---------------------------------------------------------------------------
+# 단계별 timing 로그(namu-38) — samsung 라이브 지연 재현/원인 특정용 물증
+# ---------------------------------------------------------------------------
+
+def test_sync_push_failure_still_logs_timing_line(monkeypatch, tmp_path):
+    """add 단계에서 실패해도(memory/ 없음) 기존 FAIL 로그에 더해 PUSH timing 요약
+    1줄이 남는다 — 실패 경로도 계측을 건너뛰면 안 된다는 요구 확인."""
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / "README.md").write_text("x", encoding="utf-8")
+    _commit_all(home, "init")
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+
+    assert ms.sync_push("test message") is False
+    log = (home / "db" / "sync.log").read_text(encoding="utf-8")
+    assert "PUSH FAIL" in log
+    timing_lines = [ln for ln in log.splitlines() if "PUSH timing" in ln]
+    assert len(timing_lines) == 1
+    line = timing_lines[0]
+    assert "add=" in line
+    assert "total=" in line
+    assert "ok=False" in line
+
+
+def test_sync_push_success_logs_timing_with_all_stage_keys(monkeypatch, tmp_path):
+    """정상 성공 경로(add→diff→commit→push)에서 PUSH timing 줄에 각 단계 키가
+    모두 등장하고 ok=True로 남는다."""
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / "README.md").write_text("x", encoding="utf-8")
+    _commit_all(home, "init")
+    subprocess.run(
+        ["git", "-C", str(home), "remote", "add", "origin", str(bare)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(home), "push", "-q", "-u", "origin", "main"],
+        check=True, capture_output=True,
+    )
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+
+    (home / "memory").mkdir()
+    (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
+
+    assert ms.sync_push("learn: timing check") is True
+
+    log = (home / "db" / "sync.log").read_text(encoding="utf-8")
+    timing_lines = [ln for ln in log.splitlines() if "PUSH timing" in ln]
+    assert len(timing_lines) == 1
+    line = timing_lines[0]
+    for key in ("add=", "diff=", "commit=", "push=", "total="):
+        assert key in line
+    assert "ok=True" in line
+
+
+# ---------------------------------------------------------------------------
 # sync_push add 범위 확장(namu-34 ③-a) — tasks/ 실재 시 커밋에 포함
 # ---------------------------------------------------------------------------
 
@@ -526,6 +588,42 @@ def test_sync_setup_merges_pre_existing_local_learnings_via_unrelated_histories(
     merged = _read_yaml(home_b)
     assert "FROM_A" in merged
     assert "FROM_B_LOCAL" in merged
+
+
+# ---------------------------------------------------------------------------
+# stdin=DEVNULL 규약 (namu-38)
+# ---------------------------------------------------------------------------
+
+def test_git_subprocess_calls_use_devnull_stdin(monkeypatch, tmp_path):
+    """모든 git subprocess 호출은 stdin=DEVNULL이어야 한다(namu-38) — MCP 서버(stdio)의
+    stdin 파이프를 자식 git이 상속하면 Windows에서 git이 EOF를 못 줘 communicate가
+    타임아웃+무기한 reaping 블록되는 실측 결함의 회귀 방지. subprocess.run을 가로채
+    _run과 sync_pull 양쪽 경로의 실제 전달 kwargs를 검사한다."""
+    # repo 준비는 스파이 설치 전에 — 테스트 헬퍼의 subprocess.run 호출(전역 모듈
+    # 공유)이 캡처에 섞이면 검사 대상이 오염된다.
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+
+    captured: list[dict] = []
+    real_run = subprocess.run
+
+    def spy_run(args, **kwargs):
+        captured.append(kwargs)
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(ms.subprocess, "run", spy_run)
+
+    # _run 경로
+    ms._run(["git", "--version"], 5)
+
+    # sync_pull 경로 (원격 없는 repo라 rc!=0로 끝나지만 호출 kwargs 검사가 목적)
+    ms.sync_pull()
+
+    assert len(captured) >= 2
+    for kwargs in captured:
+        assert kwargs.get("stdin") is subprocess.DEVNULL
 
 
 if __name__ == "__main__":

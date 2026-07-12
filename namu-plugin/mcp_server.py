@@ -4,6 +4,7 @@
 # ///
 import json
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -126,11 +127,22 @@ def namu_record(
       tags: list of string tags (optional)
     Returns: the new entry's ULID (str)
     """
+    # namu-38: samsung 라이브 실측에서 record 직후 git 단계까지 12분 공백이
+    # 관측됐다 — ensure_db(캐시 재생성)/record(yaml+sqlite)/sync(git push) 세 구간
+    # 중 어디서 지연이 생기는지 판정하려면 구간별 시간이 반드시 필요하다. db.py는
+    # 코어라 침습을 최소화하고, record()는 전체 구간 하나로만 잰다.
+    t0 = time.perf_counter()
     _ensure_db()
+    t1 = time.perf_counter()
     entry_id = record(task, outcome, reason, task_type, verified_by, _normalize_tags(tags))
+    t2 = time.perf_counter()
     # 설치형(~/.namu) 자동 동기화 활성 시에만 실제 push가 일어난다(sync_enabled 하드가드).
     # 반환값이 False여도(비활성/실패) record 자체의 성공 결과에는 영향을 주지 않는다.
     memory_sync.sync_push(f"learn: {task[:50]} ({cfg.NAMU_MACHINE})")
+    t3 = time.perf_counter()
+    memory_sync._append_sync_log(
+        f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
+    )
     return entry_id
 
 

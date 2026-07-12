@@ -343,6 +343,27 @@ def test_check_git_behind_none_on_timeout(monkeypatch, tmp_path):
     assert "SKIP" in log_path.read_text(encoding="utf-8")
 
 
+def test_check_git_behind_uses_devnull_stdin(monkeypatch, tmp_path):
+    """모든 git 호출은 stdin=DEVNULL이어야 한다(namu-38) — MCP 서버(stdio)의 stdin
+    파이프를 자식 git이 상속하면 Windows에서 EOF 미도달로 communicate가 블록되는
+    실측 결함의 회귀 방지."""
+    import subprocess as _subprocess
+
+    monkeypatch.setattr(_cfg, "NAMU_DATA_ROOT", tmp_path)
+    captured = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(kwargs)
+        return _FakeCompleted(returncode=0, stdout="0\n")
+
+    monkeypatch.setattr(_sc.subprocess, "run", fake_run)
+    _real_check_git_behind(str(tmp_path))
+
+    assert len(captured) == 2  # fetch + rev-list
+    for kwargs in captured:
+        assert kwargs.get("stdin") is _subprocess.DEVNULL
+
+
 def test_check_git_behind_disabled_via_env_skips_subprocess(monkeypatch, tmp_path):
     """NAMU_GIT_CHECK=0이면 subprocess를 아예 호출하지 않고 즉시 None."""
     monkeypatch.setenv("NAMU_GIT_CHECK", "0")

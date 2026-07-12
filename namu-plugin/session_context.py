@@ -127,6 +127,7 @@ def check_git_behind(project_dir: str | Path) -> int | None:
             errors="replace",
             timeout=3,
             shell=False,
+            stdin=subprocess.DEVNULL,  # 서버 stdin(파이프) 상속 차단 (namu-38, memory_sync 규약 참조)
         )
         if fetch.returncode != 0:
             _append_git_check_log(
@@ -141,6 +142,7 @@ def check_git_behind(project_dir: str | Path) -> int | None:
             errors="replace",
             timeout=3,
             shell=False,
+            stdin=subprocess.DEVNULL,  # 서버 stdin(파이프) 상속 차단 (namu-38)
         )
         if count_res.returncode != 0:
             _append_git_check_log(
