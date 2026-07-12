@@ -87,15 +87,34 @@ def main() -> None:
     pct = (data.get("context_window") or {}).get("used_percentage")
     ctx = f"{round(pct)}%" if isinstance(pct, (int, float)) else "?"
 
+    # 5시간/주간 rate limit — 공식 stdin 필드(rate_limits.five_hour/seven_day.used_percentage).
+    # rate_limits 자체 및 각 윈도우는 독립적으로 부재 가능(비구독자·세션 첫 응답 전) —
+    # 부재 시 조용히 생략한다(ctx의 "?" 폴백과 달리 오류 표시 없음, 하위 호환 유지).
+    rate_limits = data.get("rate_limits") or {}
+    tail_parts = [ctx]
+    five_hour = (rate_limits.get("five_hour") or {}).get("used_percentage")
+    if isinstance(five_hour, (int, float)):
+        tail_parts.append(f"5h {round(five_hour)}%")
+    seven_day = (rate_limits.get("seven_day") or {}).get("used_percentage")
+    if isinstance(seven_day, (int, float)):
+        tail_parts.append(f"7d {round(seven_day)}%")
+    tail = " · ".join(tail_parts)
+
     try:
         t = resolve_active_task(ws)
-        task_part = f"📌 {t[0]} · {t[1]}" if t else "진행 task 없음"
+        if t:
+            slug, title = t[0], t[1]
+            # task.md 제목 관례가 "<slug> — <설명>"이라 제목이 이미 slug로 시작하면
+            # 중복 표시를 피한다(namu-37).
+            task_part = f"📌 {title}" if title.startswith(slug) else f"📌 {slug} · {title}"
+        else:
+            task_part = "진행 task 없음"
     except Exception:
         # 실패를 '없음'으로 위장하지 않는다 — 화면에 구분 표시 + 로그에 물증
         task_part = "⚠ task 조회 오류"
         _append_log(ws, "ERROR | " + traceback.format_exc().strip().replace("\n", " ⏎ "))
 
-    out = f"[{model}] {folder} | {task_part} | {ctx}"
+    out = f"[{model}] {folder} | {task_part} | {tail}"
     _append_log(ws, f"{out} | tasks_dir={_resolved_tasks_dir(ws)}")
     print(out)
 

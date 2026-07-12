@@ -117,7 +117,7 @@ namu-plugin/scripts/agy_reinstall.ps1
 
 핵심 구분: directory 소스는 "라이브 참조"라서 소스만 최신화하면 끝나지만, 원격/캐시 기반 설치는 캐시가 낡은 채로 남으므로 명시적인 update 동작이 필요하다.
 
-**update 후 statusLine 체크** — statusLine을 캐시 경로로 수동 연결해 뒀다면(usage_guide 5절) 캐시 경로에 버전이 박혀 있어, update로 버전 폴더가 바뀌는 순간 statusLine이 에러 표시 없이 조용히 사라진다. update 후 하단 한 줄이 안 보이면 `settings.json`의 statusLine 경로 속 버전을 새 버전으로 갱신할 것.
+**update 후 statusLine 체크** — 캐시 경로에는 플러그인 버전이 박혀 있어, update로 버전 폴더가 바뀌는 순간 statusLine이 에러 표시 없이 조용히 사라진다. update 직후 대화창에서 `/namu:statusline-setup`을 다시 호출하면 새 버전 경로로 자동 갱신된다(namu-36부터 기본 절차, usage_guide 5절). 스킬을 못 쓰는 환경이라면 `settings.json`의 statusLine 경로 속 버전을 수동으로 갱신할 것(usage_guide 5절 폴백 참고).
 
 ## 8. 워커(서브에이전트)
 

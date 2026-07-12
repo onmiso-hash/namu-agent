@@ -49,7 +49,10 @@ def _run_statusline(
 ) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env.pop("NAMU_HOME", None)
+    # Path.home()(=os.path.expanduser)는 Windows에서 USERPROFILE을 HOME보다 우선
+    # 참조한다 — HOME만 덮어써서는 이 플랫폼에서 가짜 홈 격리가 먹히지 않는다.
     env["HOME"] = str(fake_home)
+    env["USERPROFILE"] = str(fake_home)
     env.update(extra_env)
 
     # 부모(pytest) 측 디코딩은 utf-8 명시 — 자식의 PYTHONIOENCODING과 별개.
@@ -138,6 +141,121 @@ def test_ignores_tasks_directly_under_dot_namu_uses_ws_basename_only(tmp_path):
     assert result.returncode == 0
     assert "진행 task 없음" in result.stdout
     assert "memory-root-task" not in result.stdout
+
+
+def test_task_title_starting_with_slug_shows_title_once(tmp_path):
+    """task.md 제목이 관례대로 "<slug> — <설명>"이면 slug를 중복 표시하지 않고
+    "📌 {제목}"만 출력한다(namu-37 ①)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    tasks_root = fake_home / ".namu" / "tasks" / "project"
+    slug = "namu-37-statusline-render"
+    task_dir = tasks_root / slug
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.md").write_text(
+        f"# {slug} — statusLine 렌더 개선\n\n## 목적\n테스트\n\n## 완료조건\n- [ ] 완료\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context.hp.md").write_text(
+        f"# context @ hp — {slug}\n\n## ▶ 다음\n다음 단계 구현\n\n## 지금 어디까지\n-\n",
+        encoding="utf-8",
+    )
+    (task_dir / "log.md").write_text(
+        f"# log — {slug}\n[시작] 2026-07-08 10:00:00 hp · 시작\n", encoding="utf-8"
+    )
+
+    stdin_json = {"model": {"display_name": "TEST"}, "workspace": {"current_dir": str(project_dir)}}
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert f"📌 {slug} — statusLine 렌더 개선" in result.stdout
+    assert f"📌 {slug} · {slug} — statusLine 렌더 개선" not in result.stdout
+
+
+def test_task_title_not_starting_with_slug_keeps_slug_and_title(tmp_path):
+    """task.md 제목이 slug로 시작하지 않으면 기존 "📌 {slug} · {제목}" 형식을 유지한다
+    (namu-37 ①, 하위 호환)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    slug = "encoding-test-task"
+    task_dir = fake_home / ".namu" / "tasks" / "project" / slug
+    task_dir.mkdir(parents=True)
+    # 관례를 따르지 않는 제목(slug로 시작하지 않음) — 구형 task.md 호환 케이스
+    (task_dir / "task.md").write_text(
+        "# 테스트 작업\n\n## 목적\n테스트\n\n## 완료조건\n- [ ] 완료\n", encoding="utf-8"
+    )
+    (task_dir / "context.hp.md").write_text(
+        f"# context @ hp — {slug}\n\n## ▶ 다음\n다음 단계 구현\n\n## 지금 어디까지\n-\n",
+        encoding="utf-8",
+    )
+    (task_dir / "log.md").write_text(
+        f"# log — {slug}\n[시작] 2026-07-08 10:00:00 hp · 시작\n", encoding="utf-8"
+    )
+
+    stdin_json = {"model": {"display_name": "TEST"}, "workspace": {"current_dir": str(project_dir)}}
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "📌 encoding-test-task · 테스트 작업" in result.stdout
+
+
+def test_rate_limits_both_present_render_5h_and_7d(tmp_path):
+    """rate_limits.five_hour/seven_day가 둘 다 있으면 꼬리에 "· 5h n% · 7d m%"가
+    붙는다(namu-37 ②)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "TEST"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 34.4},
+            "seven_day": {"used_percentage": 12.1},
+        },
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "| 6% · 5h 34% · 7d 12%" in result.stdout
+
+
+def test_rate_limits_only_five_hour_present(tmp_path):
+    """five_hour만 있으면 "5h"만 출력되고 "7d"는 생략된다(namu-37 ②, 독립 부재)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "TEST"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "rate_limits": {"five_hour": {"used_percentage": 34.4}},
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "| 6% · 5h 34%" in result.stdout
+    assert "7d" not in result.stdout
+
+
+def test_rate_limits_absent_tail_matches_legacy_output(tmp_path):
+    """rate_limits 필드 자체가 없으면 꼬리는 기존과 완전히 동일하다(namu-37 ②, 하위 호환:
+    비구독자·세션 첫 응답 전)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "TEST"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert result.stdout.rstrip("\n").endswith("| 6%")
 
 
 def test_namu_home_env_var_has_no_effect_on_log_path(tmp_path):

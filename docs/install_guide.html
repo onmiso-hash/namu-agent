@@ -618,10 +618,11 @@
       GitHub 원격 설치는 설치 시점의 내용을 "복사"해서 실행하는 방식이라 명시적으로 업데이트 명령을 내려야 반영됩니다.
     </p>
     <div class="box note">
-      <strong>업데이트 후 statusLine 확인</strong> — 화면 하단 statusLine을 설치본(캐시) 경로로 연결해 뒀다면 주의하세요.
-      그 경로에는 플러그인 <strong>버전이 들어 있어서</strong>, 업데이트로 버전이 올라가면 statusLine이 오류 표시 없이
-      조용히 사라집니다. 업데이트 후 하단 한 줄이 안 보이면 <code>settings.json</code>의 statusLine 경로 속 버전을
-      새 버전으로 바꿔 주세요(사용설명서 <code>usage_guide.md</code> 5절 참고).
+      <strong>업데이트 후 statusLine 확인</strong> — 화면 하단 statusLine이 연결된 설치본(캐시) 경로에는 플러그인
+      <strong>버전이 들어 있어서</strong>, 업데이트로 버전이 올라가면 statusLine이 오류 표시 없이 조용히 사라집니다.
+      업데이트 직후 대화창에서 <code>/namu:statusline-setup</code>을 다시 호출하면 새 버전 경로로 자동 갱신됩니다
+      (0.1.16부터 기본 절차, 사용설명서 <code>usage_guide.md</code> 5절 참고). 이 스킬을 쓸 수 없는 환경이라면
+      <code>settings.json</code>의 statusLine 경로 속 버전을 수동으로 바꿔 주세요(같은 절의 폴백 절차 참고).
     </div>
   </section>
 
