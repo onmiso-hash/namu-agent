@@ -294,6 +294,7 @@
       <li><a href="#install-agy">설치하기 — agy</a></li>
       <li><a href="#verify">잘 설치됐는지 확인하기</a></li>
       <li><a href="#sync">선택: 교훈 원격 백업·멀티 PC 동기화</a></li>
+      <li><a href="#uninstall">삭제할 때</a></li>
       <li><a href="#update">업데이트할 때</a></li>
       <li><a href="#troubleshoot">문제가 생겼어요</a></li>
       <li><a href="#more">더 알아보기</a></li>
@@ -461,6 +462,24 @@
         Claude Code를 다시 시작하기만 해도 반영됩니다 — 재설치가 필요 없습니다.
       </p>
     </details>
+
+    <details>
+      <summary>로컬 폴더 방식으로 설치했다가 나중에 GitHub 원격 방식으로 바꾸고 싶다면</summary>
+      <p>
+        아래 세 줄을 순서대로 실행하면 바꿀 수 있습니다(2026-07-13 실측 확인).
+      </p>
+      <pre><code>claude plugin marketplace remove namu-marketplace
+claude plugin marketplace add onmiso-hash/namu-agent
+claude plugin install namu@namu-marketplace</code></pre>
+      <p class="muted">
+        내부 설정 파일(<code>settings.json</code>)의 등록 정보는 두 번째 명령이 알아서 로컬 폴더 표시에서 GitHub 표시로
+        바꿔 주므로 직접 수정할 필요는 없습니다. 다만 이렇게 바꾼 다음부터는 더 이상 폴더를 실시간 참조하지 않고
+        "복사본을 설치하는" 방식으로 바뀌기 때문에, 이후 반영은 <code>git pull</code>이 아니라 아래 8절의
+        업데이트 명령을 써야 합니다. 로컬 폴더 방식과 GitHub 원격 방식이 <strong>이름이 같은 등록 창구를 같이 쓰기 때문에</strong>,
+        반대로 실수하면(원격 등록을 다시 하면) 개발용 로컬 폴더 설정이 조용히 GitHub 쪽으로 바뀌어 버릴 수 있으니
+        개발 중인 컴퓨터에서는 주의하세요.
+      </p>
+    </details>
   </section>
 
   <!-- 4. agy 설치 -->
@@ -584,9 +603,48 @@
     </div>
   </section>
 
-  <!-- 7. 업데이트 -->
+  <!-- 7. 삭제 -->
+  <section id="uninstall">
+    <h2>7. 삭제할 때</h2>
+    <p>플러그인을 지우는 방법도 어떻게 설치했는지에 따라 다릅니다.</p>
+
+    <h3>Claude Code — GitHub 원격으로 설치한 경우</h3>
+    <pre><code>claude plugin uninstall namu@namu-marketplace</code></pre>
+    <p class="muted">
+      짧은 이름(<code>uninstall namu</code>)이 아니라 <strong><code>이름@마켓플레이스</code> 전체 이름</strong>을 쓰는 것이
+      안전합니다 — 아래 8절 업데이트와 같은 규칙입니다. 마켓플레이스 등록 자체까지 지우고 싶다면 아래도 실행하세요.
+    </p>
+    <pre><code>claude plugin marketplace remove namu-marketplace</code></pre>
+
+    <h3>Claude Code — 로컬 폴더(directory)로 설치한 경우</h3>
+    <p>
+      위 두 명령에 더해, 설정 파일(<code>settings.json</code>)의 마켓플레이스 등록 목록에 로컬 폴더 경로가 그대로
+      남아 있으면 그것도 지워야 완전히 삭제됩니다. 안 지우면 Claude Code를 다시 시작할 때 로컬 폴더 소스가
+      다시 등록돼 버립니다(2026-07-13 실측 확인).
+    </p>
+
+    <h3>agy</h3>
+    <pre><code>agy plugin uninstall namu</code></pre>
+    <p class="muted">
+      agy의 <code>plugin install</code>은 지운 파일도 그대로 남기는 "병합" 방식이므로(4절·9절 참고), 완전히
+      깨끗하게 지우려면 반드시 <code>uninstall</code>을 먼저 해야 합니다. <code>agy_reinstall.ps1</code> 스크립트도
+      내부적으로 이 순서(uninstall → install → --heal)를 그대로 따릅니다.
+    </p>
+
+    <div class="box tip">
+      <strong>기억은 지워지지 않아요</strong>
+      <p style="margin-bottom:0">
+        플러그인을 삭제해도 <code>~/.namu</code>에 쌓인 교훈·작업 상태는 <strong>그대로 남습니다</strong> — 기억이
+        저장되는 위치가 플러그인 설치 위치와 완전히 별개이기 때문입니다. 나중에 다시 설치하면 기억이 그대로
+        돌아옵니다. 기억까지 완전히 지우고 싶다면 <code>~/.namu</code> 폴더를 따로 지워야 합니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8. 업데이트 -->
   <section id="update">
-    <h2>7. 업데이트할 때</h2>
+    <h2>8. 업데이트할 때</h2>
+    <p class="muted">삭제하고 다시 설치하는 방법은 위 7절을 참고하세요.</p>
     <p>NAMU 코드가 새로 바뀌었을 때 반영하는 방법은 <strong>어떻게 설치했는지에 따라 다릅니다.</strong></p>
     <table>
       <thead>
@@ -628,7 +686,7 @@
 
   <!-- 8. 문제 해결 -->
   <section id="troubleshoot">
-    <h2>8. 문제가 생겼어요</h2>
+    <h2>9. 문제가 생겼어요</h2>
     <p>자주 겪는 증상을 모았습니다. 해당하는 항목을 눌러 펼쳐 보세요.</p>
 
     <details>
@@ -636,7 +694,7 @@
       <div class="faq-block"><strong>원인</strong> Windows 환경에서 세션이 시작될 때 저장된 내용을 자동으로 불러오는 과정이
         한글·이모지가 섞인 내용을 화면에 표시하려다 인코딩 문제로 조용히 실패하는 오래된 버그입니다(버전 0.1.5 이하에서 발생).
         이 실패가 겉으로 오류 없이 조용히 일어나기 때문에, 그냥 "안 뜨네" 정도로만 보입니다.</div>
-      <div class="faq-block"><strong>해결</strong> NAMU를 <strong>0.1.6 이상</strong>으로 업데이트하세요(위 7절 참고). 이 버전부터
+      <div class="faq-block"><strong>해결</strong> NAMU를 <strong>0.1.6 이상</strong>으로 업데이트하세요(위 8절 참고). 이 버전부터
         해당 문제가 해소됐습니다.</div>
     </details>
 
@@ -645,7 +703,7 @@
       <div class="faq-block"><strong>원인</strong> 설치 방식에 따라 "업데이트"의 의미가 다릅니다. 로컬 폴더 방식은 원본을
         실시간으로 참조하지만, GitHub 원격 설치는 설치 당시 내용을 복사해 둔 것을 실행하는 방식이라, 원본만 최신화해서는
         복사본이 갱신되지 않습니다.</div>
-      <div class="faq-block"><strong>해결</strong> 7절 표에서 내 설치 방식에 맞는 절차를 따르세요. 특히 GitHub 원격 설치는
+      <div class="faq-block"><strong>해결</strong> 8절 표에서 내 설치 방식에 맞는 절차를 따르세요. 특히 GitHub 원격 설치는
         <code>claude plugin update namu@namu-marketplace</code>처럼 <strong>이름@마켓플레이스 전체 이름</strong>을 반드시 써야
         합니다.</div>
     </details>
@@ -687,7 +745,7 @@
 
   <!-- 9. 더 알아보기 -->
   <section id="more">
-    <h2>9. 더 알아보기</h2>
+    <h2>10. 더 알아보기</h2>
     <p>
       NAMU가 실제 작업을 시킬 때 부르는 일꾼(워커, 서브에이전트)이 있습니다. 특별한 설정 없이도 기본값으로 잘 동작하므로,
       대부분의 설치형 사용자는 아래 내용을 몰라도 됩니다.
