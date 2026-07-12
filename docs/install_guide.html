@@ -617,6 +617,12 @@
       기억해 두면 좋은 구분: 로컬 폴더 방식은 원본 폴더를 "실시간으로" 그대로 보고 실행하는 방식이라 폴더만 최신화하면 끝나지만,
       GitHub 원격 설치는 설치 시점의 내용을 "복사"해서 실행하는 방식이라 명시적으로 업데이트 명령을 내려야 반영됩니다.
     </p>
+    <div class="box note">
+      <strong>업데이트 후 statusLine 확인</strong> — 화면 하단 statusLine을 설치본(캐시) 경로로 연결해 뒀다면 주의하세요.
+      그 경로에는 플러그인 <strong>버전이 들어 있어서</strong>, 업데이트로 버전이 올라가면 statusLine이 오류 표시 없이
+      조용히 사라집니다. 업데이트 후 하단 한 줄이 안 보이면 <code>settings.json</code>의 statusLine 경로 속 버전을
+      새 버전으로 바꿔 주세요(사용설명서 <code>usage_guide.md</code> 5절 참고).
+    </div>
   </section>
 
   <!-- 8. 문제 해결 -->
