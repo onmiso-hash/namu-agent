@@ -58,6 +58,10 @@ claude plugin marketplace add onmiso-hash/namu-agent
 claude plugin install namu@namu-marketplace
 ```
 
+New to this? The [visual beginner's guide](docs/namu_quickstart.html)
+(Korean) walks you through install, verification, and updates with
+copy-paste steps.
+
 For the full install walkthrough (agy install, statusLine registration,
 troubleshooting), see [docs/install_guide.md](docs/install_guide.md)
 (Korean).

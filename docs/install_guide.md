@@ -4,6 +4,8 @@
 
 이 문서는 NAMU repo를 clone해 개발하는 게 아니라, **자기 임의 프로젝트에 NAMU를 플러그인으로 설치해 쓰려는 사용자**를 위한 것이다. clone 기반 개발 환경을 원한다면 루트 [`README.ko.md`](../README.ko.md)의 셋업 가이드를 따를 것. 설치를 마쳤다면 다음 단계로 [사용설명서 — 설치 후 첫 하루](usage_guide.md)를 볼 것.
 
+> 🚀 **복사·붙여넣기만으로 빠르게 끝내고 싶다면** — 단계별 [빠른 시작 가이드(초보자용, HTML)](namu_quickstart.html)를 먼저 보라. 이 문서는 그보다 상세한 배경·함정·선택 기능까지 다룬다.
+
 > **독자 전제** — NAMU repo(`onmiso-hash/namu-agent`)는 공개(public) repo다. 누구나 별도의 초대나 특별한 git 자격증명 없이 이 문서를 따라 설치할 수 있다.
 
 ## 1. 개요 — 설치형 vs clone 개발형

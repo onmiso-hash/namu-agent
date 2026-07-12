@@ -1,0 +1,436 @@
+<title>NAMU 설치 & 업데이트 가이드</title>
+<style>
+  :root {
+    --paper:   #F4F4EC;
+    --surface: #FBFBF5;
+    --card:    #FFFFFF;
+    --ink:     #1B211D;
+    --soft:    #52605A;
+    --faint:   #7C8A83;
+    --line:    #E3E2D6;
+    --pine:    #2E6B4F;
+    --pine-deep:#1E5340;
+    --pine-tint:#E6F0E9;
+    --amber:   #8A5E15;
+    --amber-tint:#F4EAD4;
+    --good:    #2E7D5B;
+    --term-bg: #1E241F;
+    --term-ink:#E7EDE6;
+    --term-faint:#8FA394;
+    --radius: 14px;
+    --maxw: 760px;
+    --font-body: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+    --font-mono: "Cascadia Code", "SF Mono", "JetBrains Mono", ui-monospace, Consolas, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:   #101410;
+      --surface: #161B15;
+      --card:    #1A201A;
+      --ink:     #E8ECE3;
+      --soft:    #A6B4A9;
+      --faint:   #7A897E;
+      --line:    #2A322A;
+      --pine:    #74BE92;
+      --pine-deep:#8FD0AA;
+      --pine-tint:#1B2A20;
+      --amber:   #D7A95C;
+      --amber-tint:#2A2415;
+      --good:    #74BE92;
+      --term-bg: #0C100C;
+      --term-ink:#DFE7DE;
+      --term-faint:#7C8E80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#101410; --surface:#161B15; --card:#1A201A; --ink:#E8ECE3; --soft:#A6B4A9;
+    --faint:#7A897E; --line:#2A322A; --pine:#74BE92; --pine-deep:#8FD0AA; --pine-tint:#1B2A20;
+    --amber:#D7A95C; --amber-tint:#2A2415; --good:#74BE92; --term-bg:#0C100C; --term-ink:#DFE7DE; --term-faint:#7C8E80;
+  }
+  :root[data-theme="light"] {
+    --paper:#F4F4EC; --surface:#FBFBF5; --card:#FFFFFF; --ink:#1B211D; --soft:#52605A;
+    --faint:#7C8A83; --line:#E3E2D6; --pine:#2E6B4F; --pine-deep:#1E5340; --pine-tint:#E6F0E9;
+    --amber:#8A5E15; --amber-tint:#F4EAD4; --good:#2E7D5B; --term-bg:#1E241F; --term-ink:#E7EDE6; --term-faint:#8FA394;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .page {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(20px, 5vw, 56px) 20px 88px;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header.hero { margin-bottom: 40px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: .78rem; font-weight: 600; letter-spacing: .04em;
+    color: var(--pine); background: var(--pine-tint);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  h1 {
+    font-size: clamp(1.9rem, 5.2vw, 2.6rem);
+    line-height: 1.12; letter-spacing: -.02em;
+    margin: 18px 0 10px; text-wrap: balance;
+  }
+  .lead { font-size: 1.08rem; color: var(--soft); max-width: 56ch; margin: 0; }
+
+  /* ---------- generic blocks ---------- */
+  section { margin-top: 44px; }
+  h2 {
+    font-size: 1.32rem; letter-spacing: -.01em;
+    margin: 0 0 4px; display: flex; align-items: baseline; gap: 12px;
+  }
+  h2 .kicker {
+    font-family: var(--font-mono); font-size: .82rem; font-weight: 700;
+    color: var(--pine); letter-spacing: .02em;
+  }
+  .sec-note { color: var(--soft); margin: 4px 0 22px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 22px 22px 24px;
+  }
+  .card + .card { margin-top: 16px; }
+
+  /* ---------- prerequisites ---------- */
+  .reqs { display: grid; gap: 12px; }
+  .req {
+    display: flex; gap: 14px; align-items: flex-start;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px;
+  }
+  .req .dot {
+    flex: none; width: 26px; height: 26px; border-radius: 8px;
+    background: var(--pine-tint); color: var(--pine);
+    display: grid; place-items: center; font-weight: 700; font-size: .95rem;
+  }
+  .req b { font-weight: 650; }
+  .req small { display: block; color: var(--soft); font-size: .9rem; margin-top: 2px; }
+  .req a { color: var(--pine); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--pine) 35%, transparent); }
+
+  /* ---------- path chooser ---------- */
+  .chooser { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 520px) { .chooser { grid-template-columns: 1fr; } }
+  .choice {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px; transition: border-color .15s, transform .15s;
+  }
+  .choice:hover { border-color: var(--pine); transform: translateY(-2px); }
+  .choice .tool { font-weight: 700; font-size: 1.05rem; }
+  .choice .go { color: var(--pine); font-size: .9rem; margin-top: 4px; font-weight: 600; }
+  .choice small { display: block; color: var(--soft); font-size: .88rem; margin-top: 6px; }
+
+  /* ---------- where legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 0 0 4px; padding: 14px 16px;
+    background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; font-size: .92rem; }
+  .legend .row { display: flex; gap: 8px; align-items: center; color: var(--soft); }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: .74rem; font-weight: 700; padding: 3px 9px; border-radius: 6px; white-space: nowrap;
+  }
+  .tag.term { background: var(--term-bg); color: var(--term-ink); }
+  .tag.chat { background: var(--pine-tint); color: var(--pine-deep); }
+
+  /* ---------- steps ---------- */
+  .step { display: flex; gap: 16px; }
+  .step + .step { margin-top: 8px; }
+  .step .num {
+    flex: none; width: 34px; height: 34px; border-radius: 50%;
+    background: var(--pine); color: #fff; font-weight: 700;
+    display: grid; place-items: center; font-size: .98rem;
+    font-variant-numeric: tabular-nums;
+  }
+  :root[data-theme="dark"] .step .num, .page .step .num { color: #0B140F; }
+  @media (prefers-color-scheme: dark) { .step .num { color: #0B140F; } }
+  .step .body { flex: 1; min-width: 0; padding-top: 3px; }
+  .step .body p { margin: 0 0 10px; }
+  .step .body p:last-child { margin-bottom: 0; }
+  .step .lbl { font-weight: 650; }
+
+  /* ---------- command block ---------- */
+  .cmd { background: var(--term-bg); border-radius: 11px; overflow: hidden; margin: 8px 0 12px; }
+  .cmd .bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .cmd .bar .where { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; font-weight: 700; letter-spacing: .02em; }
+  .cmd .bar .where.term { color: #B7C7B9; }
+  .cmd .bar .where.chat { color: #9AD9B3; }
+  .cmd .copy {
+    border: 1px solid rgba(255,255,255,.16); background: transparent; color: var(--term-faint);
+    font: inherit; font-size: .74rem; font-weight: 600; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .cmd .copy:hover { color: var(--term-ink); border-color: rgba(255,255,255,.35); }
+  .cmd pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    font-family: var(--font-mono); font-size: .92rem; line-height: 1.7; color: var(--term-ink);
+  }
+  .cmd pre .p { color: var(--term-faint); user-select: none; }
+
+  /* ---------- callouts ---------- */
+  .ok, .warn, .tip {
+    display: flex; gap: 11px; border-radius: 11px; padding: 13px 15px; font-size: .95rem; margin: 12px 0 0;
+    align-items: flex-start;
+  }
+  .ok { background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 35%, var(--line)); }
+  .ok .ic { color: var(--good); }
+  .warn { background: var(--amber-tint); border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--line)); }
+  .warn .ic { color: var(--amber); }
+  .tip { background: var(--surface); border: 1px solid var(--line); color: var(--soft); }
+  .ic { flex: none; font-weight: 700; }
+  .ok code, .warn code, .tip code, .step code {
+    font-family: var(--font-mono); font-size: .86em;
+    background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 1px 6px; border-radius: 5px;
+  }
+  .ok b { color: var(--good); }
+
+  /* ---------- update grid ---------- */
+  .upd-head { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .upd-head .pill { font-size: .74rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--pine-tint); color: var(--pine-deep); }
+
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--faint); font-size: .85rem; }
+  footer code { font-family: var(--font-mono); }
+
+  a { color: var(--pine); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">🌳 초보자용 · Claude Code &amp; agy</span>
+    <h1>NAMU 설치 &amp; 업데이트 가이드</h1>
+    <p class="lead">따라만 하면 됩니다. 명령을 복사해 붙여넣고, 각 단계의 <b>“성공하면 이렇게 보여요”</b>만 확인하세요.</p>
+  </header>
+
+  <!-- 준비물 -->
+  <section id="prep">
+    <h2><span class="kicker">00</span> 시작 전 준비물</h2>
+    <p class="sec-note">두 가지만 있으면 됩니다. 나머지 라이브러리는 NAMU가 알아서 챙깁니다.</p>
+    <div class="reqs">
+      <div class="req">
+        <span class="dot">1</span>
+        <div><b>Python 3.12 이상</b>
+          <small>터미널에 <code>python --version</code>을 쳐서 3.12 이상이면 OK.</small></div>
+      </div>
+      <div class="req">
+        <span class="dot">2</span>
+        <div><b>uv</b> — 파이썬 도구 실행기
+          <small>설치 안내: <a href="https://docs.astral.sh/uv/">docs.astral.sh/uv</a> · 이게 있으면 <code>pip install</code> 할 게 없습니다.</small></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 갈림길 -->
+  <section id="choose">
+    <h2><span class="kicker">→</span> 어떤 걸 쓰세요?</h2>
+    <p class="sec-note">쓰는 도구에 맞는 쪽만 따라 하면 됩니다. 둘 다 쓴다면 둘 다 하세요.</p>
+    <div class="chooser">
+      <a class="choice" href="#cc">
+        <span class="tool">Claude Code</span>
+        <span class="go">A로 이동 →</span>
+        <small>가장 쉬움. 명령 두 줄이면 끝.</small>
+      </a>
+      <a class="choice" href="#agy">
+        <span class="tool">agy (Antigravity)</span>
+        <span class="go">B로 이동 →</span>
+        <small>저장소를 내려받아 설치.</small>
+      </a>
+    </div>
+  </section>
+
+  <!-- 표기 안내 -->
+  <section id="where">
+    <h2><span class="kicker">?</span> 명령을 어디에 입력하나요</h2>
+    <p class="sec-note">아래 두 표시가 “이걸 어디에 치는지”를 알려줍니다. 헷갈리면 여기로 돌아오세요.</p>
+    <div class="legend">
+      <span class="row"><span class="tag term">🖥 터미널</span> 명령 프롬프트 · PowerShell 같은 검은 창</span>
+      <span class="row"><span class="tag chat">💬 대화창</span> Claude Code(또는 agy) 입력줄. <code>/</code>로 시작하는 건 전부 여기</span>
+    </div>
+  </section>
+
+  <!-- PART A: Claude Code -->
+  <section id="cc">
+    <h2><span class="kicker">A</span> Claude Code에 설치</h2>
+    <p class="sec-note">공개 저장소라 로그인·초대 없이 바로 설치됩니다.</p>
+    <div class="card">
+
+      <div class="step">
+        <span class="num">1</span>
+        <div class="body">
+          <p class="lbl">플러그인을 설치합니다.</p>
+          <div class="cmd">
+            <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
+            <pre>claude plugin marketplace add onmiso-hash/namu-agent
+claude plugin install namu@namu-marketplace</pre>
+          </div>
+          <p class="tip"><span class="ic">💡</span><span>Claude Code 대화창 안에서 하려면 <code>/plugin marketplace add onmiso-hash/namu-agent</code>도 똑같이 동작합니다.</span></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">2</span>
+        <div class="body">
+          <p class="lbl">Claude Code를 껐다 켭니다.</p>
+          <p>완전히 재시작한 뒤 새 대화 세션을 엽니다. (재시작해야 반영됩니다.)</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">3</span>
+        <div class="body">
+          <p class="lbl">제대로 됐는지 확인합니다.</p>
+          <div class="cmd">
+            <div class="bar"><span class="where chat">💬 대화창에서</span><button class="copy" type="button">복사</button></div>
+            <pre>/mcp</pre>
+          </div>
+          <div class="ok"><span class="ic">✓</span><span><b>성공!</b> 목록에 <code>plugin:namu:namu-memory · ✔ connected · 3 tools</code>가 보이면 메모리 코어가 살아 있는 겁니다.</span></div>
+          <p class="tip"><span class="ic">💡</span><span>첫 세션은 아무 안내도 안 뜨는 게 정상입니다(아직 저장된 기억이 0건이라서). 설치 성공 여부는 위 <code>/mcp</code>로만 판단하세요.</span></p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- PART B: agy -->
+  <section id="agy">
+    <h2><span class="kicker">B</span> agy(Antigravity)에 설치</h2>
+    <p class="sec-note">저장소를 내려받아 그 안의 <code>namu-plugin</code> 폴더를 설치합니다.</p>
+    <div class="card">
+
+      <div class="step">
+        <span class="num">1</span>
+        <div class="body">
+          <p class="lbl">저장소를 내려받습니다.</p>
+          <div class="cmd">
+            <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
+            <pre>git clone https://github.com/onmiso-hash/namu-agent.git</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">2</span>
+        <div class="body">
+          <p class="lbl">플러그인을 설치합니다.</p>
+          <div class="cmd">
+            <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
+            <pre>agy plugin install namu-agent/namu-plugin</pre>
+          </div>
+          <p>경로는 방금 내려받은 폴더 안의 <code>namu-plugin</code>입니다.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">3</span>
+        <div class="body">
+          <p class="lbl">agy에서 새 대화 세션을 열고 확인합니다.</p>
+          <p>대화창에 <code>/mcp</code>를 쳐서 <code>namu-memory</code>가 연결돼 있으면 성공입니다.</p>
+          <div class="warn"><span class="ic">⚠</span><span><b>설치 직후 첫 세션</b>에만 <code>/mcp</code>가 이상하게 보일 수 있습니다. 그럴 때 아래를 한 번 실행하면(청소 후 재설치 + 경로 자동 교정) 해결됩니다.</span></div>
+          <div class="cmd">
+            <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
+            <pre>namu-agent/namu-plugin/scripts/agy_reinstall.ps1</pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- statusLine -->
+  <section id="statusline">
+    <h2><span class="kicker">+</span> 화면 하단 상태줄 (선택)</h2>
+    <p class="sec-note"><code>[모델] 폴더 | 📌 진행 중 작업 | 컨텍스트%</code> 한 줄을 보고 싶다면.</p>
+    <div class="card">
+      <div class="step">
+        <span class="num">1</span>
+        <div class="body">
+          <p class="lbl">한 번 호출하면 자동 연결됩니다.</p>
+          <div class="cmd">
+            <div class="bar"><span class="where chat">💬 대화창에서</span><button class="copy" type="button">복사</button></div>
+            <pre>/namu:statusline-setup</pre>
+          </div>
+          <p>성공 메시지가 뜨면 <b>Claude Code를 재시작</b>해야 화면에 반영됩니다. 안 보이면 이 명령을 다시 부르면 됩니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 업데이트 -->
+  <section id="update">
+    <h2><span class="kicker">↻</span> 업데이트 — 새 버전 반영하기</h2>
+    <p class="sec-note">설치한 방식에 따라 방법이 다릅니다. 자기 방식 하나만 보면 됩니다.</p>
+
+    <div class="card">
+      <div class="upd-head"><span class="pill">A</span><b>Claude Code · GitHub으로 설치한 경우</b></div>
+      <div class="cmd">
+        <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
+        <pre>claude plugin update namu@namu-marketplace</pre>
+      </div>
+      <p>그다음 Claude Code를 재시작하면 끝.</p>
+      <div class="warn"><span class="ic">⚠</span><span>반드시 <code>namu@namu-marketplace</code> <b>전체 이름</b>으로 치세요. 짧게 <code>update namu</code>만 쓰면 “not found”로 실패합니다.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="upd-head"><span class="pill">A′</span><b>Claude Code · 직접 <code>git clone</code>한 폴더를 쓰는 경우</b></div>
+      <div class="cmd">
+        <div class="bar"><span class="where term">🖥 터미널에서 (내려받은 폴더 안)</span><button class="copy" type="button">복사</button></div>
+        <pre>git pull</pre>
+      </div>
+      <p>재시작만 하면 끝. 소스를 바로 참조하므로 재설치가 필요 없습니다.</p>
+    </div>
+
+    <div class="card">
+      <div class="upd-head"><span class="pill">B</span><b>agy</b></div>
+      <div class="cmd">
+        <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
+        <pre>namu-agent/namu-plugin/scripts/agy_reinstall.ps1</pre>
+      </div>
+      <p>이 스크립트가 <code>제거 → 재설치 → 경로 교정</code>을 한 번에 처리합니다.</p>
+    </div>
+
+    <div class="tip" style="margin-top:16px"><span class="ic">💡</span><span>상태줄(statusLine)을 쓰고 있다면, 업데이트 뒤 <code>/namu:statusline-setup</code>을 한 번 더 부르세요. 버전이 바뀌면 상태줄이 조용히 사라질 수 있는데, 이 한 번으로 새 경로에 다시 연결됩니다.</span></div>
+  </section>
+
+  <!-- 안 될 때 -->
+  <section id="trouble">
+    <h2><span class="kicker">!</span> 잘 안 될 때</h2>
+    <div class="card">
+      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b><code>/mcp</code>에 안 보여요</b> — Claude Code를 완전히 재시작했는지, 설치 명령 두 줄이 오류 없이 끝났는지 확인하세요.</p></div></div>
+      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b>한글·이모지가 깨져요 (Windows)</b> — 아주 옛 버전(0.1.6 미만)의 버그입니다. 위 업데이트로 최신 버전을 받으세요.</p></div></div>
+      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b>agy 첫 세션만 이상해요</b> — B의 재설치 스크립트를 한 번 실행하면 해결됩니다.</p></div></div>
+    </div>
+  </section>
+
+  <footer>
+    데이터(교훈·작업 기록)는 설치 방식과 무관하게 항상 <code>~/.namu</code> 폴더에 쌓입니다. 여러 PC에서 기억을 공유하고 싶다면 설치 후 AI에게 “<code>namu_sync_setup</code>을 내 비공개 저장소 URL로 실행해줘”라고 부탁하세요(선택 기능).
+  </footer>
+
+</div>
+</div>
+
+<script>
+  document.querySelectorAll('.cmd .copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pre = btn.closest('.cmd').querySelector('pre');
+      var text = pre.innerText.replace(/ /g, ' ');
+      navigator.clipboard.writeText(text).then(function () {
+        var old = btn.textContent;
+        btn.textContent = '복사됨!';
+        setTimeout(function () { btn.textContent = old; }, 1400);
+      }).catch(function () {
+        btn.textContent = '복사 실패';
+        setTimeout(function () { btn.textContent = '복사'; }, 1400);
+      });
+    });
+  });
+</script>
