@@ -258,6 +258,113 @@ def test_rate_limits_absent_tail_matches_legacy_output(tmp_path):
     assert result.stdout.rstrip("\n").endswith("| 6%")
 
 
+def test_agy_gemini_quota_5h_and_weekly_render(tmp_path):
+    """agy가 gemini 모델용 quota(remaining_fraction, 남은 비율)를 보내면 "쓴 %"로
+    극성을 뒤집어 5h/7d(=weekly)에 렌더한다(namu-39). rate_limits는 agy 쪽에서
+    안 보내므로(상호배타) quota만으로 채워져야 한다."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "Gemini 3.1 Pro (High)"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "quota": {
+            "gemini-5h": {"remaining_fraction": 1.0},
+            "gemini-weekly": {"remaining_fraction": 0.9852},
+        },
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "| 6% · 5h 0% · 7d 1%" in result.stdout
+
+
+def test_agy_3p_quota_5h_and_weekly_render(tmp_path):
+    """agy가 3rd-party(Claude/GPT) 모델용 quota를 보내면 3p-5h/3p-weekly를
+    "쓴 %"로 뒤집어 렌더한다(namu-39)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "Claude Opus"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "quota": {
+            "3p-5h": {"remaining_fraction": 0.5},
+            "3p-weekly": {"remaining_fraction": 0.8},
+        },
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "| 6% · 5h 50% · 7d 20%" in result.stdout
+
+
+def test_agy_gemini_model_prefers_gemini_group_over_3p(tmp_path):
+    """model.display_name에 "gemini"가 포함되면 quota에 gemini/3p 그룹이 둘 다
+    있어도 gemini 그룹 값이 선택된다(namu-39, 대소문자 무시)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "gemini-3-pro"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "quota": {
+            "gemini-5h": {"remaining_fraction": 0.9},
+            "gemini-weekly": {"remaining_fraction": 0.7},
+            "3p-5h": {"remaining_fraction": 0.1},
+            "3p-weekly": {"remaining_fraction": 0.2},
+        },
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "| 6% · 5h 10% · 7d 30%" in result.stdout
+
+
+def test_agy_quota_absent_and_rate_limits_absent_tail_is_ctx_only(tmp_path):
+    """quota와 rate_limits가 둘 다 없으면 꼬리는 ctx만 남는다(namu-39, 기존
+    하위 호환 유지 — "| n%"로 끝남)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "TEST"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert result.stdout.rstrip("\n").endswith("| 6%")
+
+
+def test_agy_quota_only_5h_present_omits_weekly(tmp_path):
+    """gemini-5h만 있고 gemini-weekly가 없으면 "5h"만 나오고 "7d"는 생략된다
+    (namu-39, 독립 부재)."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    stdin_json = {
+        "model": {"display_name": "Gemini 3.1 Pro (High)"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "quota": {"gemini-5h": {"remaining_fraction": 0.75}},
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert "| 6% · 5h 25%" in result.stdout
+    assert "7d" not in result.stdout
+
+
 def test_namu_home_env_var_has_no_effect_on_log_path(tmp_path):
     """NAMU_HOME 환경변수(namu-35: 완전 폐지)를 설정해도 렌더 로그는 여전히
     HOME/.namu/db/statusline.log(고정 경로)에 남고, 설정값 쪽으로는 가지 않는다."""
