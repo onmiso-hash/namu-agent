@@ -413,22 +413,22 @@
         <b>왜 둘로 나눴나요?</b> "노트 먼저 쓰고, 색인은 나중에" 순서가 핵심이에요. 만약 색인(DB)이 깨져도 노트만 멀쩡하면 전부 복구할 수 있거든요. 그래서 <b>기록할 때 항상 yaml에 먼저 저장</b>해요. 이 순서는 절대 안 바꿔요.
       </div>
 
-      <h3>어디에 저장되나 — 저장소는 두 곳으로 나뉘어요</h3>
+      <h3>어디에 저장되나 — 같은 중앙 폴더(<code class="inline">~/.namu</code>) 안에서 두 갈래로</h3>
       <div class="grid">
         <div class="tile" style="background:var(--sun-soft);border-color:#f0dfb4;">
           <div class="ico">🌍</div>
           <h4>교훈(learnings.yaml)+SQLite → <code class="inline">~/.namu</code></h4>
-          <p>어느 프로젝트에서 일하든 <strong>공통으로 써먹을 지식</strong>이라, 설치형에서는 기기 전역 폴더(<code class="inline">~/.namu</code>)에 모여요.</p>
+          <p>어느 프로젝트에서 일하든 <strong>공통으로 써먹을 지식</strong>이라, 프로젝트 구분 없이 <strong>한 풀에</strong> 섞어서 기기 전역 폴더(<code class="inline">~/.namu</code>)에 모여요.</p>
         </div>
         <div class="tile" style="background:var(--blue-soft);border-color:#cfdef0;">
           <div class="ico">📁</div>
-          <h4>작업 상태(tasks) → 그 프로젝트 폴더</h4>
-          <p>지금 이 프로젝트에서만 의미 있는 상태라, 작업 중인 <strong>프로젝트 폴더 안 <code class="inline">tasks/</code></strong>에 쌓여요. 그 프로젝트의 git으로 팀과 공유할 수도 있어요.</p>
+          <h4>작업 상태(tasks) → <code class="inline">~/.namu/tasks/&lt;프로젝트폴더명&gt;/</code></h4>
+          <p>지금 이 프로젝트에서만 의미 있는 상태지만, 저장 위치는 교훈과 같은 중앙 <code class="inline">~/.namu</code> 안에 <strong>프로젝트 폴더명별로 칸을 나눠</strong> 담겨요. 프로젝트 폴더(공개 repo일 수 있어요)에 개인 작업기록이 딸려 나가는 걸 막고, 여러 PC 간 자동 동기화에 같이 얹으려고요.</p>
         </div>
       </div>
       <div class="analogy">
         <span class="tag">💡 쉬운 비유</span>
-        <p>"데이터는 자기 공유 범위를 따라 산다"고 생각하면 쉬워요. 어디서나 써먹는 <strong>일반 상식(교훈)</strong>은 내 머릿속(기기 전역, <code class="inline">~/.namu</code>)에 담아두고, <strong>이번 프로젝트에서만 쓰는 메모(작업 상태)</strong>는 그 프로젝트 서랍(프로젝트 폴더)에 넣어두는 것과 같아요.</p>
+        <p>둘 다 내 <strong>중앙 서랍장(<code class="inline">~/.namu</code>)</strong>에 살아요. 다만 <strong>일반 상식(교훈)</strong>은 프로젝트를 안 가리고 한 칸에 다 섞어 모아두고(어디서든 꺼내 쓰려고), <strong>이번 프로젝트 메모(작업 상태)</strong>는 같은 서랍장 안에서 <strong>프로젝트별 칸으로 나눠</strong> 넣어둬요. 예전엔 작업 상태를 각 프로젝트 폴더에 뒀지만, 공개 repo에 개인 기록이 새는 걸 막고 PC 간 자동 공유에 얹으려고 중앙으로 옮겼어요.</p>
       </div>
 
       <h3>기억을 다루는 도구 3개</h3>
@@ -590,12 +590,12 @@ claude plugin install namu@namu-marketplace</pre>
       <div class="tile" style="background:var(--soil);">
         <div class="ico">🛠️</div>
         <h4>clone 개발형 — NAMU 저장소 자체를 개발할 때만</h4>
-        <p>이 경우엔 원래 하던 <strong>받아오기(pull) → 작업 → 올리기(push)</strong> 세 박자가 그대로 적용돼요. 저장소 자체가 기억 저장 위치가 되기 때문이에요. 일반 사용자는 해당하지 않아요.</p>
+        <p>NAMU 코드 자체를 고치는 개발자라면 그 repo는 <strong>받아오기(pull) → 작업 → 올리기(push)</strong>로 <em>코드</em>를 관리해요. 하지만 <strong>기억 저장 위치는 설치형과 똑같이 <code class="inline">~/.namu</code></strong>예요(저장소 안이 아니에요) — 그래서 교훈·작업 상태의 백업·동기화는 위 설치형과 완전히 같은 방식이에요. 일반 사용자는 해당하지 않아요.</p>
       </div>
 
       <div class="analogy">
         <span class="tag">💡 저장 위치, 한 줄 정리</span>
-        <p>교훈(어느 프로젝트든 공통 지식)은 <code class="inline">~/.namu</code>(중앙)에, 작업 상태(tasks)는 그 프로젝트 폴더(그 프로젝트 git으로 공유 가능)에 나눠 담겨요. "데이터는 자기 공유 범위를 따라 산다"고 기억하면 쉬워요 — 자세한 이유는 4장 참고.</p>
+        <p>교훈도 작업 상태(tasks)도 모두 중앙 <code class="inline">~/.namu</code>에 담겨요 — 교훈은 프로젝트 구분 없이 한 풀에, 작업 상태는 <code class="inline">~/.namu/tasks/&lt;프로젝트폴더명&gt;/</code>처럼 프로젝트별 칸으로 나눠서요. 예전엔 작업 상태만 각 프로젝트 폴더에 뒀는데 지금은 중앙으로 통합됐어요 — 자세한 이유는 4장 참고.</p>
       </div>
 
       <div class="note" style="background:var(--leaf-light);border-color:#cfe6d4;border-left-color:var(--leaf);">
