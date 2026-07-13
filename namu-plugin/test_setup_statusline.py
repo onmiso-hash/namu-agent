@@ -71,6 +71,46 @@ def _settings_path(fake_home: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# agy(Antigravity CLI) 헬퍼 — 실물 스키마(namu-39):
+#   등록부: ~/.gemini/config/import_manifest.json ({"imports":[{"name","source","components"}]})
+#   설치사본: 고정 관례 ~/.gemini/config/plugins/namu/ (installPath 필드 없음, 버전 폴더 없음)
+#   settings: ~/.gemini/antigravity-cli/settings.json,
+#             statusLine 스키마 {"type":"","command":..,"enabled":true}
+# ---------------------------------------------------------------------------
+
+def _agy_install_path(fake_home: Path) -> Path:
+    return fake_home / ".gemini" / "config" / "plugins" / "namu"
+
+
+def _make_agy_install(fake_home: Path) -> Path:
+    install_path = _agy_install_path(fake_home)
+    (install_path / "scripts").mkdir(parents=True)
+    (install_path / "scripts" / "namu_statusline.py").write_text(
+        "# stub\n", encoding="utf-8"
+    )
+    return install_path
+
+
+def _write_import_manifest(fake_home: Path, has_namu: bool = True) -> None:
+    path = fake_home / ".gemini" / "config" / "import_manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    imports = []
+    if has_namu:
+        imports.append(
+            {"name": "namu", "source": "local", "components": ["skills", "scripts"]}
+        )
+    path.write_text(json.dumps({"imports": imports}), encoding="utf-8")
+
+
+def _agy_settings_path(fake_home: Path) -> Path:
+    return fake_home / ".gemini" / "antigravity-cli" / "settings.json"
+
+
+def _agy_expected_statusline(command: str) -> dict:
+    return {"type": "", "command": command, "enabled": True}
+
+
+# ---------------------------------------------------------------------------
 # 1. 정상 신규 설정 (settings.json 없음)
 # ---------------------------------------------------------------------------
 
@@ -269,6 +309,192 @@ def test_missing_statusline_script_in_installpath_errors(tmp_path):
 
     assert result.returncode != 0
     assert "찾지 못했습니다" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# agy 전용 케이스 (namu-39)
+# ---------------------------------------------------------------------------
+
+def test_agy_fresh_setup_creates_statusline(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    _write_import_manifest(fake_home)
+    install_path = _make_agy_install(fake_home)
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    settings_path = _agy_settings_path(fake_home)
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["statusLine"] == _agy_expected_statusline(
+        _expected_command(install_path)
+    )
+    # settings.json 자체가 없었으므로 백업이 생기면 안 됨.
+    assert not list(settings_path.parent.glob("settings.json.bak.*"))
+
+
+def test_agy_updates_stale_marker_path_and_backs_up(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    _write_import_manifest(fake_home)
+    install_path = _make_agy_install(fake_home)
+
+    settings_path = _agy_settings_path(fake_home)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    old_command = "python -X utf8 C:/old/somewhere/scripts/namu_statusline.py"
+    settings_path.write_text(
+        json.dumps({"statusLine": {"type": "", "command": old_command, "enabled": True}}),
+        encoding="utf-8",
+    )
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["statusLine"] == _agy_expected_statusline(
+        _expected_command(install_path)
+    )
+
+    backups = list(settings_path.parent.glob("settings.json.bak.*"))
+    assert len(backups) == 1
+    backed_up = json.loads(backups[0].read_text(encoding="utf-8"))
+    assert backed_up["statusLine"]["command"] == old_command
+
+
+def test_agy_rejects_foreign_statusline_by_default(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    _write_import_manifest(fake_home)
+    _make_agy_install(fake_home)
+
+    settings_path = _agy_settings_path(fake_home)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    foreign = {"type": "", "command": "python3 /other/tool.py", "enabled": True}
+    original_content = json.dumps({"statusLine": foreign})
+    settings_path.write_text(original_content, encoding="utf-8")
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode != 0
+    assert "다른 statusLine" in result.stdout
+    assert settings_path.read_text(encoding="utf-8") == original_content
+    assert not list(settings_path.parent.glob("settings.json.bak.*"))
+
+
+def test_agy_force_replaces_foreign_statusline(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    _write_import_manifest(fake_home)
+    install_path = _make_agy_install(fake_home)
+
+    settings_path = _agy_settings_path(fake_home)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    foreign = {"type": "", "command": "python3 /other/tool.py", "enabled": True}
+    settings_path.write_text(json.dumps({"statusLine": foreign}), encoding="utf-8")
+
+    result = _run_cli(fake_home, ["--force"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["statusLine"] == _agy_expected_statusline(
+        _expected_command(install_path)
+    )
+
+    backups = list(settings_path.parent.glob("settings.json.bak.*"))
+    assert len(backups) == 1
+
+
+def test_agy_already_up_to_date_is_noop(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    _write_import_manifest(fake_home)
+    install_path = _make_agy_install(fake_home)
+
+    settings_path = _agy_settings_path(fake_home)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    current = _agy_expected_statusline(_expected_command(install_path))
+    original_content = json.dumps({"statusLine": current, "other": "keep-me"})
+    settings_path.write_text(original_content, encoding="utf-8")
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "변경 없음" in result.stdout
+    assert settings_path.read_text(encoding="utf-8") == original_content
+    assert not list(settings_path.parent.glob("settings.json.bak.*"))
+
+
+# ---------------------------------------------------------------------------
+# 자동 감지 — 설치된 호스트만 처리
+# ---------------------------------------------------------------------------
+
+def test_autodetect_both_hosts_installed_processes_both(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    claude_install = _make_install(tmp_path, "claude_install")
+    _write_installed_plugins(fake_home, _installed_plugins_json(claude_install))
+    _write_import_manifest(fake_home)
+    agy_install = _make_agy_install(fake_home)
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    claude_settings = json.loads(_settings_path(fake_home).read_text(encoding="utf-8"))
+    assert claude_settings["statusLine"]["command"] == _expected_command(claude_install)
+    agy_settings = json.loads(
+        _agy_settings_path(fake_home).read_text(encoding="utf-8")
+    )
+    assert agy_settings["statusLine"] == _agy_expected_statusline(
+        _expected_command(agy_install)
+    )
+    assert "[claude]" in result.stdout
+    assert "[agy]" in result.stdout
+
+
+def test_autodetect_claude_only_skips_agy(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    claude_install = _make_install(tmp_path)
+    _write_installed_plugins(fake_home, _installed_plugins_json(claude_install))
+    # agy는 등록부 자체가 없음(미설치)
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    claude_settings = json.loads(_settings_path(fake_home).read_text(encoding="utf-8"))
+    assert claude_settings["statusLine"]["command"] == _expected_command(claude_install)
+    assert not _agy_settings_path(fake_home).exists()
+    # 하위호환: claude만 설치된 환경에서 기존과 동일한 재시작 안내 유지.
+    assert "Claude Code를 재시작하면 반영됩니다." in result.stdout
+
+
+def test_autodetect_agy_only_skips_claude(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    _write_import_manifest(fake_home)
+    agy_install = _make_agy_install(fake_home)
+    # claude는 등록부 자체가 없음(미설치)
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    agy_settings = json.loads(
+        _agy_settings_path(fake_home).read_text(encoding="utf-8")
+    )
+    assert agy_settings["statusLine"] == _agy_expected_statusline(
+        _expected_command(agy_install)
+    )
+    assert not _settings_path(fake_home).exists()
+
+
+def test_autodetect_neither_host_installed_errors(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode != 0
+    assert "설치돼 있지 않습니다" in result.stdout
 
 
 if __name__ == "__main__":
