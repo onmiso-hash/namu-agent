@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 MANIFEST_PATHS = [
     "namu-plugin/plugin.json",
@@ -26,3 +27,18 @@ def test_manifest_versions_match():
         assert base_version == version, (
             f"Version mismatch: {base_path} has {base_version}, but {path} has {version}"
         )
+
+
+if __name__ == "__main__":
+    try:
+        test_manifest_versions_match()
+    except AssertionError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+    else:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(current_dir)
+        with open(os.path.join(project_root, MANIFEST_PATHS[0]), "r", encoding="utf-8") as f:
+            version = json.load(f)["version"]
+        print(f"OK: manifest versions match ({version})")
+        sys.exit(0)

@@ -1,0 +1,25 @@
+#!/bin/sh
+# pre-push hook: 버전 드리프트(namu-plugin/plugin.json vs .claude-plugin/plugin.json) 감지 시 push 차단.
+# 활성화: sh scripts/setup_dev_hooks.sh (core.hooksPath=.githooks 설정)
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT" || exit 0
+
+if command -v python3 >/dev/null 2>&1; then
+    PY=python3
+elif command -v python >/dev/null 2>&1; then
+    PY=python
+else
+    echo "⚠ python3/python을 찾을 수 없어 버전 드리프트 검사를 건너뜁니다." >&2
+    exit 0
+fi
+
+"$PY" namu-plugin/test_version_drift.py
+status=$?
+
+if [ "$status" -ne 0 ]; then
+    echo "✖ 버전 드리프트 감지 — push 차단. scripts/namu_bump.py <버전>으로 두 매니페스트를 맞춘 뒤 다시 push하세요." >&2
+    exit "$status"
+fi
+
+exit 0

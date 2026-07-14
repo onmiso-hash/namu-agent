@@ -68,6 +68,7 @@
 3. **append-only 로그** — `learnings.yaml`과 작업 `log.md`는 수정·삭제하지 않는다.
 4. **승인 게이트** — 워커 에이전트 호출 전, 그리고 검수 fail 시 재실행 전 사용자 확인을 반드시 거친다.
 5. **판단 이유 기록** — 결과뿐 아니라 판단 근거(`reason`)까지 남겨야 자동 학습이 가능하다.
+6. **버전 드리프트 이중 방지** — 개발 클론 최초 셋업 시 `sh scripts/setup_dev_hooks.sh` 실행 — pre-push 훅으로 버전 드리프트를 push 전에 차단(서버 백스톱은 `.github/workflows/version-guard.yml`). 버전 bump는 반드시 `scripts/namu_bump.py <버전>` 사용.
 
 ## 교훈 저장 규칙
 
