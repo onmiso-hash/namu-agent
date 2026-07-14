@@ -74,31 +74,50 @@ def _resolved_tasks_dir(ws: str) -> Path | None:
         return None
 
 
-def _window_used_pct(data: dict, claude_key: str, agy_suffix: str) -> int | None:
-    """statusLine 꼬리용 '쓴 %'. Claude(rate_limits.<claude_key>.used_percentage) 우선,
-    없으면 agy(quota.<group>-<agy_suffix>.remaining_fraction) 폴백. 둘 다 없으면 None(namu-39).
+def _format_reset_time(seconds: int) -> str:
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    if hours > 0:
+        return f"{hours}h{minutes}m"
+    return f"{minutes}m"
 
-    Claude와 agy는 stdin 스키마 자체가 다르고 한 도구는 자기 키만 보내므로(rate_limits와
-    quota는 상호배타) 둘 다 뒤져봐도 충돌하지 않는다. agy의 remaining_fraction은 "남은"
-    비율(0.0~1.0)로 Claude의 "쓴 %"와 극성이 반대라 (1 - remaining) * 100으로 통일해
-    출력 형식을 하나로 맞춘다("쓴 %" 기준). 활성 모델 그룹(gemini vs 3p)은
-    model.display_name에 "gemini" 포함 여부로 고르되, 우선 그룹에 데이터가 없으면
-    다른 그룹으로 폴백한다.
+
+def _window_usage_info(data: dict, claude_key: str, agy_suffix: str) -> tuple[int | None, str | None]:
+    """statusLine 꼬리용 '쓴 %' 및 '리셋 남은 시간'. Claude(rate_limits.<claude_key>) 우선,
+    없으면 agy(quota.<group>-<agy_suffix>) 폴백.
     """
     rate_limits = data.get("rate_limits") or {}
-    claude_val = (rate_limits.get(claude_key) or {}).get("used_percentage")
+    claude_obj = rate_limits.get(claude_key) or {}
+    claude_val = claude_obj.get("used_percentage")
     if isinstance(claude_val, (int, float)):
-        return round(claude_val)
+        reset_str = None
+        resets_at = claude_obj.get("resets_at")
+        if resets_at:
+            try:
+                from datetime import timezone
+                dt = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
+                diff = int((dt - datetime.now(timezone.utc)).total_seconds())
+                if diff > 0:
+                    reset_str = _format_reset_time(diff)
+            except Exception:
+                pass
+        return round(claude_val), reset_str
 
     quota = data.get("quota") or {}
     model_name = (data.get("model") or {}).get("display_name") or ""
     groups = ["gemini", "3p"] if "gemini" in model_name.lower() else ["3p", "gemini"]
     for group in groups:
         entry = quota.get(f"{group}-{agy_suffix}")
-        remaining = (entry or {}).get("remaining_fraction")
+        if not entry:
+            continue
+        remaining = entry.get("remaining_fraction")
         if isinstance(remaining, (int, float)):
-            return round((1 - remaining) * 100)
-    return None
+            reset_str = None
+            reset_secs = entry.get("reset_in_seconds")
+            if isinstance(reset_secs, (int, float)) and reset_secs > 0:
+                reset_str = _format_reset_time(int(reset_secs))
+            return round((1 - remaining) * 100), reset_str
+    return None, None
 
 
 def _plugin_version() -> str | None:
@@ -143,15 +162,15 @@ def main() -> None:
 
     # 5시간/주간 rate limit — Claude(rate_limits.five_hour/seven_day.used_percentage) 또는
     # agy(quota.<group>-5h/weekly.remaining_fraction) 중 보내온 쪽을 쓴다(namu-39, 상세는
-    # _window_used_pct 참고). 두 필드/각 윈도우는 독립적으로 부재 가능(비구독자·세션 첫
+    # _window_usage_info 참고). 두 필드/각 윈도우는 독립적으로 부재 가능(비구독자·세션 첫
     # 응답 전) — 부재 시 조용히 생략한다(ctx의 "?" 폴백과 달리 오류 표시 없음, 하위 호환 유지).
     tail_parts = [ctx]
-    five = _window_used_pct(data, "five_hour", "5h")
-    if five is not None:
-        tail_parts.append(f"5h {five}%")
-    seven = _window_used_pct(data, "seven_day", "weekly")
-    if seven is not None:
-        tail_parts.append(f"7d {seven}%")
+    five_pct, five_reset = _window_usage_info(data, "five_hour", "5h")
+    if five_pct is not None:
+        tail_parts.append(f"5h {five_pct}%({five_reset})" if five_reset else f"5h {five_pct}%")
+    seven_pct, seven_reset = _window_usage_info(data, "seven_day", "weekly")
+    if seven_pct is not None:
+        tail_parts.append(f"7d {seven_pct}%({seven_reset})" if seven_reset else f"7d {seven_pct}%")
     tail = " · ".join(tail_parts)
 
     try:
