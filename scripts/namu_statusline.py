@@ -97,15 +97,14 @@ def _window_usage_info(data: dict, claude_key: str, agy_suffix: str) -> tuple[in
     if isinstance(claude_val, (int, float)):
         reset_str = None
         resets_at = claude_obj.get("resets_at")
-        if resets_at:
-            try:
-                from datetime import timezone
-                dt = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
-                diff = int((dt - datetime.now(timezone.utc)).total_seconds())
-                if diff > 0:
-                    reset_str = _format_reset_time(diff)
-            except Exception:
-                pass
+        # CC는 resets_at를 Unix epoch 초(정수)로 보낸다(공식 statusLine 스키마).
+        # 과거엔 ISO 문자열로 가정해 정수에 .replace()를 호출→AttributeError→except로
+        # 삼켜져 리셋 시간이 항상 누락됐다(agy는 reset_in_seconds라 이 버그와 무관).
+        if isinstance(resets_at, (int, float)) and resets_at > 0:
+            from datetime import timezone
+            diff = int(resets_at - datetime.now(timezone.utc).timestamp())
+            if diff > 0:
+                reset_str = _format_reset_time(diff)
         return round(claude_val), reset_str
 
     quota = data.get("quota") or {}

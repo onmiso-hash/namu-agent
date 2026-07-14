@@ -240,6 +240,33 @@ def test_rate_limits_only_five_hour_present(tmp_path):
     assert "7d" not in result.stdout
 
 
+def test_rate_limits_claude_resets_at_epoch_renders_reset_time(tmp_path):
+    """CC의 resets_at는 Unix epoch 초(정수)다(공식 statusLine 스키마) — 미래 시각이면
+    "5h n%(...)"처럼 남은 리셋 시간이 괄호로 붙는다. 회귀 방지: 과거엔 ISO 문자열로
+    가정해 정수에 .replace() 호출→AttributeError→except로 삼켜져 리셋이 늘 누락됐다."""
+    import time
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    now = int(time.time())
+    stdin_json = {
+        "model": {"display_name": "TEST"},
+        "workspace": {"current_dir": str(project_dir)},
+        "context_window": {"used_percentage": 6},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 34.4, "resets_at": now + 9000},    # +2h30m
+            "seven_day": {"used_percentage": 12.1, "resets_at": now + 259200},  # +3d
+        },
+    }
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    # 정확 분은 실행 타이밍에 흔들리므로 "리셋 괄호가 살아있다"만 검증한다.
+    assert "5h 34%(" in result.stdout
+    assert "7d 12%(" in result.stdout
+
+
 def test_rate_limits_absent_tail_matches_legacy_output(tmp_path):
     """rate_limits 필드 자체가 없으면 꼬리는 기존과 완전히 동일하다(namu-37 ②, 하위 호환:
     비구독자·세션 첫 응답 전)."""
