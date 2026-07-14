@@ -70,14 +70,13 @@ def update_agy() -> tuple[str, str, str]:
     before_version = _get_version(install_path, False)
     print(f"  - [agy] 업데이트 전 버전: {before_version}")
     
-    # agy는 GitHub 원격 저장소에서 플러그인을 가져옵니다.
-    plugin_source = "https://github.com/onmiso-hash/namu-agent/tree/main/namu-plugin"
+    plugin_source = SCRIPT_DIR.parent
     
     print("  - [agy] 기존 플러그인 제거 중...")
     subprocess.run(["agy", "plugin", "uninstall", "namu"], check=False)
     
-    print(f"  - [agy] 플러그인 원격 설치 중 ({plugin_source})...")
-    subprocess.run(["agy", "plugin", "install", plugin_source], check=False)
+    print(f"  - [agy] 플러그인 설치 중 ({plugin_source})...")
+    subprocess.run(["agy", "plugin", "install", str(plugin_source)], check=False)
     
     new_install_path = namu_setup_statusline._agy_resolve_install_path()
     if new_install_path:
