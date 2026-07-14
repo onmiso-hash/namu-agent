@@ -249,8 +249,10 @@ def setup_one(host: Host, force: bool) -> HostResult:
         expected = Path(install_path) / "scripts" / STATUSLINE_MARKER
         return HostResult(
             "broken",
-            f"[{host.label}] [오류] 설치본에서 statusline 스크립트를 찾지 못했습니다: {expected}\n"
-            "플러그인 설치가 손상됐을 수 있습니다 — 재설치 후 다시 시도하세요.",
+            f"[{host.label}] [오류] statusline 스크립트를 찾지 못했습니다: {expected}\n"
+            f"  {host.restart_name}의 namu 플러그인이 최신이 아닐 수 있습니다 — "
+            f"{host.restart_name}에서 namu 플러그인을 업데이트한 뒤 다시 실행하세요.\n"
+            "  (업데이트 후에도 같은 오류면 설치가 손상된 것일 수 있으니 재설치하세요.)",
             False,
         )
 

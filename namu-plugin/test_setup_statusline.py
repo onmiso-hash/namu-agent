@@ -309,6 +309,9 @@ def test_missing_statusline_script_in_installpath_errors(tmp_path):
 
     assert result.returncode != 0
     assert "찾지 못했습니다" in result.stdout
+    # 버전 낮음(구버전 설치)이 흔한 원인이므로 '재설치'가 아니라 '업데이트'를 1차로
+    # 안내해야 한다(namu-42). 재설치는 폴백 문구로만 남긴다.
+    assert "업데이트한 뒤 다시 실행" in result.stdout
 
 
 # ---------------------------------------------------------------------------
