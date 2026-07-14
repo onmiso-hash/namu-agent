@@ -384,6 +384,29 @@ def test_namu_home_env_var_has_no_effect_on_log_path(tmp_path):
     assert not (decoy / "db" / "statusline.log").exists()
 
 
+def test_leading_namu_version_badge(tmp_path):
+    """맨 앞에 "[Namu <버전>]" 뱃지가 붙고 그 뒤에 "[모델] folder"가 온다(namu-42).
+
+    버전은 스크립트 자기 위치(parent.parent)의 plugin.json에서 읽으므로 이 스크립트를
+    실행하는 호스트의 실제 설치본 버전을 반영한다. _SCRIPT은 repo 루트 사본이라 그
+    parent.parent(=repo 루트)에는 plugin.json이 없고, 스크립트는 3차 폴백으로
+    namu-plugin/.claude-plugin/plugin.json을 읽는다 — 기대값도 그 파일에서 읽어
+    비교한다(버전 bump에 강건하도록 하드코딩 금지). folder는 버전 없이 plain."""
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "myproj"
+    project_dir.mkdir(parents=True)
+
+    # 이 테스트 파일은 namu-plugin/ 바로 아래에 있다 → 정본 plugin.json 위치.
+    plugin_json = Path(__file__).parent / ".claude-plugin" / "plugin.json"
+    expected_ver = json.loads(plugin_json.read_text(encoding="utf-8"))["version"]
+
+    stdin_json = {"model": {"display_name": "TEST"}, "workspace": {"current_dir": str(project_dir)}}
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
+
+    assert result.returncode == 0
+    assert result.stdout.startswith(f"[Namu {expected_ver}] [TEST] myproj ")
+
+
 if __name__ == "__main__":
     import pytest
 

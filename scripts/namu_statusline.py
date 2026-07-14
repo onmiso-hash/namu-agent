@@ -99,6 +99,31 @@ def _window_used_pct(data: dict, claude_key: str, agy_suffix: str) -> int | None
     return None
 
 
+def _plugin_version() -> str | None:
+    """자기 namu 플러그인의 설치 버전을 읽는다(설치본·개발 사본 모두 대응).
+
+    스크립트 자기 위치(parent.parent) 기준으로 plugin.json을 찾으므로, 이 스크립트를
+    실행하는 그 호스트의 실제 설치 버전을 그대로 반영한다(claude=.../namu/<ver>/,
+    agy=~/.gemini/config/plugins/namu/, repo 개발 사본 포함) — 호스트 간 버전
+    드리프트가 화면에 그대로 보인다. 실패해도 statusline 출력을 막으면 안 되므로
+    전예외 무음(None).
+    """
+    base = Path(__file__).parent.parent
+    for candidate in (
+        base / ".claude-plugin" / "plugin.json",  # 설치본(claude/agy)·namu-plugin/
+        base / "plugin.json",                      # 루트 plugin.json 폴백
+        base / "namu-plugin" / ".claude-plugin" / "plugin.json",  # repo 루트 동봉 사본
+    ):
+        try:
+            if candidate.exists():
+                ver = json.loads(candidate.read_text(encoding="utf-8")).get("version")
+                if ver:
+                    return str(ver)
+        except Exception:
+            pass
+    return None
+
+
 def main() -> None:
     try:
         raw = sys.stdin.read()
@@ -109,6 +134,8 @@ def main() -> None:
     model = (data.get("model") or {}).get("display_name") or "?"
     ws = (data.get("workspace") or {}).get("current_dir") or data.get("cwd") or ""
     folder = os.path.basename(ws.rstrip("/\\")) or "?"
+    ver = _plugin_version()
+    namu_badge = f"[Namu {ver}] " if ver else ""
     pct = (data.get("context_window") or {}).get("used_percentage")
     ctx = f"{round(pct)}%" if isinstance(pct, (int, float)) else "?"
 
@@ -139,7 +166,7 @@ def main() -> None:
         task_part = "⚠ task 조회 오류"
         _append_log(ws, "ERROR | " + traceback.format_exc().strip().replace("\n", " ⏎ "))
 
-    out = f"[{model}] {folder} | {task_part} | {tail}"
+    out = f"{namu_badge}[{model}] {folder} | {task_part} | {tail}"
     _append_log(ws, f"{out} | tasks_dir={_resolved_tasks_dir(ws)}")
     print(out)
 
