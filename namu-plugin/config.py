@@ -109,6 +109,8 @@ def http_settings() -> dict:
       port: 바인드 포트 (NAMU_HTTP_PORT, int, 기본 8765)
       pull_interval: 디바운스 pull 간격(초) (NAMU_HTTP_PULL_INTERVAL, float, 기본 60.0)
       allow_noauth: 무인증 기동 허용 (NAMU_HTTP_ALLOW_NOAUTH == "1")
+      allowed_hosts: 원격(터널) Host 헤더 허용 목록 (NAMU_HTTP_ALLOWED_HOSTS, 쉼표 구분,
+        각 항목 strip, 빈 항목 제거, 미설정/빈 값이면 [])
 
     path_secret는 URL 경로 세그먼트(`/mcp/<secret>`)로 그대로 쓰이므로 `/`를 포함하면
     경로 구조가 깨진다 — ValueError로 즉시 드러낸다(조용한 오배선 방지).
@@ -135,6 +137,11 @@ def http_settings() -> dict:
             f"NAMU_HTTP_PULL_INTERVAL 값이 숫자가 아닙니다: {interval_raw!r}"
         ) from exc
 
+    allowed_hosts_raw = os.environ.get("NAMU_HTTP_ALLOWED_HOSTS", "")
+    allowed_hosts = [
+        item.strip() for item in allowed_hosts_raw.split(",") if item.strip()
+    ]
+
     return {
         "token": os.environ.get("NAMU_HTTP_TOKEN", "").strip(),
         "path_secret": path_secret,
@@ -142,4 +149,5 @@ def http_settings() -> dict:
         "port": port,
         "pull_interval": pull_interval,
         "allow_noauth": os.environ.get("NAMU_HTTP_ALLOW_NOAUTH", "") == "1",
+        "allowed_hosts": allowed_hosts,
     }

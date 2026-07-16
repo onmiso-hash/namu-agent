@@ -16,6 +16,11 @@ namu_recall/namu_record/namu_search 3종 도구를 쓸 수 있게 한다. 기존
   NAMU_HTTP_PORT            바인드 포트 (기본 8765)
   NAMU_HTTP_PULL_INTERVAL   디바운스 pull 간격 초 (기본 60.0, 0=매 요청)
   NAMU_HTTP_ALLOW_NOAUTH    "1"이면 무인증 기동 허용 (로컬 테스트 전용, 공개 노출 금지)
+  NAMU_HTTP_ALLOWED_HOSTS   터널 경유 Host 헤더 허용 목록, 쉼표 구분 (미설정 시 FastMCP
+                            자동 기본값 그대로 — 127.0.0.1/localhost/[::1]만 허용, 터널
+                            도메인은 421로 거부됨). "*"이면 DNS rebinding 보호 자체를
+                            비활성화(공개 배포에서 도메인이 유동적일 때 opt-out — 인증은
+                            토큰/시크릿 경로가 별도로 담당)
 
 기동 예시 (로컬 무인증 테스트):
   NAMU_HTTP_ALLOW_NOAUTH=1 NAMU_HTTP_PORT=18765 uv run --script namu-plugin/http_server.py
@@ -35,6 +40,7 @@ import threading
 import time
 
 import anyio
+from mcp.server.transport_security import TransportSecuritySettings
 
 import config as cfg
 import memory_sync
@@ -183,6 +189,43 @@ def restrict_tools(mcp_instance, allowed: frozenset[str]) -> None:
             mcp_instance.remove_tool(tool.name)
 
 
+# FastMCP가 host in (127.0.0.1/localhost/::1)일 때 자동 적용하는 기본값
+# (mcp/server/fastmcp/server.py:178-183, mcp 1.28.1 실측). 터널 경유 요청 허용을 위해
+# NAMU_HTTP_ALLOWED_HOSTS를 넣더라도 로컬 curl 스모크가 계속 동작해야 하므로, 이 기본값을
+# "대체"가 아니라 사용자 항목에 "합쳐서" 쓴다.
+_LOCALHOST_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+_LOCALHOST_ALLOWED_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+
+
+def _build_transport_security(allowed_hosts: list[str]) -> TransportSecuritySettings | None:
+    """NAMU_HTTP_ALLOWED_HOSTS(터널 경유 421 Misdirected Request 수정, namu-44 연장)로부터
+    TransportSecuritySettings를 만든다.
+
+    FastMCP는 streamable_http_app() 호출 시점에 self.settings.transport_security를 읽으므로
+    (server.py:834,962 실측) build_app()에서 앱을 만들기 *전에* mcp_server.mcp.settings에
+    설정해야 반영된다.
+
+    - allowed_hosts == ["*"]: DNS rebinding 보호 자체를 끈다 — 공개 배포에서 접속 도메인이
+      유동적일 때의 명시적 opt-out. 요청 인증은 기존 토큰/시크릿 경로 미들웨어가 별도로
+      담당하므로 이 보호를 꺼도 무인증 노출이 되는 건 아니다.
+    - 그 외 비어있지 않은 값: 보호는 유지한 채 FastMCP localhost 기본 3종에 사용자 항목을
+      더한다(대체 금지 — 로컬 curl 스모크가 계속 동작해야 한다). allowed_origins는 FastMCP
+      localhost 기본값 그대로 둔다(Origin 헤더는 부재 시 통과 — 서버-투-서버 호출에는
+      영향 없음).
+    - 빈 리스트(미설정): None을 반환해 FastMCP 자동 기본값을 그대로 둔다 — 현행 동작
+      완전 보존.
+    """
+    if not allowed_hosts:
+        return None
+    if allowed_hosts == ["*"]:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_LOCALHOST_ALLOWED_HOSTS + allowed_hosts,
+        allowed_origins=_LOCALHOST_ALLOWED_ORIGINS,
+    )
+
+
 def build_app(settings: dict):
     """FastMCP 인스턴스를 재사용해 Starlette ASGI 앱을 만들고 미들웨어로 감싼다.
 
@@ -201,6 +244,22 @@ def build_app(settings: dict):
     # 원격 클라이언트(claude.ai)는 요청마다 새 세션일 수 있어 세션 고정을 강제하지
     # 않는 stateless 모드가 안전하다(v4 §4 스코프 — 단일 사용자 셀프호스팅 전제).
     mcp_server.mcp.settings.stateless_http = True
+
+    # 터널 경유 421 Misdirected Request 수정 (v4 연장): FastMCP는 host가
+    # 127.0.0.1/localhost/::1이면 DNS rebinding 보호를 자동 켜고 allowed_hosts를 localhost
+    # 3종으로 제한한다 — 터널 도메인의 Host 헤더가 이 목록에 없어 거부된다. 앱 빌드
+    # *전에* settings.transport_security를 갈아끼워야 반영된다(streamable_http_app()
+    # 호출 시점에 읽힘).
+    transport_security = _build_transport_security(settings.get("allowed_hosts", []))
+    if transport_security is not None:
+        mcp_server.mcp.settings.transport_security = transport_security
+        if transport_security.enable_dns_rebinding_protection:
+            logger.info(
+                "namu-http: allowed_hosts 확장 적용 (localhost 기본 3종 + 사용자 %d개)",
+                len(settings.get("allowed_hosts", [])),
+            )
+        else:
+            logger.info("namu-http: DNS rebinding 보호 비활성화 (NAMU_HTTP_ALLOWED_HOSTS=*)")
 
     app = mcp_server.mcp.streamable_http_app()
     app = PullDebounceMiddleware(app, settings["pull_interval"])
