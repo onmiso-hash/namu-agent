@@ -88,6 +88,13 @@ claude plugin update namu@namu-marketplace --scope local
 agy plugin install ./namu-plugin
 ```
 
+### 참고 — 설치형(GitHub 원격) 사용자의 업데이트
+
+위 두 절은 **이 repo를 clone해 개발하는 형태** 전용이다. `namu-plugin`을 자기 프로젝트에 GitHub 원격으로 설치해 쓰는
+사용자라면(설치형, [설치형 사용설명서](docs/install_guide.md) 참고) 코드 수정·재적용을 신경 쓸 필요 없이 대화창에서
+`/namu:update` 한 번이면 끝난다 — 설치된 호스트(Claude Code/agy)를 자동 감지해 각각 최신 버전으로 갱신하고, 끝나면
+statusLine 경로까지 자동으로 다시 연결해 준다.
+
 ### statusLine 등록 (양 엔진 공용)
 
 Claude Code와 agy는 **서로 다른 설정 파일**을 쓴다. 한쪽만 등록하면 다른 쪽은 계속 비어 있으므로 양쪽 모두 `scripts/namu_statusline.py`를 등록해야 한다.

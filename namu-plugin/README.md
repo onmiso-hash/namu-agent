@@ -31,7 +31,12 @@ NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code
 
 환경변수 설정 방법은 루트 [`README.md`](../README.md#환경변수)를 참고할 것.
 
-## 설치 절차 (실측)
+## 설치 절차 (실측, 로컬 개발용)
+
+아래는 **이 repo를 clone해 이 폴더 자체를 수정·검증하는 개발자용** 절차다. 일반 사용자는 이 절차 대신
+GitHub 원격 마켓플레이스로 설치한다 — Claude Code는 `claude plugin marketplace add onmiso-hash/namu-agent` →
+`claude plugin install namu@namu-marketplace`, agy는 `agy plugin install https://github.com/onmiso-hash/namu-agent.git`
+한 줄이면 끝난다. 사용자용 설치 절차는 [설치형 사용설명서](../docs/install_guide.md)를 참고할 것.
 
 ### Claude Code
 

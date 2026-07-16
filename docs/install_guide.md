@@ -32,7 +32,9 @@ NAMU의 데이터 루트는 **`~/.namu` 고정**이다(`config.py`의 상수 `NA
 
 ## 4. Claude Code에 설치
 
-### 4-1. 로컬 경로(directory) 마켓플레이스 등록 — 실측 절차
+> 대부분의 설치형 사용자는 **4-2(GitHub 원격 마켓플레이스)만으로 충분**하다 — 로컬에 `namu-plugin` 폴더를 미리 마련할 필요가 아예 없다. 아래 4-1은 이미 로컬에 `namu-plugin` 폴더를 갖고 있는 경우(예: 개발자에게서 폴더를 직접 전달받았거나, 이 repo를 clone해 개발하는 경우)에만 필요한 대안 경로다. 처음 설치한다면 4-1을 건너뛰고 바로 4-2로 가도 된다.
+
+### 4-1. 로컬 경로(directory) 마켓플레이스 등록 — 대안 절차 (이미 로컬 폴더가 있는 경우)
 
 지금 확정된 절차는 **로컬 디스크에 있는 `namu-plugin` 폴더 경로**를 마켓플레이스로 등록하는 방식이다.
 
@@ -93,13 +95,25 @@ claude plugin install namu@namu-marketplace
 
 ## 5. agy(Antigravity)에 설치
 
+### 5-1. GitHub 원격 설치 — 기본 절차
+
+로컬에 `namu-plugin` 폴더를 미리 마련할 필요 없이, git URL을 바로 넘기면 agy가 clone·설치를 대신 처리한다.
+
+```
+agy plugin install https://github.com/onmiso-hash/namu-agent.git
+```
+
+### 5-2. 로컬 경로 설치 — 대안 절차 (이미 로컬 폴더가 있는 경우)
+
+이 repo를 clone해 개발하거나, 개발자에게서 `namu-plugin` 폴더를 직접 전달받은 경우에 쓴다.
+
 ```
 agy plugin install <namu-plugin 경로>
 ```
 
-설치가 끝나면 agy용 MCP 등록(`mcp_config.json`)은 워크스페이스 상대경로 기반이라, agy가 이 플러그인이 필요한 데이터 경로를 실행 시점에 절대경로로 자동 교정해준다(PreInvocation 훅). 다만 **재설치 직후 첫 세션**에는 이 교정이 아직 한 번도 돌지 않아 `/mcp`가 정상으로 안 보일 수 있다.
+설치가 끝나면 agy용 MCP 등록(`mcp_config.json`)은 워크스페이스 상대경로 기반이라, agy가 이 플러그인이 필요한 데이터 경로를 실행 시점에 절대경로로 자동 교정해준다(PreInvocation 훅). 다만 **재설치 직후 첫 세션**에는 이 교정이 아직 한 번도 돌지 않아 `/mcp`가 정상으로 안 보일 수 있다(어느 경로로 설치했든 공통).
 
-이 문제를 포함해 재설치·업데이트를 한 번에 안전하게 처리하는 스크립트가 `namu-plugin/scripts/agy_reinstall.ps1`이다.
+이 문제를 포함해 재설치·업데이트를 한 번에 안전하게 처리하는 스크립트가 `namu-plugin/scripts/agy_reinstall.ps1`이다(Windows PowerShell 전용, 로컬 `namu-plugin` 폴더 기준).
 
 ```powershell
 namu-plugin/scripts/agy_reinstall.ps1
@@ -111,7 +125,7 @@ namu-plugin/scripts/agy_reinstall.ps1
 2. `agy plugin install <경로>` — 재설치.
 3. 설치본 훅을 `--heal` 모드로 즉시 실행 — `mcp_config.json`을 그 자리에서 절대경로로 교정해, 첫 세션부터 `/mcp`가 바로 동작하도록 만든다.
 
-수동으로 하려면 `uninstall → install → --heal` 순서를 그대로 따르면 된다.
+수동으로 하려면 `uninstall → install → --heal` 순서를 그대로 따르면 된다. **OS 무관하게 한 번에 처리하고 싶다면 8절의 `/namu:update` 원클릭 업데이트**를 쓴다 — 내부적으로 GitHub 원격 URL 기준 같은 uninstall→install→heal 순서를 자동 수행한다.
 
 ## 6. 교훈 원격 백업·멀티 PC 동기화 (선택, 0.1.11부터)
 
@@ -169,7 +183,19 @@ agy의 `plugin install`은 비파괴 병합이라(10절 함정 1), 소스에서 
 
 ## 8. 업데이트
 
-플러그인 코드가 바뀌었을 때 반영하는 절차는 **설치 방식에 따라 다르다.** (삭제/재설치 절차는 위 7절 참고.)
+### 8-1. 원클릭 업데이트 — `/namu:update` (기본 절차)
+
+플러그인 코드가 바뀌었을 때 반영하는 가장 쉬운 방법은 대화창에서 이렇게 부르는 것이다.
+
+```
+/namu:update
+```
+
+내부적으로 `namu-plugin/scripts/namu_update.py`가 실행돼, 설치된 호스트(Claude Code·agy)를 자동 감지하고 각각 알맞은 방식으로 갱신한다 — Claude Code는 마켓플레이스 캐시 갱신 후 `plugin update`, agy는 `uninstall` → GitHub 원격 URL로 재설치 → `--heal` 경로 교정을 순서대로 수행한다. 미설치된 호스트는 조용히 건너뛴다. 마지막 단계로 `/namu:statusline-setup`을 자동 호출해 statusLine 경로까지 갱신하므로, 아래 8-2절의 수동 절차나 별도의 statusLine 재연결이 필요 없다. 완료 후에는 갱신된 호스트(Claude Code/agy)를 재시작해야 반영된다.
+
+### 8-2. 수동 업데이트 (스킬을 못 쓰는 환경의 폴백)
+
+`/namu:update` 스킬을 쓸 수 없는 환경이라면 설치 방식에 따라 아래를 수동으로 따른다. (삭제/재설치 절차는 위 7절 참고.)
 
 | | Claude Code | agy |
 |---|---|---|
@@ -178,7 +204,7 @@ agy의 `plugin install`은 비파괴 병합이라(10절 함정 1), 소스에서 
 
 핵심 구분: directory 소스는 "라이브 참조"라서 소스만 최신화하면 끝나지만, 원격/캐시 기반 설치는 캐시가 낡은 채로 남으므로 명시적인 update 동작이 필요하다.
 
-**update 후 statusLine 체크** — 캐시 경로에는 플러그인 버전이 박혀 있어, update로 버전 폴더가 바뀌는 순간 statusLine이 에러 표시 없이 조용히 사라진다. update 직후 대화창에서 `/namu:statusline-setup`을 다시 호출하면 새 버전 경로로 자동 갱신된다(namu-37/0.1.16부터 기본 절차, usage_guide 5절). 스킬을 못 쓰는 환경이라면 `settings.json`의 statusLine 경로 속 버전을 수동으로 갱신할 것(usage_guide 5절 폴백 참고).
+**update 후 statusLine 체크(수동 절차 한정)** — 캐시 경로에는 플러그인 버전이 박혀 있어, update로 버전 폴더가 바뀌는 순간 statusLine이 에러 표시 없이 조용히 사라진다. update 직후 대화창에서 `/namu:statusline-setup`을 다시 호출하면 새 버전 경로로 자동 갱신된다(namu-37/0.1.16부터 기본 절차, usage_guide 6절). 스킬을 못 쓰는 환경이라면 `settings.json`의 statusLine 경로 속 버전을 수동으로 갱신할 것(usage_guide 6절 폴백 참고). `/namu:update`(8-1절)를 썼다면 이 절 전체가 이미 자동 처리된 것이므로 신경 쓸 필요 없다.
 
 ## 9. 워커(서브에이전트)
 

@@ -53,18 +53,33 @@ envelope (`mcp_config.json`).
 
 ## Quick start
 
+Claude Code:
+
 ```
 claude plugin marketplace add onmiso-hash/namu-agent
 claude plugin install namu@namu-marketplace
+```
+
+agy:
+
+```
+agy plugin install https://github.com/onmiso-hash/namu-agent.git
 ```
 
 New to this? The [visual beginner's guide](docs/namu_quickstart.html)
 (Korean) walks you through install, verification, and updates with
 copy-paste steps.
 
-For the full install walkthrough (agy install, statusLine registration,
+For the full install walkthrough (statusLine registration,
 troubleshooting), see [docs/install_guide.md](docs/install_guide.md)
 (Korean).
+
+### Updating
+
+Once installed, say `/namu:update` in a chat session — it detects which
+host(s, Claude Code and/or agy) are installed, updates each one, and
+re-registers the statusLine automatically. No manual multi-step commands
+needed.
 
 ### Environment variable
 

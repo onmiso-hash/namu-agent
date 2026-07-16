@@ -210,7 +210,7 @@
     <span class="eyebrow">🌳 초보자용 · Claude Code &amp; agy</span>
     <h1>NAMU 설치 &amp; 업데이트 가이드</h1>
     <p class="lead">따라만 하면 됩니다. 명령을 복사해 붙여넣고, 각 단계의 <b>“성공하면 이렇게 보여요”</b>만 확인하세요.</p>
-    <p class="lead" style="margin-top:14px">NAMU는 어느 엔진에서든 <b>항상 플러그인으로 설치</b>됩니다. 다른 건 소스를 가져오는 방법뿐 — <b>Claude Code</b>는 GitHub에서 바로 설치하고, <b>agy</b>는 아직 원격 설치가 없어 소스를 먼저 내려받은 뒤 그 폴더를 설치합니다.</p>
+    <p class="lead" style="margin-top:14px">NAMU는 어느 엔진에서든 <b>항상 플러그인으로 설치</b>됩니다. <b>Claude Code</b>와 <b>agy</b> 모두 GitHub 저장소 주소 하나만 넘기면 바로 설치가 끝납니다 — 미리 내려받을(clone) 필요가 없습니다.</p>
   </header>
 
   <!-- 준비물 -->
@@ -244,7 +244,7 @@
       <a class="choice" href="#agy">
         <span class="tool">agy (Antigravity)</span>
         <span class="go">B로 이동 →</span>
-        <small>소스를 내려받은 뒤 플러그인으로 설치.</small>
+        <small>GitHub 주소로 바로 플러그인 설치.</small>
       </a>
     </div>
   </section>
@@ -305,16 +305,16 @@ claude plugin install namu@namu-marketplace</pre>
   <!-- PART B: agy -->
   <section id="agy">
     <h2><span class="kicker">B</span> agy(Antigravity)에 설치</h2>
-    <p class="sec-note">agy는 아직 GitHub 원격 설치가 없어, 소스를 먼저 내려받은 뒤(clone) 그 <code>namu-plugin</code> 폴더를 <b>플러그인으로 설치</b>합니다. clone은 설치 방식이 아니라 소스를 가져오는 준비 단계입니다.</p>
+    <p class="sec-note">GitHub 저장소 주소를 그대로 넘기면 agy가 clone·설치를 대신 처리합니다.</p>
     <div class="card">
 
       <div class="step">
         <span class="num">1</span>
         <div class="body">
-          <p class="lbl">저장소를 내려받습니다.</p>
+          <p class="lbl">플러그인을 설치합니다.</p>
           <div class="cmd">
             <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
-            <pre>git clone https://github.com/onmiso-hash/namu-agent.git</pre>
+            <pre>agy plugin install https://github.com/onmiso-hash/namu-agent.git</pre>
           </div>
         </div>
       </div>
@@ -322,27 +322,13 @@ claude plugin install namu@namu-marketplace</pre>
       <div class="step">
         <span class="num">2</span>
         <div class="body">
-          <p class="lbl">플러그인을 설치합니다.</p>
-          <div class="cmd">
-            <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
-            <pre>agy plugin install namu-agent/namu-plugin</pre>
-          </div>
-          <p>경로는 방금 내려받은 폴더 안의 <code>namu-plugin</code>입니다.</p>
+          <p class="lbl">agy에서 새 대화 세션을 열고 확인합니다.</p>
+          <p>대화창에 <code>/mcp</code>를 쳐서 <code>namu-memory</code>가 연결돼 있으면 성공입니다.</p>
+          <div class="warn"><span class="ic">⚠</span><span><b>설치 직후 첫 세션</b>에만 <code>/mcp</code>가 이상하게 보일 수 있습니다. 정상입니다 — 잠시 후 아래 업데이트 섹션의 <code>/namu:update</code>를 한 번 부르면 경로 자동 교정까지 바로 처리됩니다.</span></div>
         </div>
       </div>
 
-      <div class="step">
-        <span class="num">3</span>
-        <div class="body">
-          <p class="lbl">agy에서 새 대화 세션을 열고 확인합니다.</p>
-          <p>대화창에 <code>/mcp</code>를 쳐서 <code>namu-memory</code>가 연결돼 있으면 성공입니다.</p>
-          <div class="warn"><span class="ic">⚠</span><span><b>설치 직후 첫 세션</b>에만 <code>/mcp</code>가 이상하게 보일 수 있습니다. 그럴 때 아래를 한 번 실행하면(청소 후 재설치 + 경로 자동 교정) 해결됩니다.</span></div>
-          <div class="cmd">
-            <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
-            <pre>namu-agent/namu-plugin/scripts/agy_reinstall.ps1</pre>
-          </div>
-        </div>
-      </div>
+      <p class="tip"><span class="ic">💡</span><span>이미 이 repo를 clone해 둔 개발자라면 로컬 <code>namu-plugin</code> 폴더 경로로 <code>agy plugin install &lt;경로&gt;</code>도 그대로 동작합니다 — 일반 사용자는 위 GitHub 방식이면 충분합니다.</span></p>
 
     </div>
   </section>
@@ -350,7 +336,7 @@ claude plugin install namu@namu-marketplace</pre>
   <!-- statusLine -->
   <section id="statusline">
     <h2><span class="kicker">+</span> 화면 하단 상태줄 (선택)</h2>
-    <p class="sec-note"><code>[모델] 폴더 | 📌 진행 중 작업 | 컨텍스트%</code> 한 줄을 보고 싶다면.</p>
+    <p class="sec-note"><code>[Namu 버전] [모델] 폴더 | 📌 진행 중 작업 | 컨텍스트% · 5h(남은시간) · 7d(남은시간)</code> 한 줄을 보고 싶다면.</p>
     <div class="card">
       <div class="step">
         <span class="num">1</span>
@@ -369,39 +355,27 @@ claude plugin install namu@namu-marketplace</pre>
   <!-- 업데이트 -->
   <section id="update">
     <h2><span class="kicker">↻</span> 업데이트 — 새 버전 반영하기</h2>
-    <p class="sec-note">엔진에 따라 방법이 다릅니다. 자기 것 하나만 보면 됩니다.</p>
+    <p class="sec-note">엔진 구분 없이, 대화창에서 명령 하나면 끝납니다.</p>
 
     <div class="card">
-      <div class="upd-head"><span class="pill">A</span><b>Claude Code</b></div>
       <div class="cmd">
-        <div class="bar"><span class="where term">🖥 터미널에서</span><button class="copy" type="button">복사</button></div>
-        <pre>claude plugin update namu@namu-marketplace</pre>
+        <div class="bar"><span class="where chat">💬 대화창에서</span><button class="copy" type="button">복사</button></div>
+        <pre>/namu:update</pre>
       </div>
-      <p>그다음 Claude Code를 재시작하면 끝.</p>
-      <div class="warn"><span class="ic">⚠</span><span>반드시 <code>namu@namu-marketplace</code> <b>전체 이름</b>으로 치세요. 짧게 <code>update namu</code>만 쓰면 “not found”로 실패합니다.</span></div>
+      <p>설치된 엔진(Claude Code·agy)을 자동으로 찾아 각각 최신 버전으로 갱신하고, 끝나면 상태줄(statusLine) 경로까지 자동으로 다시 연결합니다. 둘 다 설치돼 있으면 둘 다, 하나만 있으면 그것만 처리합니다.</p>
+      <div class="ok"><span class="ic">✓</span><span>완료 메시지가 뜨면 갱신된 엔진을 재시작하세요. <code>/namu:statusline-setup</code>을 따로 다시 부를 필요가 없습니다.</span></div>
     </div>
 
-    <div class="card">
-      <div class="upd-head"><span class="pill">B</span><b>agy</b></div>
-      <p style="margin:0 0 12px;color:var(--soft)">먼저 내려받은 폴더에서 <code>git pull</code>로 소스를 최신화한 뒤, 재설치 스크립트를 실행합니다.</p>
-      <div class="cmd">
-        <div class="bar"><span class="where term">🖥 터미널에서 (내려받은 namu-agent 폴더에서)</span><button class="copy" type="button">복사</button></div>
-        <pre>git -C namu-agent pull
-namu-agent/namu-plugin/scripts/agy_reinstall.ps1</pre>
-      </div>
-      <p>재설치 스크립트가 <code>제거 → 재설치 → 경로 교정</code>을 한 번에 처리합니다.</p>
-    </div>
-
-    <div class="tip" style="margin-top:16px"><span class="ic">💡</span><span>상태줄(statusLine)을 쓰고 있다면, 업데이트 뒤 <code>/namu:statusline-setup</code>을 한 번 더 부르세요. 버전이 바뀌면 상태줄이 조용히 사라질 수 있는데, 이 한 번으로 새 경로에 다시 연결됩니다.</span></div>
+    <div class="tip" style="margin-top:16px"><span class="ic">💡</span><span><b>스킬을 못 쓰는 환경이라면</b> — Claude Code는 터미널에서 <code>claude plugin update namu@namu-marketplace</code>(반드시 <code>이름@마켓플레이스</code> 전체 이름으로), agy는 <code>agy plugin uninstall namu</code> 후 <code>agy plugin install https://github.com/onmiso-hash/namu-agent.git</code>을 수동으로 실행한 뒤, 상태줄이 안 보이면 <code>/namu:statusline-setup</code>을 따로 불러 주세요.</span></div>
   </section>
 
   <!-- 안 될 때 -->
   <section id="trouble">
     <h2><span class="kicker">!</span> 잘 안 될 때</h2>
     <div class="card">
-      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b><code>/mcp</code>에 안 보여요</b> — Claude Code를 완전히 재시작했는지, 설치 명령 두 줄이 오류 없이 끝났는지 확인하세요.</p></div></div>
+      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b><code>/mcp</code>에 안 보여요</b> — Claude Code를 완전히 재시작했는지, 설치 명령이 오류 없이 끝났는지 확인하세요.</p></div></div>
       <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b>한글·이모지가 깨져요 (Windows)</b> — 아주 옛 버전(0.1.6 미만)의 버그입니다. 위 업데이트로 최신 버전을 받으세요.</p></div></div>
-      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b>agy 첫 세션만 이상해요</b> — B의 재설치 스크립트를 한 번 실행하면 해결됩니다.</p></div></div>
+      <div class="step"><span class="num" style="background:var(--amber)">·</span><div class="body"><p><b>agy 첫 세션만 이상해요</b> — 위 <code>/namu:update</code>를 한 번 실행하면 해결됩니다.</p></div></div>
     </div>
   </section>
 
