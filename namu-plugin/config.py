@@ -93,3 +93,53 @@ def tasks_dir_for(project_dir: str | os.PathLike | None = None) -> Path:
 # GitHub 동기화 (2단계 이후)
 GITHUB_SYNC_ENABLED: bool = False
 GITHUB_REPO: str = ""
+
+
+# 원격 MCP HTTP 서버 설정 (namu-44, docs/remote_mcp_design.md v4)
+# 호출 시점에 환경변수를 읽는다 — 모듈 로드 시점 상수로 고정하면(NAMU_MACHINE처럼)
+# 테스트에서 monkeypatch.setenv로 격리하기 어렵고, http_server 기동 시점에만 필요한
+# 값이라 지연 평가해도 손해가 없다.
+def http_settings() -> dict:
+    """NAMU_HTTP_* 환경변수를 읽어 원격 HTTP 서버 설정 dict로 반환한다.
+
+    Returns:
+      token: 헤더 인증용 토큰 (NAMU_HTTP_TOKEN, strip, 기본 "")
+      path_secret: 시크릿 경로 세그먼트 (NAMU_HTTP_PATH_SECRET, strip, 기본 "")
+      host: 바인드 호스트 (NAMU_HTTP_HOST, 기본 "127.0.0.1")
+      port: 바인드 포트 (NAMU_HTTP_PORT, int, 기본 8765)
+      pull_interval: 디바운스 pull 간격(초) (NAMU_HTTP_PULL_INTERVAL, float, 기본 60.0)
+      allow_noauth: 무인증 기동 허용 (NAMU_HTTP_ALLOW_NOAUTH == "1")
+
+    path_secret는 URL 경로 세그먼트(`/mcp/<secret>`)로 그대로 쓰이므로 `/`를 포함하면
+    경로 구조가 깨진다 — ValueError로 즉시 드러낸다(조용한 오배선 방지).
+    """
+    path_secret = os.environ.get("NAMU_HTTP_PATH_SECRET", "").strip()
+    if "/" in path_secret:
+        raise ValueError(
+            "NAMU_HTTP_PATH_SECRET에 '/'를 포함할 수 없습니다 (URL 경로 세그먼트로 쓰임)"
+        )
+
+    port_raw = os.environ.get("NAMU_HTTP_PORT", "8765").strip()
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"NAMU_HTTP_PORT 값이 정수가 아닙니다: {port_raw!r}"
+        ) from exc
+
+    interval_raw = os.environ.get("NAMU_HTTP_PULL_INTERVAL", "60.0").strip()
+    try:
+        pull_interval = float(interval_raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"NAMU_HTTP_PULL_INTERVAL 값이 숫자가 아닙니다: {interval_raw!r}"
+        ) from exc
+
+    return {
+        "token": os.environ.get("NAMU_HTTP_TOKEN", "").strip(),
+        "path_secret": path_secret,
+        "host": os.environ.get("NAMU_HTTP_HOST", "127.0.0.1").strip(),
+        "port": port,
+        "pull_interval": pull_interval,
+        "allow_noauth": os.environ.get("NAMU_HTTP_ALLOW_NOAUTH", "") == "1",
+    }
