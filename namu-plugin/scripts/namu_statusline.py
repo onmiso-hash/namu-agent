@@ -83,8 +83,18 @@ def _format_reset_time(seconds: int) -> str:
 
 
 def _window_usage_info(data: dict, claude_key: str, agy_suffix: str) -> tuple[int | None, str | None]:
-    """statusLine 꼬리용 '쓴 %' 및 '리셋 남은 시간'. Claude(rate_limits.<claude_key>) 우선,
-    없으면 agy(quota.<group>-<agy_suffix>) 폴백.
+    """statusLine 꼬리용 '쓴 %'와 '리셋 남은 시간'을 함께 반환한다.
+
+    Claude(rate_limits.<claude_key>.used_percentage, resets_at은 Unix epoch 초) 우선,
+    없으면 agy(quota.<group>-<agy_suffix>.remaining_fraction, reset_in_seconds) 폴백.
+    둘 다 없으면 (None, None)(namu-39).
+
+    Claude와 agy는 stdin 스키마 자체가 다르고 한 도구는 자기 키만 보내므로(rate_limits와
+    quota는 상호배타) 둘 다 뒤져봐도 충돌하지 않는다. agy의 remaining_fraction은 "남은"
+    비율(0.0~1.0)로 Claude의 "쓴 %"와 극성이 반대라 (1 - remaining) * 100으로 통일해
+    출력 형식을 하나로 맞춘다("쓴 %" 기준). 활성 모델 그룹(gemini vs 3p)은
+    model.display_name에 "gemini" 포함 여부로 고르되, 우선 그룹에 데이터가 없으면
+    다른 그룹으로 폴백한다(namu-39).
     """
     rate_limits = data.get("rate_limits") or {}
     claude_obj = rate_limits.get(claude_key) or {}
