@@ -4,9 +4,56 @@ English: [README.md](README.md)
 
 벤더 독립 에이전트 시스템. 특정 AI 벤더에 종속되지 않고, 이식 가능한 메모리 코어를 중심으로 작업 기록과 교훈을 누적해 스스로 학습한다.
 
+## 📖 처음이라면 — 쉽게 읽는 안내서부터
+
+아래 링크만 눌러도 끝난다. 코드를 몰라도 읽힌다.
+
+| 안내서 | 이럴 때 |
+|---|---|
+| [🌳 NAMU 에이전트 시스템 — 쉽게 읽는 안내서](https://onmiso-hash.github.io/namu-agent/docs/namu_guide.html) | NAMU가 대체 뭔지 먼저 감을 잡고 싶다 |
+| [🚀 NAMU 설치 & 업데이트 가이드](https://onmiso-hash.github.io/namu-agent/docs/namu_quickstart.html) | 복사·붙여넣기로 바로 설치하고 싶다 |
+| [NAMU 설치 가이드 (상세)](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html) | 설치 중 막혔거나 더 자세히 알고 싶다 |
+| [🌐 NAMU 웹에서 쓰기 — 원격 MCP 셀프호스팅 가이드](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | Claude Code/agy 없이 웹 브라우저(claude.ai)에서만 쓰고 싶다 |
+
+## NAMU가 뭐 하는 물건인가
+
+NAMU는 AI 에이전트(Claude Code, agy 등)가 작업하면서 얻은 교훈을 **이식 가능한 메모리**에 차곡차곡 쌓아, 다음 작업에서 더 잘하게 만드는 시스템이다. AI가 프로젝트를 진행하다 보면 "이 버그의 원인은 이거였고", "이 설계는 이런 이유로 이렇게 했다" 같은 판단이 쌓이는데, 보통은 대화가 끝나면 사라진다. NAMU는 이걸 `~/.namu`라는 개인 폴더에 append-only(수정·삭제 없이 덧붙이기만 하는 방식)로 영구히 남겨서, 다음 세션·다음 프로젝트에서도 같은 실수를 반복하지 않게 한다. 실행 엔진(Claude Code나 agy 같은 AI 도구)은 언제든 바꿔 끼울 수 있는 부품일 뿐이고, NAMU의 진짜 가치는 이 메모리 레이어에 있다. 시작은 플러그인 명령 한 줄 설치로 끝난다 — 아래 "30초 시작" 참고.
+
+```mermaid
+flowchart LR
+    A[작업 수행] --> B["교훈 기록<br/>(namu_record)"]
+    B --> C["~/.namu 에 누적<br/>(learnings.yaml)"]
+    C --> D["다음 세션에서 회상<br/>(namu_recall)"]
+    D --> A
+```
+
+## ⚡ 30초 시작
+
+Claude Code:
+
+```
+claude plugin marketplace add onmiso-hash/namu-agent
+claude plugin install namu@namu-marketplace
+```
+
+agy:
+
+```
+agy plugin install https://github.com/onmiso-hash/namu-agent.git
+```
+
+설치가 끝났다면 대화창에서 `/namu:update` 한 줄이면 업데이트도 끝난다 — 설치된 호스트(Claude Code/agy)를 자동 감지해 각각 최신 버전으로 갱신하고 statusLine 경로까지 다시 연결해 준다.
+
+## 주요 기능 한눈에
+
+- **도구 3종** — `namu_recall`(최근 교훈 조회), `namu_search`(키워드로 과거 교훈 검색), `namu_record`(새 교훈을 기록) — AI가 작업 중 필요할 때 알아서 부른다.
+- **세션 표면 3종** — statusLine(하단에 상시 표시되는 한 줄 상태), `/namu`(원할 때 직접 보는 세션 브리핑), 자동 컨텍스트 주입(세션 시작 시 관련 교훈을 AI에게 조용히 알려줌) — 굳이 찾지 않아도 기억이 흘러들어온다.
+- **멀티 PC 동기화(`namu_sync_setup`)** — 집 PC에서 배운 교훈을 회사 PC에서도 그대로 쓸 수 있게 개인 원격 repo로 동기화한다(선택 기능).
+- **웹 claude.ai 연결(원격 MCP)** — Claude Code나 agy를 설치하지 않고도 브라우저의 claude.ai에서 같은 메모리를 셀프호스팅으로 연결해 쓸 수 있다.
+
 ## 정체성
 
-NAMU의 차별점은 실행 엔진이 아니라 **메모리 레이어(MCP)**에 있다. 실행 엔진(Claude Code, agy)은 빌려 쓰고 언제든 교체할 수 있는 부품으로 취급한다.
+NAMU의 차별점은 실행 엔진이 아니라 **메모리 레이어(MCP — Model Context Protocol, AI가 외부 도구를 표준 방식으로 부르는 규약)**에 있다. 실행 엔진(Claude Code, agy)은 빌려 쓰고 언제든 교체할 수 있는 부품으로 취급한다.
 
 이 원칙은 "봉투 둘, 내용물 하나" 구조로 구현된다 — 같은 메모리 코어(`mcp_server.py`), 같은 워커 정의(`namu-coder`/`namu-reviewer`), 같은 오케스트레이션 스킬(`/namu-task`)을 Claude Code와 agy 두 엔진이 그대로 공유한다. 다른 건 각 엔진이 요구하는 등록 형식(봉투)뿐이다 — 예를 들어 MCP 서버 등록도 내용은 같지만 Claude Code는 `${CLAUDE_PLUGIN_ROOT}` 절대경로 플러그인 봉투(`.mcp.json`)를, agy는 워크스페이스 상대경로 봉투(`mcp_config.json`)를 쓴다.
 
@@ -37,7 +84,7 @@ NAMU의 차별점은 실행 엔진이 아니라 **메모리 레이어(MCP)**에 
 
 ## 셋업 가이드
 
-> 🚀 **처음이라면** [빠른 시작 가이드(초보자용, HTML)](docs/namu_quickstart.html)부터 — 복사·붙여넣기만으로 설치·확인·업데이트까지 끝낼 수 있다.
+> 🚀 **처음이라면** [빠른 시작 가이드(초보자용, HTML)](https://onmiso-hash.github.io/namu-agent/docs/namu_quickstart.html)부터 — 복사·붙여넣기만으로 설치·확인·업데이트까지 끝낼 수 있다.
 >
 > 아래는 이 repo를 clone해 개발하는 형태의 가이드다. 자기 프로젝트에 NAMU를 플러그인으로 설치해 쓰려면 [설치형 사용설명서](docs/install_guide.md)를, 설치를 마친 뒤 실제 사용법은 [사용설명서 — 설치 후 첫 하루](docs/usage_guide.md)를 참고할 것. Claude Code/agy 없이 **웹 브라우저(claude.ai)**에서만 쓰고 싶다면 [원격 MCP 셀프호스팅 가이드](docs/remote_mcp_guide.md)를 볼 것.
 
