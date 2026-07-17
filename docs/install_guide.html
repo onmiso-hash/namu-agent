@@ -275,9 +275,31 @@
     .step .num { width: 28px; height: 28px; font-size: 0.9rem; }
     pre { font-size: 0.78rem; }
   }
+
+  /* ---------- DOC NAV (공통, 4개 HTML 동일) ---------- */
+  .namu-docnav{
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    background:#2c5a39;padding:10px 16px;
+  }
+  .namu-docnav a{
+    display:inline-block;text-decoration:none;color:#e8f3ea;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    transition:.15s;
+  }
+  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
+  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
 </style>
 </head>
 <body>
+
+<nav class="namu-docnav">
+  <a href="namu_guide.html">🌳 안내서</a>
+  <a href="namu_quickstart.html">🚀 빠른 시작</a>
+  <a href="install_guide.html" class="is-current">🔧 설치 가이드</a>
+  <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
+</nav>
+
 <div class="wrap">
 
   <header class="hero">
@@ -314,9 +336,9 @@
       NAMU도 Claude Code나 agy에 "설치"하는 방식으로 끼워 넣습니다.
     </p>
 
-    <h3>설치형 vs clone 개발형</h3>
+    <h3>설치형 vs clone 개발형 vs 셀프호스팅형</h3>
     <p>
-      NAMU를 쓰는 방법은 두 가지입니다. 이 문서는 <strong>①번, 설치형</strong>을 다룹니다.
+      NAMU를 쓰는 방법은 세 가지입니다. 이 문서는 <strong>①번, 설치형</strong>을 다룹니다.
     </p>
     <div class="diagram-wrap">
       <svg viewBox="0 0 640 300" role="img" aria-label="설치형과 clone 개발형 구조 비교 다이어그램" width="100%" height="auto">
@@ -360,6 +382,11 @@
         이 문서가 안내하는 방식입니다.</li>
       <li><strong>clone 개발형</strong> — NAMU repo 자체를 내려받아(clone) 그 안에서 직접 개발하며 씁니다. NAMU를 직접 고치고 싶은
         개발자용이며, 이 문서의 대상이 아닙니다.</li>
+      <li><strong>셀프호스팅형</strong> — Claude Code·agy 프로그램 설치 없이 <strong>웹 브라우저의 claude.ai</strong>에서만
+        NAMU 기억(교훈)을 쓰고 싶을 때 씁니다. <code>namu-plugin/http_server.py</code>를 인터넷에 상시로 띄워
+        claude.ai의 Custom Connector(커스텀 커넥터)로 연결합니다. 앞의 두 형태와 달리 세션 자동 브리핑·<code>/namu-task</code> 같은
+        자동화는 동작하지 않는 등 한계가 뚜렷합니다 — 이 문서의 대상이 아니며, 절차·한계 모두
+        <a href="remote_mcp_guide.html"><strong>웹에서 쓰기 가이드</strong></a>에서 다룹니다.</li>
     </ul>
     <div class="box note">
       <strong>기억은 어디에 저장되나요?</strong>
@@ -782,7 +809,7 @@ claude plugin install namu@namu-marketplace</code></pre>
         값을 고쳐야 합니다.</li>
     </ul>
     <p>
-      더 자세한 내용(개발 배경, 실측 기록 포함)은 <a href="install_guide.md">install_guide.md</a>를 참고하세요.
+      더 자세한 내용(개발 배경, 실측 기록 포함)은 <a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/install_guide.md">install_guide.md</a>를 참고하세요. 웹 브라우저에서만 NAMU를 쓰고 싶다면 <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a>를 참고하세요.
     </p>
   </section>
 

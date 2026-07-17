@@ -1,4 +1,9 @@
-<title>NAMU 설치 & 업데이트 가이드</title>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚀 NAMU 설치 & 업데이트 가이드</title>
 <style>
   :root {
     --paper:   #F4F4EC;
@@ -201,7 +206,30 @@
 
   a { color: var(--pine); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ---------- DOC NAV (공통, 4개 HTML 동일) ---------- */
+  .namu-docnav{
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    background:#2c5a39;padding:10px 16px;
+  }
+  .namu-docnav a{
+    display:inline-block;text-decoration:none;color:#e8f3ea;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    transition:.15s;
+  }
+  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
+  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
 </style>
+</head>
+<body>
+
+<nav class="namu-docnav">
+  <a href="namu_guide.html">🌳 안내서</a>
+  <a href="namu_quickstart.html" class="is-current">🚀 빠른 시작</a>
+  <a href="install_guide.html">🔧 설치 가이드</a>
+  <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
+</nav>
 
 <div class="page">
 <div class="wrap">
@@ -211,6 +239,7 @@
     <h1>NAMU 설치 &amp; 업데이트 가이드</h1>
     <p class="lead">따라만 하면 됩니다. 명령을 복사해 붙여넣고, 각 단계의 <b>“성공하면 이렇게 보여요”</b>만 확인하세요.</p>
     <p class="lead" style="margin-top:14px">NAMU는 어느 엔진에서든 <b>항상 플러그인으로 설치</b>됩니다. <b>Claude Code</b>와 <b>agy</b> 모두 GitHub 저장소 주소 하나만 넘기면 바로 설치가 끝납니다 — 미리 내려받을(clone) 필요가 없습니다.</p>
+    <p class="tip" style="margin-top:14px"><span class="ic">💡</span><span>Claude Code·agy 프로그램 설치 없이 <b>웹 브라우저의 claude.ai</b>에서만 NAMU 기억을 쓰고 싶다면 이 문서 대신 <a href="remote_mcp_guide.html"><b>웹에서 쓰기 가이드</b></a>를 보세요.</span></p>
   </header>
 
   <!-- 준비물 -->
@@ -381,6 +410,7 @@ claude plugin install namu@namu-marketplace</pre>
 
   <footer>
     데이터(교훈·작업 기록)는 설치 방식과 무관하게 항상 <code>~/.namu</code> 폴더에 쌓입니다. 여러 PC에서 기억을 공유하고 싶다면 설치 후 AI에게 “<code>namu_sync_setup</code>을 내 비공개 저장소 URL로 실행해줘”라고 부탁하세요(선택 기능).
+    <br>더 자세한 배경·트러블슈팅은 <a href="install_guide.html">설치 가이드</a>를, 웹 브라우저에서만 쓰는 방법은 <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a>를 참고하세요.
   </footer>
 
 </div>
@@ -402,3 +432,5 @@ claude plugin install namu@namu-marketplace</pre>
     });
   });
 </script>
+</body>
+</html>

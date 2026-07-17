@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🌐 NAMU 웹에서 쓰기 — 원격 MCP 셀프호스팅 가이드</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f2f8f8;
+    --bg-card: #fbfdfd;
+    --fg: #172422;
+    --fg-soft: #566462;
+    --accent: #0f766e;
+    --accent-deep: #0b5750;
+    --accent-soft: #e3f4f2;
+    --border: #dfe9e7;
+    --code-bg: #10201d;
+    --code-fg: #e7f3f0;
+    --ok: #1a7f4b;
+    --warn: #a15c00;
+    --danger: #b3261e;
+    --danger-soft: #fbe9e7;
+    --shadow: 0 1px 3px rgba(15, 40, 36, 0.08);
+    --radius: 14px;
+    --maxw: 800px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1614;
+      --bg-soft: #141d1a;
+      --bg-card: #17211e;
+      --fg: #e7efec;
+      --fg-soft: #a2b3ae;
+      --accent: #4fd6c6;
+      --accent-deep: #7be6d8;
+      --accent-soft: #16302c;
+      --border: #24322e;
+      --code-bg: #0a1210;
+      --code-fg: #e2efeb;
+      --ok: #4fd18a;
+      --warn: #e0a94e;
+      --danger: #ef8b83;
+      --danger-soft: #2b1917;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.72;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px 96px; }
+
+  /* ---------- DOC NAV (공통, 4개 HTML 동일) ---------- */
+  .namu-docnav{
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    background:#2c5a39;padding:10px 16px;
+  }
+  .namu-docnav a{
+    display:inline-block;text-decoration:none;color:#e8f3ea;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    transition:.15s;
+  }
+  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
+  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
+
+  /* ---------- hero ---------- */
+  header.hero {
+    padding: 32px 0 26px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: .78rem; font-weight: 700; letter-spacing: .03em;
+    color: var(--accent-deep); background: var(--accent-soft);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  header.hero h1 { font-size: 1.85rem; margin: 16px 0 10px; letter-spacing: -.01em; }
+  header.hero p.lead { color: var(--fg-soft); margin: 0; font-size: 1.02rem; max-width: 60ch; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .badge {
+    font-size: .76rem; font-weight: 700; padding: 5px 11px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-deep); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+
+  /* ---------- toc ---------- */
+  nav.toc {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 8px;
+  }
+  nav.toc h2 { margin: 0 0 10px; font-size: 1.02rem; }
+  nav.toc ol { margin: 0; padding-left: 1.15em; columns: 2; }
+  @media (max-width: 560px) { nav.toc ol { columns: 1; } }
+  nav.toc li { margin: 4px 0; font-size: .93rem; }
+  nav.toc a { color: var(--accent-deep); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 3em; }
+  h2 {
+    font-size: 1.32rem; margin: 0 0 4px; padding-top: .4em;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section:first-of-type h2, #forms h2 { border-top: none; padding-top: 0; }
+  h2 .kicker {
+    font-family: "SFMono-Regular", Consolas, monospace; font-size: .8rem; font-weight: 700;
+    color: var(--accent); letter-spacing: .02em;
+  }
+  .sec-note { color: var(--fg-soft); margin: 4px 0 20px; }
+  h3 { font-size: 1.04rem; margin: 1.6em 0 .6em; }
+  a { color: var(--accent-deep); }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--accent-soft);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+  }
+
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 22px 22px;
+  }
+  .card + .card { margin-top: 14px; }
+
+  /* ---------- pre / cmd ---------- */
+  pre {
+    position: relative;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 14px 44px 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.86rem;
+    box-shadow: var(--shadow);
+    line-height: 1.6;
+    margin: 8px 0 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; white-space: pre; }
+  .copy-btn {
+    position: absolute; top: 8px; right: 8px;
+    font-size: 0.7rem; padding: 4px 8px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08);
+    color: var(--code-fg); cursor: pointer;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.18); }
+  .where {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+    padding: 3px 10px; border-radius: 999px; margin: 10px 0 0;
+  }
+  .where.pc { background: #e6f0e9; color: #2c5a39; }
+  .where.server { background: #e3ecf7; color: #2b4f8a; }
+  .where.web { background: #f5e9fb; color: #6b2f8a; }
+  @media (prefers-color-scheme: dark) {
+    .where.pc { background: #1c2a20; color: #8fd0aa; }
+    .where.server { background: #1c2636; color: #9db6e6; }
+    .where.web { background: #2a1e33; color: #d3a6ef; }
+  }
+
+  /* ---------- callouts ---------- */
+  .ok, .warn, .tip, .danger {
+    display: flex; gap: 11px; border-radius: 11px; padding: 13px 15px; font-size: .93rem; margin: 14px 0 0;
+    align-items: flex-start;
+  }
+  .ok { background: color-mix(in srgb, var(--ok) 12%, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border)); }
+  .ok .ic { color: var(--ok); }
+  .warn { background: color-mix(in srgb, var(--warn) 14%, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border)); }
+  .warn .ic { color: var(--warn); }
+  .danger { background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border)); }
+  .danger .ic { color: var(--danger); }
+  .tip { background: var(--bg-soft); border: 1px solid var(--border); color: var(--fg-soft); }
+  .ic { flex: none; font-weight: 700; }
+  .ok b, .warn b, .danger b, .tip b { color: var(--fg); }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.88rem; }
+  th, td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-soft); }
+  td code, th code { white-space: nowrap; }
+  .hl-row td { background: var(--accent-soft); font-weight: 600; }
+
+  /* ---------- forms grid ---------- */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
+  @media (max-width: 700px) { .grid3 { grid-template-columns: 1fr; } }
+  .form-card {
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px 16px 14px;
+  }
+  .form-card.current { background: var(--accent-soft); border-color: var(--accent); }
+  .form-card .ico { font-size: 22px; }
+  .form-card h4 { margin: 6px 0 4px; font-size: .98rem; }
+  .form-card p { margin: 0; font-size: .86rem; color: var(--fg-soft); }
+  .form-card .pill {
+    display: inline-block; margin-top: 8px; font-size: .7rem; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px; background: var(--accent); color: #fff;
+  }
+
+  /* ---------- steps ---------- */
+  .step { display: flex; gap: 14px; margin: 1.3em 0; align-items: flex-start; }
+  .step .num {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .92rem; box-shadow: var(--shadow);
+  }
+  .step .body { flex: 1; min-width: 0; }
+  .step .body h4 { margin: 3px 0 6px; font-size: 1rem; }
+
+  /* ---------- decision box ---------- */
+  .decision { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+  @media (max-width: 620px) { .decision { grid-template-columns: 1fr; } }
+  .decision .opt {
+    border: 2px solid var(--border); border-radius: 12px; padding: 16px;
+    background: var(--bg-card);
+  }
+  .decision .opt.rec { border-color: var(--accent); }
+  .decision .opt .tag { font-size: .72rem; font-weight: 700; color: var(--accent-deep); }
+  .decision .opt h4 { margin: 6px 0 6px; }
+  .decision .opt p { margin: 0; font-size: .88rem; color: var(--fg-soft); }
+
+  details {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 4px 14px 10px; margin: 10px 0; background: var(--bg-card);
+  }
+  details[open] { padding-bottom: 14px; }
+  summary { cursor: pointer; font-weight: 600; padding: 10px 0; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▸ "; color: var(--accent); }
+  details[open] summary::before { content: "▾ "; }
+
+  footer {
+    margin-top: 4em; padding-top: 1.4em; border-top: 1px solid var(--border);
+    color: var(--fg-soft); font-size: 0.85rem;
+  }
+
+  @media (max-width: 480px) {
+    header.hero h1 { font-size: 1.45rem; }
+    .step { gap: 10px; }
+    .step .num { width: 26px; height: 26px; font-size: 0.85rem; }
+    pre { font-size: 0.76rem; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="namu-docnav">
+  <a href="namu_guide.html">🌳 안내서</a>
+  <a href="namu_quickstart.html">🚀 빠른 시작</a>
+  <a href="install_guide.html">🔧 설치 가이드</a>
+  <a href="remote_mcp_guide.html" class="is-current">🌐 웹에서 쓰기</a>
+</nav>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">🌐 초보자용 · 웹 브라우저의 claude.ai 전용</span>
+    <h1>NAMU 웹에서 쓰기 — 원격 MCP 셀프호스팅 가이드</h1>
+    <p class="lead">Claude Code나 agy를 설치하지 않고도, <b>웹 브라우저의 claude.ai</b>에서 NAMU 기억(교훈)을 꺼내 쓰고 기록할 수 있습니다. 이 문서는 그 방법을 안내합니다.</p>
+    <div class="badges">
+      <span class="badge">🔑 웹에선 도구 3개만</span>
+      <span class="badge">✅ 2026-07-17 실측 검증 완료</span>
+      <span class="badge">📅 기준일 2026-07-17</span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <h2>목차</h2>
+    <ol>
+      <li><a href="#forms">NAMU를 쓰는 3가지 형태</a></li>
+      <li><a href="#limits">웹에서 되는 것 / 안 되는 것</a></li>
+      <li><a href="#auth">인증 — 시크릿을 어떻게 확인하나</a></li>
+      <li><a href="#path-a">연결 절차 A — 내 PC + 터널</a></li>
+      <li><a href="#path-b">연결 절차 B — 상시 서버(Docker)</a></li>
+      <li><a href="#choose">A vs B, 뭘 고를까?</a></li>
+      <li><a href="#hosts">421 에러 해소</a></li>
+      <li><a href="#security">보안 주의</a></li>
+      <li><a href="#envref">환경변수 요약</a></li>
+    </ol>
+  </nav>
+
+  <!-- 0. 3가지 형태 -->
+  <section id="forms">
+    <h2><span class="kicker">0</span> NAMU를 쓰는 3가지 형태</h2>
+    <p class="sec-note">이 문서는 그중 <b>셀프호스팅형</b>(웹에서 쓰는 방법)만 다룹니다. 나머지 두 형태는 다른 문서를 보세요.</p>
+
+    <div class="grid3">
+      <div class="form-card">
+        <div class="ico">💻</div>
+        <h4>설치형</h4>
+        <p>내 프로젝트에 NAMU를 플러그인으로 설치해 Claude Code·agy로 씁니다. 대부분의 사용자가 쓰는 방식.</p>
+        <a class="pill" style="text-decoration:none;" href="install_guide.html">설치 가이드 →</a>
+      </div>
+      <div class="form-card">
+        <div class="ico">🛠️</div>
+        <h4>clone 개발형</h4>
+        <p>NAMU repo 자체를 clone해 그 안에서 개발합니다. NAMU를 직접 고치는 개발자용.</p>
+      </div>
+      <div class="form-card current">
+        <div class="ico">🌐</div>
+        <h4>셀프호스팅형 (이 문서)</h4>
+        <p>Claude Code·agy 없이 <b>웹 브라우저의 claude.ai</b>에서 교훈을 recall·record·search 합니다.</p>
+        <span class="pill">지금 이 문서</span>
+      </div>
+    </div>
+
+    <div class="tip"><span class="ic">💡</span><span><b>MCP가 뭔지 모르고 오셨다면</b> — MCP(Model Context Protocol)는 AI가 외부 도구·데이터에 연결할 때 쓰는 공통 규격입니다. NAMU는 이 규격으로 "교훈 저장소"를 하나의 도구 서버로 노출하고, 웹 Claude를 포함한 어떤 MCP 클라이언트든 같은 방식으로 연결할 수 있게 합니다. 이 문서는 그 서버를 <b>직접 인터넷에 상시로 띄워 운영하는(셀프호스팅)</b> 절차를 다룹니다.</span></div>
+
+    <p class="sec-note" style="margin-top:16px">앞의 두 형태는 로컬에서 CC·agy가 <code>mcp_server.py</code>를 표준입출력(stdio)으로 직접 실행합니다(네트워크를 안 탑니다). 셀프호스팅형은 같은 <b>기억 코어만</b> 네트워크 너머로 노출하는 것입니다 — 그래서 아래 1절의 한계를 반드시 먼저 읽어야 합니다.</p>
+  </section>
+
+  <!-- 1. 웹의 한계 -->
+  <section id="limits">
+    <h2><span class="kicker">1</span> 시작 전 알아둘 것 — 웹에서 되는 것 / 안 되는 것</h2>
+    <p class="sec-note">셀프호스팅형은 로컬 설치형과 겉보기엔 비슷하지만, 실제로 쓸 수 있는 기능은 훨씬 좁습니다.</p>
+
+    <div class="card">
+      <h3>✅ 되는 것 — 도구 3개</h3>
+      <p><code>namu_recall</code>(기억 꺼내기) · <code>namu_record</code>(기억 저장하기) · <code>namu_search</code>(패턴 찾기). 로컬 설치형과 완전히 같은 기억 풀을 씁니다.</p>
+
+      <h3>❌ 안 되는 것</h3>
+      <table>
+        <thead><tr><th>기능</th><th>왜 없나요</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>세션 자동 브리핑 · <code>/namu-task</code> · 서브에이전트(워커) 호출</td>
+            <td>전부 Claude Code·agy 쪽 "자동화" 기능이라 웹에는 대응 개념 자체가 없습니다. 웹 Claude가 스스로 recall을 부르게 하려면 <b>도구 설명(description)이 유일한 유도 수단</b>입니다.</td>
+          </tr>
+          <tr>
+            <td><code>namu_sync_setup</code></td>
+            <td>서버의 git 원격 저장소 주소를 재배선하는 도구입니다. 원격 호출자에게 그대로 열어두면 원격 저장소 탈취로 이어질 수 있어 웹에서는 원천 차단합니다 — 서버 쪽 동기화 배선은 운영자(자기 PC의 git 자격증명, 또는 클라우드는 배포 스크립트)가 대신합니다.</td>
+          </tr>
+          <tr>
+            <td>tasks(작업 상태)</td>
+            <td>tasks는 "프로젝트 폴더 귀속" 개념인데, 웹 대화에는 대응하는 프로젝트 폴더 개념 자체가 없습니다.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="warn"><span class="ic">⚠</span><span>즉 셀프호스팅형으로 얻는 건 "웹 브라우저에서 교훈을 조회·검색·기록"뿐입니다. NAMU의 작업 오케스트레이션 기능은 여전히 Claude Code·agy(설치형·clone 개발형) 몫입니다.</span></div>
+    </div>
+  </section>
+
+  <!-- 2. 인증 -->
+  <section id="auth">
+    <h2><span class="kicker">2</span> 인증 — 시크릿을 어떻게 확인하나</h2>
+    <p class="sec-note">서버는 두 인증 방식을 <b>동시 지원</b>하며, 설정한 조합에 따라 동작이 갈립니다.</p>
+
+    <table>
+      <thead><tr><th>설정 조합</th><th>동작</th></tr></thead>
+      <tbody>
+        <tr><td><code>NAMU_HTTP_TOKEN</code>만</td><td>주소는 <code>/mcp</code>. 모든 요청에 헤더(<code>x-api-key</code> 또는 <code>Authorization: Bearer &lt;token&gt;</code>) 검증만 통과하면 됩니다.</td></tr>
+        <tr class="hl-row"><td><code>NAMU_HTTP_PATH_SECRET</code>만 (권장)</td><td>주소가 <code>/mcp/&lt;secret&gt;</code>로 바뀝니다. 그 주소로만 요청하면 헤더 없이 통과합니다.</td></tr>
+        <tr><td>둘 다 설정</td><td><b>AND</b> — 시크릿 경로로 요청<b>하고</b> 헤더도 맞아야 통과합니다. 하나만 맞으면 실패합니다.</td></tr>
+        <tr><td>둘 다 없음 + <code>NAMU_HTTP_ALLOW_NOAUTH=1</code></td><td>무인증. <b>로컬 테스트 전용</b> — 공개 인터넷에는 절대 쓰지 마세요.</td></tr>
+        <tr><td>둘 다 없음(위 옵션도 없음)</td><td>서버가 <b>기동 자체를 거부</b>합니다(무인증 공개 노출 방지).</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tip"><span class="ic">💡</span><span><b>권장: 시크릿 경로 단독 모드.</b> claude.ai의 Request headers(헤더) 설정 UI는 2026-07 기준 베타·점진 롤아웃 중이라 계정에 아예 안 보일 수 있습니다. 헤더 UI가 없으면 <code>NAMU_HTTP_PATH_SECRET</code>만 설정하고 <b>URL 자체</b>(<code>https://&lt;host&gt;/mcp/&lt;secret&gt;</code>)로 인증하는 방식이 가장 간단합니다. 헤더 UI가 보인다면 <code>NAMU_HTTP_TOKEN</code>을 추가로 얹어 이중화해도 됩니다.</span></div>
+    <div class="tip"><span class="ic">💡</span><span>헤더 인증을 쓸 경우 서버가 실제로 검사하는 헤더 이름은 <code>x-api-key</code> 또는 <code>Authorization: Bearer &lt;token&gt;</code> 둘뿐입니다. 커넥터 등록 시 헤더 이름을 반드시 이 중 하나로 맞추세요.</span></div>
+  </section>
+
+  <!-- 3. 절차 A -->
+  <section id="path-a">
+    <h2><span class="kicker">3</span> 연결 절차 A — 내 PC + 터널 (지금 바로 체험)</h2>
+    <p class="sec-note">배포물이 필요 없는 가장 간단한 경로입니다. "지금 당장 체험해보고 싶다"에 최적화돼 있습니다. 대신 PC를 계속 켜둬야 하고, 터널 주소가 바뀔 때마다 커넥터를 다시 등록해야 합니다.</p>
+
+    <div class="card">
+      <div class="step">
+        <span class="num">1</span>
+        <div class="body">
+          <h4>서버를 기동합니다</h4>
+          <p>clone 개발형이면 repo 루트에서, 설치형이면 설치된 <code>namu-plugin</code> 폴더 경로에서 실행합니다.</p>
+          <span class="where pc">🖥 로컬 PC 터미널</span>
+          <pre><code># 시크릿 경로 단독 모드 (권장)
+NAMU_HTTP_PATH_SECRET="&lt;임의의 긴 문자열&gt;" \
+  uv run --script namu-plugin/http_server.py</code></pre>
+          <p style="margin-top:10px">기본 바인드는 <code>127.0.0.1:8765</code>(자기 PC 안에서만 접속 가능)입니다 — 터널 클라이언트가 같은 PC에서 이 포트에 접속하므로 그대로 충분합니다.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">2</span>
+        <div class="body">
+          <h4>터널로 공개 HTTPS 주소를 확보합니다</h4>
+          <p>claude.ai는 <b>공개 인터넷에서 접근 가능한 URL</b>이 필수입니다(사설망·VPN 뒤는 불가). PC를 상시 공개 서버로 열 수 없다면 터널을 씁니다 — 지금 이 PC의 로컬 서버를 외부에서도 접속 가능하게 임시로 뚫어주는 중계 통로입니다.</p>
+
+          <table>
+            <thead><tr><th>터널</th><th>실측 결과</th></tr></thead>
+            <tbody>
+              <tr><td>Cloudflare quick tunnel</td><td>URL은 발급되나 API가 간헐적으로 500 — 불안정</td></tr>
+              <tr><td>localhost.run</td><td>URL은 발급되지만 실제 포워딩 자체가 안 됨 — 실사용 불가</td></tr>
+              <tr class="hl-row"><td>pinggy (권장)</td><td>실제로 동작 확인됨 — 터널 경유 실호출까지 성공</td></tr>
+            </tbody>
+          </table>
+          <div class="warn"><span class="ic">⚠</span><span>무료 터널 서비스 상태는 계속 바뀔 수 있습니다. 특정 터널 하나에 고정하지 말고, 아래 3단계 curl 검증을 매번 거치세요.</span></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">3</span>
+        <div class="body">
+          <h4>claude.ai에 등록하기 전, curl로 먼저 확인합니다</h4>
+          <p>curl은 터미널에서 HTTP 요청을 직접 보내볼 수 있는 도구입니다 — 브라우저 없이 서버가 살아있는지 확인할 때 씁니다.</p>
+          <span class="where pc">🖥 로컬 PC 터미널 (터널 URL을 향해 요청)</span>
+          <pre><code>curl -sS -X POST "https://&lt;터널 URL&gt;/mcp/&lt;secret&gt;" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'</code></pre>
+          <div class="ok"><span class="ic">✓</span><span>정상 JSON-RPC 응답(<code>result</code> 포함)이 오면 등록 단계로 넘어가세요. 타임아웃·연결거부·502류 응답이면 "URL은 있는데 안 뚫린 것"이니 다른 터널로 바꾸세요.</span></div>
+          <p style="margin-top:10px">터널이 도메인을 발급하면 <a href="#hosts"><code>NAMU_HTTP_ALLOWED_HOSTS</code></a>도 함께 설정해야 합니다(안 하면 421 에러).</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="num">4</span>
+        <div class="body">
+          <h4>claude.ai에 Custom Connector를 등록합니다</h4>
+          <p>claude.ai → 설정 → Connectors → <b>Add custom connector</b>. Remote MCP server URL에 시크릿 경로 단독 모드라면 <code>https://&lt;터널 URL&gt;/mcp/&lt;secret&gt;</code>을 넣습니다. 헤더 인증을 함께 쓴다면 URL은 <code>/mcp</code>(또는 <code>/mcp/&lt;secret&gt;</code>)로 두고 Request headers에 <code>x-api-key: &lt;토큰&gt;</code>을 추가합니다.</p>
+          <p>등록 후 대화에서 "namu 메모리에서 recall 해봐"처럼 직접 도구 호출을 유도해 동작을 확인하세요 — 자동 브리핑이 없으므로 첫 호출은 직접 유도해야 합니다.</p>
+          <div class="warn"><span class="ic">⚠</span><span>PC가 꺼지거나 서버 프로세스가 죽으면 웹에서 접속이 끊깁니다. 상시 가동이 필요하면 아래 5절(절차 B)로 가세요.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 절차 B -->
+  <section id="path-b">
+    <h2><span class="kicker">4</span> 연결 절차 B — 상시 서버 (클라우드 컨테이너)</h2>
+    <p class="sec-note">"한 번 등록해두고 계속 쓰고 싶다"에 최적화된 경로입니다. PC를 껐다 켜도 죽지 않는 상시 서버(사용자 소유 미니PC·VPS 등)와 고정 도메인이 있다는 전제입니다. 고정 도메인이면 claude.ai 커넥터 등록도 최초 1회로 끝납니다.</p>
+
+    <div class="ok"><span class="ic">✓</span><span><b>검증 상태</b> — 2026-07-17, 사용자 소유 상시 서버에 실제 배포해 전 구간(빌드 → 고정 터널 → claude.ai 커넥터 등록 → 웹에서 recall/search/record 실호출 → <b>다른 PC에서도 그 기록이 조회됨</b>)을 실측 검증했습니다. 다만 Railway·Fly.io 같은 PaaS로 배포하는 경로는 아직 검증된 적이 없습니다.</span></div>
+
+    <div class="card">
+      <h3>4-1. 사전 준비</h3>
+      <p>교훈 저장소로 쓸 <b>비공개 GitHub 저장소</b>(설치형에서 쓰던 저장소를 재사용해도 됩니다) — 여기에 push 권한이 있는 PAT(개인 액세스 토큰, 비밀번호처럼 절대 노출하면 안 됩니다)가 필요합니다.</p>
+      <pre><code>https://x-access-token:&lt;PAT&gt;@github.com/&lt;user&gt;/&lt;repo&gt;.git</code></pre>
+
+      <h3>4-2. 시크릿을 어디에 둘까 — 계층화</h3>
+      <p>이 컨테이너를 기동하려면 최소 두 값(<code>NAMU_SYNC_REMOTE</code>, 그리고 <code>NAMU_HTTP_PATH_SECRET</code> 또는 <code>NAMU_HTTP_TOKEN</code>)이 필요합니다. 이런 값을 <b>시크릿</b>이라 부릅니다 — 외부에 노출되면 안 되는 값입니다.</p>
+
+      <div class="decision">
+        <div class="opt rec">
+          <span class="tag">기본 경로 (대부분에게 권장)</span>
+          <h4>서버 로컬 <code>.env</code> 파일 / 플랫폼 환경변수 화면</h4>
+          <p>전제 조건이 가장 적고, 시크릿이 필요한 서버 한 곳에만 존재해 노출 표면이 좁습니다. 별도 CI 구축이 필요 없습니다.</p>
+        </div>
+        <div class="opt">
+          <span class="tag">부록 (고급 — 이미 CI/CD가 있는 사람만)</span>
+          <h4>CI 시크릿 저장소(GitHub Actions Secrets 등)</h4>
+          <p>push하면 자동으로 서버까지 배포되는 파이프라인을 이미 운영 중일 때만 의미가 있습니다. 없다면 왼쪽 기본 경로로 충분합니다.</p>
+        </div>
+      </div>
+
+      <span class="where server">🖧 서버, docker-compose.yml과 같은 폴더</span>
+      <pre><code># docker-compose.yml
+services:
+  namu-remote-mcp:
+    image: namu-remote-mcp:latest   # 빌드는 4-3에서 미리 해둡니다
+    env_file:
+      - .env                        # 시크릿 2종은 여기서 읽어옵니다
+    environment:
+      NAMU_HTTP_ALLOWED_HOSTS: "mcp.example.com"
+    ports:
+      - "8765:8765"
+    volumes:
+      - namu-data:/root/.namu       # 컨테이너를 지워도 교훈 데이터가 남도록
+    restart: unless-stopped
+
+volumes:
+  namu-data:</code></pre>
+      <span class="where server">🖧 서버, .env (반드시 git에 커밋하지 말 것)</span>
+      <pre><code>NAMU_SYNC_REMOTE=https://x-access-token:&lt;PAT&gt;@github.com/&lt;user&gt;/&lt;repo&gt;.git
+NAMU_HTTP_PATH_SECRET=&lt;임의의 긴 문자열&gt;</code></pre>
+
+      <div class="warn"><span class="ic">⚠</span><span><b><code>.env</code>가 조용히 사라지는 사고 — 일반 원칙.</b> 배포 자동화가 "원본 <code>.env</code> → 서비스별 폴더에 사본 복사" 구조라면, 사본을 직접 고쳐도 다음 배포에서 원본으로 덮어써져 수정 사항이 소리 없이 지워질 수 있습니다. <code>.env</code>를 고치기 전에 "이게 원본인지, 매 배포마다 재생성되는 사본인지"부터 확인하세요.</span></div>
+
+      <h3>4-3. 이미지 빌드 · 기동</h3>
+      <p><b>이미지</b>는 서버 실행에 필요한 모든 것을 굳혀둔 꾸러미, <b>컨테이너</b>는 그 이미지를 실제로 띄운 상태입니다. 빌드는 <code>docker build</code>로 따로 하고, compose는 완성된 이미지 태그만 참조하는 패턴을 권장합니다.</p>
+
+      <div class="danger"><span class="ic">⛔</span><span><b>Windows 함정</b> — Windows Docker Desktop의 <code>docker compose</code>는 빌드 소스 위치에 GitHub URL을 직접 넣으면 로컬 파일 경로로 잘못 해석해 빌드가 실패합니다. 그래서 compose 파일 안에는 GitHub URL을 넣지 말고, 빌드는 아래처럼 별도 <code>docker build</code> 명령으로 분리하세요.</span></div>
+
+      <span class="where server">🖧 서버 터미널</span>
+      <pre><code>docker build -f deploy/Dockerfile -t namu-remote-mcp:latest \
+  'https://github.com/onmiso-hash/namu-agent.git#v0.1.25'</code></pre>
+      <p style="margin-top:10px">PowerShell(Windows 서버)에서 실행한다면 <b>반드시 URL을 작은따옴표로 감싸세요</b> — 안 그러면 <code>#v0.1.25</code>가 주석 시작 기호로 오인돼 잘려나갑니다.</p>
+
+      <span class="where server">🖧 서버 터미널 (docker-compose.yml·.env가 있는 폴더)</span>
+      <pre><code>docker compose up -d</code></pre>
+
+      <p class="sec-note" style="margin-top:14px">컨테이너 기동 시 자동으로 처리되는 것: <code>NAMU_SYNC_REMOTE</code>가 없으면 즉시 기동 거부 → <code>~/.namu</code>가 없으면 clone, 있으면 pull → git identity가 비어 있으면 기본값으로 채움 → git remote를 자동 배선 → <code>http_server.py</code> 기동. 각 단계는 실패 시 조용히 넘어가지 않고 즉시 종료합니다.</p>
+
+      <h3>4-4. 알려진 캐비엇</h3>
+      <ul>
+        <li><b><code>$PORT</code> 자동 브리징 없음</b> — Railway 등 일부 PaaS는 컨테이너가 <code>$PORT</code> 환경변수로 리슨하길 기대합니다. 이 이미지는 <code>NAMU_HTTP_PORT</code> 고정 기본값(8765)이라 자동으로 따라가지 않습니다. 해당 플랫폼이면 <code>NAMU_HTTP_PORT</code>를 직접 override해야 합니다.</li>
+        <li><b>PaaS 배포 자체가 아직 검증 밖입니다</b> — 자기 소유 서버에 compose로 올리는 경로는 실측 완료됐지만, Railway·Fly.io 같은 플랫폼 배포는 이 문서만으로 충분한지 확인된 바 없습니다.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 5. 선택 기준 -->
+  <section id="choose">
+    <h2><span class="kicker">5</span> A vs B, 뭘 고를까?</h2>
+    <div class="decision">
+      <div class="opt">
+        <span class="tag">🚀 절차 A — 내 PC + 터널</span>
+        <h4>지금 바로 체험해보고 싶다면</h4>
+        <p>자기 소유 도메인·상시 서버가 없어도 몇 분 안에 웹 연결까지 끝낼 수 있습니다. 대신 PC를 계속 켜둬야 하고, 터널 주소가 바뀔 때마다 커넥터를 다시 등록해야 합니다.</p>
+      </div>
+      <div class="opt rec">
+        <span class="tag">🏠 절차 B — 상시 서버(Docker)</span>
+        <h4>자기 소유 상시 서버·고정 도메인이 있다면</h4>
+        <p>터널 없이 곧장 이쪽으로 가는 편이 낫습니다. 주소가 고정이라 커넥터 재등록도 최초 1회뿐입니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. 421 -->
+  <section id="hosts">
+    <h2><span class="kicker">6</span> <code>NAMU_HTTP_ALLOWED_HOSTS</code> — 421 에러 해소</h2>
+    <p class="sec-note">터널이나 리버스 프록시를 거쳐 접속하면 <code>421 Misdirected Request</code>가 날 수 있습니다.</p>
+    <div class="card">
+      <p><b>원인</b> — 서버가 DNS rebinding(공격자가 도메인을 악용해 브라우저가 사설 네트워크로 요청을 보내게 속이는 공격) 방지를 자동으로 켜고, 허용 <code>Host</code> 헤더를 로컬호스트로만 고정하기 때문입니다. 터널·프록시 도메인의 <code>Host</code> 헤더는 이 목록에 없어 거부됩니다.</p>
+      <p><b>해법</b> — 터널·프록시 도메인을 쉼표로 구분해 추가합니다(로컬호스트 허용은 그대로 유지된 채 확장됩니다):</p>
+      <span class="where pc">🖥 로컬 PC 터미널</span>
+      <pre><code>NAMU_HTTP_ALLOWED_HOSTS="my-tunnel-1.example.com,my-tunnel-2.example.com" \
+  uv run --script namu-plugin/http_server.py</code></pre>
+      <div class="tip"><span class="ic">💡</span><span><code>*</code>를 주면 이 보호 자체를 비활성화합니다(도메인이 배포마다 유동적일 때의 명시적 opt-out). <b>컨테이너 이미지는 기본값이 이미 <code>*</code></b>입니다. 매번 도메인을 알 수 있는 환경이라면 실제 도메인을 지정하는 편이 더 안전합니다.</span></div>
+    </div>
+  </section>
+
+  <!-- 7. 보안 -->
+  <section id="security">
+    <h2><span class="kicker">7</span> 보안 주의</h2>
+    <div class="card">
+      <div class="danger"><span class="ic">⛔</span><span><b>uvicorn(내부 웹 서버) 액세스 로그에 시크릿 경로가 평문으로 남습니다.</b> <code>NAMU_HTTP_PATH_SECRET</code>을 URL 경로로 쓰는 방식의 구조적 특성입니다 — 로그를 공유·노출하면 그 즉시 시크릿이 유출된 것과 같습니다. 유출이 의심되면 지체 없이 값을 교체(서버 재기동)하세요.</span></div>
+      <div class="warn"><span class="ic">⚠</span><span>터널을 끝낼 때 시크릿도 함께 폐기(교체)하는 것을 권장합니다 — 터널 URL은 만료돼도, 같은 시크릿을 다음 세션에 재사용하면 과거 로그에 남은 값이 여전히 유효합니다.</span></div>
+      <div class="tip"><span class="ic">💡</span><span>이 서버는 HTTPS를 직접 종단하지 않습니다 — 터널(cloudflared·pinggy 등)이나 플랫폼(Railway 등)이 HTTPS를 담당한다는 전제입니다. HTTP 평문 구간이 남지 않도록 반드시 HTTPS를 종단하는 터널·플랫폼을 쓰세요.</span></div>
+    </div>
+  </section>
+
+  <!-- 8. 환경변수 요약 -->
+  <section id="envref">
+    <h2><span class="kicker">8</span> 환경변수 요약</h2>
+    <p class="sec-note">자주 쓰는 것만 추렸습니다. 전체 목록은 하단 GitHub 원문을 참고하세요.</p>
+    <table>
+      <thead><tr><th>환경변수</th><th>기본값</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td><code>NAMU_HTTP_PATH_SECRET</code></td><td>미설정</td><td>시크릿 URL 경로. 설정 시 주소가 <code>/mcp/&lt;secret&gt;</code>로 바뀝니다(권장 방식)</td></tr>
+        <tr><td><code>NAMU_HTTP_TOKEN</code></td><td>미설정</td><td>헤더 인증 토큰(<code>x-api-key</code> 또는 <code>Authorization: Bearer</code>)</td></tr>
+        <tr><td><code>NAMU_HTTP_ALLOW_NOAUTH</code></td><td>off</td><td><code>1</code>이면 무인증 기동 허용. 로컬 테스트 전용, 공개 노출 금지</td></tr>
+        <tr><td><code>NAMU_HTTP_HOST</code></td><td><code>127.0.0.1</code></td><td>바인드 호스트. 컨테이너는 <code>0.0.0.0</code>으로 override됨</td></tr>
+        <tr><td><code>NAMU_HTTP_PORT</code></td><td><code>8765</code></td><td>바인드 포트</td></tr>
+        <tr><td><code>NAMU_HTTP_ALLOWED_HOSTS</code></td><td>로컬호스트만</td><td>421 해소용 허용 <code>Host</code> 목록. <code>*</code>는 비활성화. 컨테이너 기본값은 <code>*</code></td></tr>
+        <tr><td><code>NAMU_SYNC_REMOTE</code></td><td>없음(컨테이너 전용)</td><td>클라우드 컨테이너가 <code>~/.namu</code>를 clone/pull할 git remote URL. 미설정이면 기동 거부</td></tr>
+        <tr><td><code>NAMU_MACHINE</code></td><td>호스트명</td><td>기록된 교훈의 machine 필드. 컨테이너 기본값은 <code>web</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    이 문서는 초보자용 요약본입니다. 인증 메커니즘 세부 구현·CI 부록·전체 환경변수 표 등 더 깊은 내용은 GitHub의
+    <a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/remote_mcp_guide.md">remote_mcp_guide.md</a>를 참고하세요.
+    <br>설치형·clone 개발형 안내는 <a href="install_guide.html">설치 가이드</a>, 전체 그림은 <a href="namu_guide.html">안내서</a>를 참고하세요.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  try {
+    var blocks = document.querySelectorAll('pre');
+    blocks.forEach(function (pre) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copy-btn';
+      btn.textContent = '복사';
+      btn.addEventListener('click', function () {
+        var code = pre.querySelector('code');
+        var text = code ? code.textContent : pre.textContent;
+        var done = function () {
+          btn.textContent = '복사됨';
+          setTimeout(function () { btn.textContent = '복사'; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {});
+        } else {
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            done();
+          } catch (e) {}
+        }
+      });
+      pre.appendChild(btn);
+    });
+  } catch (e) {}
+})();
+</script>
+
+</body>
+</html>

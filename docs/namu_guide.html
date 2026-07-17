@@ -34,6 +34,20 @@
   }
   .wrap{max-width:860px;margin:0 auto;padding:0 20px 80px;}
 
+  /* ---------- DOC NAV (공통, 4개 HTML 동일) ---------- */
+  .namu-docnav{
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    background:#2c5a39;padding:10px 16px;
+  }
+  .namu-docnav a{
+    display:inline-block;text-decoration:none;color:#e8f3ea;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    transition:.15s;
+  }
+  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
+  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
+
   /* ---------- HERO ---------- */
   header.hero{
     background:
@@ -248,6 +262,13 @@
 </head>
 <body>
 
+<nav class="namu-docnav">
+  <a href="namu_guide.html" class="is-current">🌳 안내서</a>
+  <a href="namu_quickstart.html">🚀 빠른 시작</a>
+  <a href="install_guide.html">🔧 설치 가이드</a>
+  <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
+</nav>
+
 <header class="hero">
   <div class="tree">🌳</div>
   <h1>NAMU 에이전트 시스템</h1>
@@ -256,7 +277,7 @@
     <span class="badge">🎯 벤더 독립</span>
     <span class="badge">🧠 공유 기억</span>
     <span class="badge">📈 자가학습</span>
-    <br><span style="opacity:.8;font-size:12px;display:inline-block;margin-top:10px;">📅 2026년 7월 16일 기준 · 초보자용 안내서</span>
+    <br><span style="opacity:.8;font-size:12px;display:inline-block;margin-top:10px;">📅 2026년 7월 17일 기준 · 초보자용 안내서</span>
   </div>
 </header>
 
@@ -265,6 +286,7 @@
   <nav class="toc">
     <h2>📖 목차</h2>
     <ol>
+      <li><a href="#hub">어떤 문서를 볼까요?</a></li>
       <li><a href="#what">NAMU가 뭐예요?</a></li>
       <li><a href="#why">왜 만들어요? (기획)</a></li>
       <li><a href="#how">어떻게 만들어요? (설계)</a></li>
@@ -274,6 +296,36 @@
       <li><a href="#use">사용법</a></li>
     </ol>
   </nav>
+
+  <!-- 0. HUB -->
+  <section id="hub">
+    <div class="card">
+      <h2 class="sec" style="margin-bottom:6px;">📚 어떤 문서를 볼까요?</h2>
+      <p class="lead" style="padding-left:0;">이 안내서 말고도 상황에 맞는 문서가 3개 더 있어요 — 지금 보는 문서를 포함해 4종이 서로 연결돼 있어요.</p>
+      <div class="grid">
+        <div class="tile" style="background:var(--leaf-light);border-color:#cfe6d4;">
+          <div class="ico">🌳</div>
+          <h4>안내서 (지금 이 문서)</h4>
+          <p>NAMU가 뭔지, 왜 만들었는지, 어떻게 쓰는지 전체 그림을 훑어보고 싶을 때</p>
+        </div>
+        <div class="tile">
+          <div class="ico">🚀</div>
+          <h4><a href="namu_quickstart.html" style="color:var(--leaf-deep);">빠른 시작</a></h4>
+          <p>복사·붙여넣기만으로 설치부터 업데이트까지 빠르게 끝내고 싶을 때</p>
+        </div>
+        <div class="tile">
+          <div class="ico">🔧</div>
+          <h4><a href="install_guide.html" style="color:var(--leaf-deep);">설치 가이드</a></h4>
+          <p>설치 방식별 상세 절차·함정·문제 해결까지 깊이 있게 보고 싶을 때</p>
+        </div>
+        <div class="tile">
+          <div class="ico">🌐</div>
+          <h4><a href="remote_mcp_guide.html" style="color:var(--leaf-deep);">웹에서 쓰기</a></h4>
+          <p>Claude Code·agy 없이 웹 브라우저의 claude.ai에서만 NAMU 기억을 쓰고 싶을 때</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- 1. WHAT -->
   <section id="what">
@@ -477,7 +529,7 @@
         </div>
         <div class="step">
           <span class="dot done">✓</span>
-          <h4>플러그인 패키징(현재 0.1.23) + agy용 글루 <span class="st done">완료</span></h4>
+          <h4>플러그인 패키징(현재 0.1.25) + agy용 글루 <span class="st done">완료</span></h4>
           <p>한 번에 설치되는 Claude Code 플러그인으로 묶었어요. 같은 플러그인을 agy(안티그래비티)에 설치하면 <strong>제미나이에서도 같은 기억</strong>을 써요.</p>
         </div>
         <div class="step">
@@ -494,6 +546,11 @@
           <span class="dot done">✓</span>
           <h4>statusLine 원클릭 연결 + 원클릭 업데이트 <span class="st done">완료</span></h4>
           <p>화면 하단에 <code class="inline">[Namu 버전] [모델] 폴더 | 📌 진행 task | 컨텍스트% · 5h(리셋까지 남은 시간) · 7d(리셋까지 남은 시간)</code>를 보여주는 statusLine이 플러그인에 함께 들어와요. Claude Code 사양상 자동으로 등록되지는 않지만, 대화창에서 <code class="inline">/namu:statusline-setup</code> 한 번이면 Claude Code·agy 양쪽을 자동 감지해 연결해줘요. 플러그인 코드가 새로 바뀌었을 때도 <code class="inline">/namu:update</code> 한 번이면 설치된 호스트를 전부 최신 버전으로 올리고 statusLine 경로까지 자동으로 다시 연결해줘요.</p>
+        </div>
+        <div class="step">
+          <span class="dot done">✓</span>
+          <h4>웹 claude.ai 연결(원격 MCP) <span class="st done">완료</span></h4>
+          <p>Claude Code·agy 없이 <strong>웹 브라우저의 claude.ai</strong>에서도 NAMU 기억을 쓸 수 있게 됐어요. <code class="inline">http_server.py</code>를 인터넷에 상시로 띄워 claude.ai의 Custom Connector(커스텀 커넥터)로 연결하는 방식이에요. 사용자 소유 상시 서버로 전 구간(서버 배포 → 고정 주소 터널 → 웹 연결 → 실제 기록)을 실측 검증했어요. 다만 웹에서는 교훈 recall·record·search 3가지만 되고, 세션 브리핑이나 <code class="inline">/namu-task</code> 같은 자동화는 여전히 CC/agy 몫이에요 — 자세한 절차와 한계는 <a href="remote_mcp_guide.html" style="color:var(--leaf-deep);font-weight:700;">웹에서 쓰기 가이드</a>를 보세요.</p>
         </div>
       </div>
     </div>
@@ -593,6 +650,12 @@ claude plugin install namu@namu-marketplace</pre>
         <p>NAMU 코드 자체를 고치는 개발자라면 그 repo는 <strong>받아오기(pull) → 작업 → 올리기(push)</strong>로 <em>코드</em>를 관리해요. 하지만 <strong>기억 저장 위치는 설치형과 똑같이 <code class="inline">~/.namu</code></strong>예요(저장소 안이 아니에요) — 그래서 교훈·작업 상태의 백업·동기화는 위 설치형과 완전히 같은 방식이에요. 일반 사용자는 해당하지 않아요.</p>
       </div>
 
+      <div class="tile" style="background:var(--soil);margin-top:14px;">
+        <div class="ico">🌐</div>
+        <h4>셀프호스팅형 — Claude Code/agy 없이 웹 브라우저에서만</h4>
+        <p>설치도, 프로그램 실행도 없이 <strong>웹 브라우저의 claude.ai</strong>에서만 NAMU 기억을 쓰고 싶다면 이 형태예요. NAMU의 기억 서버(<code class="inline">http_server.py</code>)를 인터넷에 상시로 띄워 claude.ai의 Custom Connector(커스텀 커넥터)로 연결해요. 대신 <strong>recall·record·search 3가지만</strong> 되고, 세션 브리핑·<code class="inline">/namu-task</code> 같은 자동화는 없어요 — 절차·한계 모두 <a href="remote_mcp_guide.html" style="color:var(--leaf-deep);font-weight:700;">→ remote_mcp_guide.html 보러 가기</a></p>
+      </div>
+
       <div class="analogy">
         <span class="tag">💡 저장 위치, 한 줄 정리</span>
         <p>교훈도 작업 상태(tasks)도 모두 중앙 <code class="inline">~/.namu</code>에 담겨요 — 교훈은 프로젝트 구분 없이 한 풀에, 작업 상태는 <code class="inline">~/.namu/tasks/&lt;프로젝트폴더명&gt;/</code>처럼 프로젝트별 칸으로 나눠서요. 예전엔 작업 상태만 각 프로젝트 폴더에 뒀는데 지금은 중앙으로 통합됐어요 — 자세한 이유는 4장 참고.</p>
@@ -611,7 +674,7 @@ claude plugin install namu@namu-marketplace</pre>
     <div class="tree">🌱</div>
     <p>NAMU는 지금도 한 그루씩 자라는 중이에요.<br>
     기억이 쌓일수록 더 똑똑해지는, 나만의 AI 시스템.</p>
-    <p style="opacity:.6;margin-top:14px;">📅 2026-07-16 갱신 · 초보자용 안내서</p>
+    <p style="opacity:.6;margin-top:14px;">📅 2026-07-17 갱신 · 초보자용 안내서</p>
   </footer>
 
 </div>
