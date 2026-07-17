@@ -10,6 +10,7 @@ from pathlib import Path
 
 import config as cfg
 import memory_sync
+import profile
 from mcp.server.fastmcp import FastMCP
 from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
@@ -67,21 +68,28 @@ def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
 
 @mcp.tool()
 def namu_recall(query: str | None = None, task_type: str | None = None, limit: int = 5):
-    """Load relevant past learnings BEFORE starting a task (context loading).
-    Use at task/session start to recall how similar work went before. Returns
-    something useful even on weak matches: if the query matches nothing, falls
-    back to the most recent entries. For warming up context, not precise analysis.
-    For pattern/trend analysis use namu_search instead.
+    """Load relevant past memory BEFORE starting a task (context loading).
+    Use at task/session start to recall how similar work went before and what
+    facts/preferences are on file. Returns something useful even on weak
+    matches: if the query matches nothing, learnings falls back to the most
+    recent entries. For warming up context, not precise analysis. For
+    pattern/trend analysis use namu_search instead.
 
     Args:
-      query: topic keywords (optional; omit to get the most recent entries)
-      task_type: filter by code/doc/analysis/other (optional)
-      limit: max entries (default 5, small for token efficiency)
-    Returns: list of learning dicts (timestamp, task, outcome, reason, tags, ...)
+      query: topic keywords (optional; omit to get the most recent learnings)
+      task_type: filter by code/doc/analysis/other (optional; learnings only)
+      limit: max learnings entries (default 5, small for token efficiency)
+    Returns: two-bowl dict —
+      {"profile": [...active facts/preferences, all of them, no limit...],
+       "learnings": [...lesson/note dicts: timestamp, task, outcome, reason,
+       kind, tags, ...]}
     """
     _ensure_db()
     with closing(get_conn()) as conn:
-        return _recall(conn, query, task_type, limit)
+        return {
+            "profile": profile.active(),
+            "learnings": _recall(conn, query, task_type, limit),
+        }
 
 
 @mcp.tool()
@@ -105,26 +113,63 @@ def namu_search(query: str, outcome_filter: str | None = None, limit: int = 10):
 
 @mcp.tool()
 def namu_record(
-    task: str,
-    outcome: str,
-    reason: str,
+    task: str | None = None,
+    outcome: str | None = None,
+    reason: str | None = None,
     task_type: str = "other",
     verified_by: str = "ai",
     tags: list[str] | None = None,
+    kind: str = "lesson",
+    subject: str | None = None,
+    statement: str | None = None,
+    source: str | None = None,
+    supersedes: str | None = None,
 ):
-    """Record a task outcome AND the reasoning behind it (append-only self-learning).
-    Call after finishing a task. 'reason' is MANDATORY — later pattern analysis
-    depends on it; an empty reason is rejected (ValueError). Writes learnings.yaml
-    first (source of truth), then the SQLite cache. id/timestamp/machine are filled
-    in automatically by the server.
+    """Record memory into one of two bowls (append-only self-learning).
+    Which bowl depends on `kind`:
+      - kind='lesson' (default): a task outcome AND the reasoning behind it,
+        into learnings.yaml. Call after finishing a task when there's a
+        generalizable pattern worth keeping. 'reason' is MANDATORY (empty
+        rejected with ValueError). 'outcome' is required too
+        ('success'/'failure'/'partial'). Storage trigger: AI's own judgment
+        that the outcome/reason is worth remembering — call directly, no need
+        to ask first.
+      - kind='note': a conversation snippet worth keeping, also into
+        learnings.yaml (kind differentiates it from 'lesson'; no success/
+        failure concept so 'outcome' may be omitted). 'reason' still
+        MANDATORY. Storage trigger: only when the user explicitly asks to
+        remember this conversation (e.g. "remember this").
+      - kind='fact': a fact or preference (user/environment/preference-ish
+        subject), into the separate profile.yaml bowl (no SQLite cache,
+        loaded whole every time). Use subject/statement/source/supersedes
+        instead of task/outcome/reason. 'source' is MANDATORY — WHY/how you
+        know this is true (empty rejected with ValueError). To correct a
+        prior fact, don't edit it — record a new one with `supersedes` set
+        to the old entry's id (profile.yaml is append-only; the old entry is
+        superseded, not deleted). Storage trigger (soft policy only, NOT
+        enforced by code): AI should propose ("should I remember this?") and
+        get the user's agreement before calling with kind='fact'.
+
+    Writes the yaml first (source of truth), then the SQLite cache for
+    lesson/note (fact has no cache). id/timestamp/machine are filled in
+    automatically by the server.
 
     Args:
-      task: what was done
-      outcome: 'success' | 'failure' | 'partial'
-      reason: WHY it succeeded/failed (required, non-empty)
-      task_type: code/doc/analysis/other (default 'other')
+      task: what was done (lesson/note only)
+      outcome: 'success' | 'failure' | 'partial' (lesson: required; note: optional)
+      reason: WHY it succeeded/failed, or why this note matters (lesson/note,
+        required, non-empty)
+      task_type: code/doc/analysis/other (default 'other'; lesson/note only)
       verified_by: 'human'/'ai'/'unverified' (default 'ai' = AI-judged)
       tags: list of string tags (optional)
+      kind: 'lesson' (default) | 'note' | 'fact' — selects the bowl and
+        validation rules, see above
+      subject: what/who this fact is about, free-form (fact only, e.g.
+        user/environment/preference)
+      statement: the fact/preference itself (fact only)
+      source: WHY/how you know this is true (fact only, required, non-empty)
+      supersedes: id of the prior fact entry this one corrects (fact only,
+        optional)
     Returns: the new entry's ULID (str)
     """
     # namu-38: samsung 라이브 실측에서 record 직후 git 단계까지 12분 공백이
@@ -134,11 +179,23 @@ def namu_record(
     t0 = time.perf_counter()
     _ensure_db()
     t1 = time.perf_counter()
-    entry_id = record(task, outcome, reason, task_type, verified_by, _normalize_tags(tags))
+    if kind in ("lesson", "note"):
+        entry_id = record(
+            task, outcome, reason, task_type, verified_by, _normalize_tags(tags), kind=kind
+        )
+    elif kind == "fact":
+        vb = verified_by if verified_by in ("human", "ai", "unverified") else "human"
+        entry_id = profile.record_fact(
+            subject, statement, source, supersedes=supersedes,
+            verified_by=vb, tags=_normalize_tags(tags),
+        )
+    else:
+        raise ValueError("kind는 'lesson'/'note'/'fact' 중 하나여야 합니다")
     t2 = time.perf_counter()
     # 설치형(~/.namu) 자동 동기화 활성 시에만 실제 push가 일어난다(sync_enabled 하드가드).
     # 반환값이 False여도(비활성/실패) record 자체의 성공 결과에는 영향을 주지 않는다.
-    memory_sync.sync_push(f"learn: {task[:50]} ({cfg.NAMU_MACHINE})")
+    label = (task or statement or subject or "")[:50]
+    memory_sync.sync_push(f"learn: {label} ({cfg.NAMU_MACHINE})")
     t3 = time.perf_counter()
     memory_sync._append_sync_log(
         f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"

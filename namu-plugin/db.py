@@ -14,11 +14,12 @@ CREATE TABLE IF NOT EXISTS learnings (
     timestamp   TEXT NOT NULL,
     task        TEXT NOT NULL,
     task_type   TEXT,
-    outcome     TEXT NOT NULL CHECK(outcome IN ('success','failure','partial')),
+    outcome     TEXT CHECK(outcome IS NULL OR outcome IN ('success','failure','partial')),
     reason      TEXT NOT NULL,
     machine     TEXT,
     verified_by TEXT CHECK(verified_by IN ('human','ai','unverified')),
-    tags        TEXT
+    tags        TEXT,
+    kind        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_learnings_type    ON learnings(task_type);
@@ -48,18 +49,28 @@ def init_db() -> None:
             conn.executescript(_SCHEMA)
 
 
+_VALID_KINDS = {"lesson", "note"}
+
+
 def record(
     task: str,
-    outcome: str,
+    outcome: str | None,
     reason: str,
     task_type: str = "other",
     verified_by: str = "human",
     tags: list | None = None,
+    kind: str = "lesson",
 ) -> str:
     if not reason:
         raise ValueError("reason은 필수입니다")
-    if outcome not in _VALID_OUTCOMES:
-        raise ValueError(f"outcome은 {_VALID_OUTCOMES} 중 하나여야 합니다")
+    if kind not in _VALID_KINDS:
+        raise ValueError(f"kind는 {_VALID_KINDS} 중 하나여야 합니다")
+    if kind == "lesson":
+        if outcome not in _VALID_OUTCOMES:
+            raise ValueError(f"outcome은 {_VALID_OUTCOMES} 중 하나여야 합니다")
+    else:  # kind == "note": outcome 생략 가능, 주어지면 검증
+        if outcome is not None and outcome not in _VALID_OUTCOMES:
+            raise ValueError(f"outcome은 {_VALID_OUTCOMES} 중 하나여야 합니다")
     if verified_by not in _VALID_VERIFIED_BY:
         raise ValueError(f"verified_by는 {_VALID_VERIFIED_BY} 중 하나여야 합니다")
 
@@ -80,6 +91,7 @@ def record(
         "machine": machine,
         "verified_by": verified_by,
         "tags": tags,
+        "kind": kind,
     }
 
     # YAML 먼저 (진실의 원천)
@@ -95,10 +107,10 @@ def record(
         with conn:
             conn.execute(
                 """INSERT INTO learnings
-                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (entry_id, timestamp, task, task_type, outcome, reason,
-                 machine, verified_by, json.dumps(tags, ensure_ascii=False)),
+                 machine, verified_by, json.dumps(tags, ensure_ascii=False), kind),
             )
 
     return entry_id
@@ -122,13 +134,14 @@ def rebuild_from_yaml() -> int:
         with conn:
             for d in docs:
                 tags = d.get("tags") or []
+                kind = d.get("kind") or "lesson"
                 conn.execute(
                     """INSERT OR IGNORE INTO learnings
-                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (d.get("id"), d.get("timestamp"), d.get("task"), d.get("task_type"),
                      d.get("outcome"), d.get("reason"), d.get("machine"), d.get("verified_by"),
-                     json.dumps(tags, ensure_ascii=False)),
+                     json.dumps(tags, ensure_ascii=False), kind),
                 )
     return len(docs)
 
@@ -158,7 +171,7 @@ def cache_is_stale(yaml_path, db_path) -> bool:
 
 _COLS = (
     "id", "timestamp", "task", "task_type", "outcome",
-    "reason", "machine", "verified_by", "tags",
+    "reason", "machine", "verified_by", "tags", "kind",
 )
 
 
@@ -194,7 +207,7 @@ def _fts_query(
             params.append(task_type)
         sql = (
             "SELECT l.id, l.timestamp, l.task, l.task_type, l.outcome,"
-            " l.reason, l.machine, l.verified_by, l.tags"
+            " l.reason, l.machine, l.verified_by, l.tags, l.kind"
             " FROM learnings_fts"
             " JOIN learnings l ON l.rowid = learnings_fts.rowid"
             f" WHERE {' AND '.join(conds)}"
@@ -214,7 +227,7 @@ def _fts_query(
             params.append(task_type)
         sql = (
             "SELECT id, timestamp, task, task_type, outcome,"
-            " reason, machine, verified_by, tags"
+            " reason, machine, verified_by, tags, kind"
             " FROM learnings"
             f" WHERE {' AND '.join(conds)}"
             " ORDER BY id DESC"
@@ -240,7 +253,7 @@ def recall(
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         sql = (
             "SELECT id, timestamp, task, task_type, outcome,"
-            " reason, machine, verified_by, tags"
+            " reason, machine, verified_by, tags, kind"
             f" FROM learnings {where} ORDER BY id DESC LIMIT ?"
         )
         return [_row_to_dict(r) for r in conn.execute(sql, params + [lim]).fetchall()]

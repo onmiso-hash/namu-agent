@@ -57,6 +57,11 @@ LEARNINGS_PATH = NAMU_DATA_ROOT / "memory" / "learnings.md"
 # 폐지 — 메모리 풀이 ~/.namu 하나로 통합됐으므로 파일명은 항상 learnings.yaml이다.
 LEARNINGS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "learnings.yaml"
 
+# 프로필(사실·선호) — 2그릇 메모리(namu-49) 중 profile 그릇. SQLite 캐시 없이
+# 통째 로딩하는 작은 append-only yaml이다. learnings.yaml과 같은 memory/ 폴더에
+# 함께 두되 파일은 분리한다(성격이 다른 지식: 사실 vs 교훈/대화기록).
+PROFILE_YAML_PATH = NAMU_DATA_ROOT / "memory" / "profile.yaml"
+
 # DB
 NAMU_DB_PATH = NAMU_DATA_ROOT / "db" / "namu.db"
 
