@@ -76,7 +76,16 @@ def _line_tag(line: str) -> str | None:
 
 def _log_says_closed(log_path: Path) -> bool:
     """log.md 마지막 [시작] 태그 줄 이후 구간(없으면 전체)에 [완료]/[중단] 태그 줄이
-    존재하면 True (log=권위 판정).
+    존재하면 True.
+
+    ⚠️ context.*.md가 있는 task에서는 더 이상 이 함수가 단독으로 닫힘을 결정하지
+    않는다(_is_closed 참고) — context 파일이 없는 **레거시 task 전용 폴백**이다.
+    이유(namu-50 실물 사례): `[완료]` 태그는 진짜 종료뿐 아니라 유닛/마일스톤
+    완료에도 흔히 쓰인다("[완료] 코어 이음새 완료" 등). 그래서 이 태그의
+    "구간 내 존재 여부"만으로 판정하면, 열심히 작업해 마일스톤 [완료]가 쌓인
+    진행 중 task일수록 오히려 "닫힘"으로 오판된다. `## ▶ 다음`의 `(완료)`는
+    `/namu-task` 절차가 진짜 종료 시점에만 박는 신호라 더 신뢰할 수 있으므로,
+    context가 있으면 그쪽을 권위로 쓴다.
 
     "마지막 줄이 [완료]인가"로 구현하면 [완료] 뒤에 [정정]처럼 후속 기록이 붙는
     실물 패턴(tasks/namu-25-usage-guide/log.md)에서 도로 유령(오탐지)이 된다.
@@ -138,8 +147,19 @@ def _sorted_task_dirs(tasks_dir: Path) -> list[Path]:
 
 
 def _is_closed(task_dir: Path) -> bool:
-    """log=권위 판정(주) + context 전부 (완료) 판정(보조)."""
-    return _log_says_closed(task_dir / "log.md") or _all_contexts_done(task_dir)
+    """닫힘 판정 권위: context가 있으면 context, 없으면(레거시) log 폴백.
+
+    (namu-50 개정) 예전엔 log의 [완료]가 단독으로 닫힘을 결정했으나(_log_says_closed
+    참고), [완료] 태그가 마일스톤 완료에도 쓰여 과부하됐다 — 마일스톤 [완료]가
+    쌓인 진행 중 task일수록 "닫힘"으로 오판되는 버그가 있었다. `## ▶ 다음`의
+    `(완료)`는 `/namu-task` 절차가 모든 완료조건이 충족된 진짜 종료 시점에만
+    박는 신호이고 마일스톤은 이걸 건드리지 않으므로, context 파일이 있으면
+    이쪽을 유일한 권위로 쓴다. context 파일이 하나도 없는 레거시 task만
+    log 폴백을 쓴다.
+    """
+    if list(task_dir.glob("context.*.md")):
+        return _all_contexts_done(task_dir)
+    return _log_says_closed(task_dir / "log.md")
 
 
 def find_active_task(tasks_dir: Path) -> tuple[str, str] | None:

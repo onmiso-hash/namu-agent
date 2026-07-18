@@ -351,16 +351,99 @@ def test_log_says_closed_no_closing_tag(tmp_path):
     assert _log_says_closed(log_path) is False
 
 
-def test_find_active_task_ignores_ghost_when_log_says_closed(tmp_path):
-    """log=권위: context가 미닫혀 있어도([진행중]) log에 [완료]가 있으면 유령으로 잡히지 않는다."""
+def test_find_active_task_namu25_closed_after_context_correction(tmp_path):
+    """namu-25 실물 사례: log에 [완료]가 있어도(마일스톤/과부하 태그) 닫힘 권위는 context다.
+
+    (namu-50 개정) 예전엔 이 테스트가 "context가 진행중([진행중])이어도 log의
+    [완료]만으로 닫힘"을 정답으로 인코딩했다 — 이게 바로 새 규칙이 고치는 버그
+    패턴(마일스톤 [완료]가 진짜 종료로 오판)이다. 실제 namu-25 사건도 [정정]
+    커밋으로 context.hp/samsung의 '▶ 다음'을 (완료) 단독 표기로 명시 정정한
+    뒤에야 진짜로 닫혔으므로, fixture도 그 정정 후 상태(= "(완료)")로 명시해
+    context 권위로 닫힘이 판정됨을 검증한다.
+    """
     task_dir = tmp_path / "namu-25-usage-guide"
     task_dir.mkdir()
     (task_dir / "task.md").write_text("# namu-25-usage-guide\n", encoding="utf-8")
     (task_dir / "log.md").write_text(_NAMU25_LOG_FIXTURE, encoding="utf-8")
-    # context가 미닫힘(마감 규약 위반 상황을 재현) — 그래도 log가 닫힘을 말하므로 유령 아님
-    (task_dir / "context.hp.md").write_text("## ▶ 다음\n진행중\n", encoding="utf-8")
+    # [정정] 이후 실제 상태: context ▶다음이 (완료) 단독 표기로 정정됨
+    (task_dir / "context.hp.md").write_text("## ▶ 다음\n(완료)\n", encoding="utf-8")
 
     assert find_active_task(tmp_path) is None
     closed = find_latest_closed_task(tmp_path)
     assert closed is not None
     assert closed.name == "namu-25-usage-guide"
+
+
+def test_find_active_task_context_authority_overrides_log_milestone_done(tmp_path):
+    """namu-50 회귀 테스트: 마일스톤 [완료]가 쌓인 진행 중 task가 유령(닫힘)으로 오판되면 안 된다.
+
+    task A(worked) = [시작](과거) → [완료] 마일스톤(중간) → [결정](최신), context
+    ▶다음은 실제 다음 할 일(= (완료) 아님). task B(등록만) = [시작]만, A보다 과거.
+
+    수정 전(_is_closed = log_says_closed OR all_contexts_done)이면: A는
+    log_says_closed=True(구간 내 [완료] 존재)로 닫힘 오판돼 건너뛰고, B가
+    active로 잘못 선택된다. 수정 후(context 권위)면 A의 context가 아직
+    (완료)가 아니므로 A가 active로 정확히 선택된다.
+    """
+    task_a = tmp_path / "namu-50-worked"
+    task_a.mkdir()
+    (task_a / "task.md").write_text("# namu-50-worked\n", encoding="utf-8")
+    (task_a / "log.md").write_text(
+        "# log\n"
+        "[시작] 2026-06-25 09:00:00 hp · 시작함\n"
+        "[완료] 2026-06-26 09:00:00 hp · 코어 이음새 완료\n"
+        "[결정] 2026-06-27 09:00:00 hp · 다음 유닛 방향 확정\n",
+        encoding="utf-8",
+    )
+    (task_a / "context.hp.md").write_text(
+        "## ▶ 다음\n라우팅 서버 유닛 이어서 진행\n", encoding="utf-8"
+    )
+
+    task_b = tmp_path / "namu-51-registered-only"
+    task_b.mkdir()
+    (task_b / "task.md").write_text("# namu-51-registered-only\n", encoding="utf-8")
+    (task_b / "log.md").write_text(
+        "# log\n[시작] 2026-06-20 09:00:00 hp · 등록만 함\n", encoding="utf-8"
+    )
+    (task_b / "context.hp.md").write_text(
+        "## ▶ 다음\n아직 착수 전\n", encoding="utf-8"
+    )
+
+    res = find_active_task(tmp_path)
+    assert res is not None
+    assert res[0] == "namu-50-worked"
+
+
+def test_is_closed_true_when_all_contexts_done(tmp_path):
+    """context 권위: 모든 context.*.md ▶다음이 (완료)면 _is_closed=True, find_active_task에서 제외."""
+    from task_resolve import _is_closed
+
+    task_dir = tmp_path / "finished-task"
+    task_dir.mkdir()
+    (task_dir / "task.md").write_text("# finished-task\n", encoding="utf-8")
+    (task_dir / "log.md").write_text(
+        "# log\n[시작] 2026-06-01 09:00:00 hp · 시작함\n", encoding="utf-8"
+    )
+    (task_dir / "context.hp.md").write_text("## ▶ 다음\n(완료)\n", encoding="utf-8")
+    (task_dir / "context.samsung.md").write_text("## ▶ 다음\n(완료)\n", encoding="utf-8")
+
+    assert _is_closed(task_dir) is True
+    assert find_active_task(tmp_path) is None
+
+
+def test_is_closed_legacy_fallback_to_log_when_no_context(tmp_path):
+    """context 파일이 하나도 없는 레거시 task는 여전히 log 폴백([시작]…[완료]로 끝나면 닫힘)."""
+    from task_resolve import _is_closed
+
+    task_dir = tmp_path / "legacy-task"
+    task_dir.mkdir()
+    (task_dir / "task.md").write_text("# legacy-task\n", encoding="utf-8")
+    (task_dir / "log.md").write_text(
+        "# log\n"
+        "[시작] 2026-06-01 09:00:00 hp · 시작함\n"
+        "[완료] 2026-06-02 09:00:00 hp · 종료\n",
+        encoding="utf-8",
+    )
+    # context.*.md 없음(레거시)
+
+    assert _is_closed(task_dir) is True
