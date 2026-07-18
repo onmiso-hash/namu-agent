@@ -25,7 +25,24 @@ def _make_yaml(path: Path, n: int) -> None:
 
 
 def _make_db(path: Path, n: int) -> None:
-    """n개의 row를 가진 최소 SQLite DB 생성."""
+    """n개의 row를 가진 최신 스키마 SQLite DB 생성(kind 컬럼 포함)."""
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS learnings ("
+            "id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, task TEXT NOT NULL,"
+            "task_type TEXT, outcome TEXT, reason TEXT NOT NULL,"
+            "machine TEXT, verified_by TEXT, tags TEXT, kind TEXT);"
+        )
+        for i in range(n):
+            conn.execute(
+                "INSERT INTO learnings VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (f"FAKE{i:04d}", "2025-01-01T00:00:00+00:00", f"t{i}",
+                 "other", "success", f"r{i}", "test", "human", "[]", "lesson"),
+            )
+
+
+def _make_db_old_schema(path: Path, n: int) -> None:
+    """kind 컬럼이 없는 옛(0.1.25) 스키마 DB 생성 — 스키마 드리프트 재현용."""
     with sqlite3.connect(path) as conn:
         conn.executescript(
             "CREATE TABLE IF NOT EXISTS learnings ("
@@ -57,6 +74,18 @@ def test_yaml_more_than_db_is_stale():
         _make_yaml(yaml_path, 4)  # yaml에 entry 4개
         _make_db(db_path, 3)      # db에 row 3개 (git pull 시뮬레이션)
         assert _db.cache_is_stale(yaml_path, db_path), "yaml > db → stale"
+
+
+def test_old_schema_missing_kind_is_stale():
+    """개수는 같아도 옛 스키마(kind 컬럼 없음)면 stale — 0.1.26 배포 회귀 재현.
+    스키마 변경 릴리스에서 개수만 같은 옛 db를 방치하면 새 코드가 kind를 쿼리하다
+    깨지므로, cache_is_stale이 개수뿐 아니라 스키마도 봐야 한다."""
+    with tempfile.TemporaryDirectory() as td:
+        yaml_path = Path(td) / "learnings.yaml"
+        db_path   = Path(td) / "namu.db"
+        _make_yaml(yaml_path, 3)
+        _make_db_old_schema(db_path, 3)  # 개수 일치, but kind 컬럼 없음
+        assert _db.cache_is_stale(yaml_path, db_path), "옛 스키마(kind 없음) → stale"
 
 
 def test_missing_yaml_not_stale_when_db_empty():

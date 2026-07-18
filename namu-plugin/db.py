@@ -159,10 +159,20 @@ def count_yaml_docs(yaml_path) -> int:
 
 
 def cache_is_stale(yaml_path, db_path) -> bool:
-    """yaml entry 수와 db row 수가 다르면 True (캐시 낡음 → rebuild 필요)."""
+    """캐시가 낡았으면 True (→ rebuild 필요). 두 가지를 검사한다:
+
+    ① 스키마 — db `learnings` 테이블이 최신 기대 컬럼셋(_COLS)을 다 갖췄는지.
+       스키마 변경 릴리스(예: namu-52의 `kind` 컬럼 추가)에서 개수만 같은 옛 스키마
+       db를 방치하면, 새 코드가 없는 컬럼을 쿼리하다 `no such column`으로 깨진다
+       (0.1.26 웹 배포에서 실측). 개수 검사만으로는 못 잡으므로 스키마를 먼저 본다.
+    ② 개수 — yaml entry 수와 db row 수가 다른지(git pull 등으로 원본이 늘어난 경우).
+    """
     yaml_count = count_yaml_docs(yaml_path)
     try:
         with closing(sqlite3.connect(db_path)) as conn:
+            db_cols = {row[1] for row in conn.execute("PRAGMA table_info(learnings)")}
+            if not set(_COLS) <= db_cols:
+                return True  # 스키마 낡음(기대 컬럼 누락) → rebuild
             db_count = conn.execute("SELECT COUNT(*) FROM learnings").fetchone()[0]
     except sqlite3.OperationalError:
         return True
