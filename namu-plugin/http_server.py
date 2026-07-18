@@ -226,24 +226,30 @@ def _build_transport_security(allowed_hosts: list[str]) -> TransportSecuritySett
     )
 
 
-def build_app(settings: dict):
-    """FastMCP 인스턴스를 재사용해 Starlette ASGI 앱을 만들고 미들웨어로 감싼다.
+def resolve_streamable_path(settings: dict) -> str:
+    """settings로부터 streamable HTTP 경로를 결정한다.
 
-    streamable_http_path/stateless_http는 FastMCP.streamable_http_app() 호출 시점에
-    self.settings에서 읽힌다(mcp 1.28.1 SDK 소스 확인 — server.py의
-    streamable_http_app()이 라우트를 만들 때마다 self.settings.streamable_http_path를
-    참조하므로, 호출 *전에* 값을 바꾸면 그대로 반영된다). 별도 경로 rewrite 미들웨어
-    같은 대안은 필요 없었다.
+    미래 토큰→git 라우팅에서 경로 결정을 이 함수 한 곳에서 갈아끼우기 위한 이음새다.
     """
-    import mcp_server  # 지연 import: 여기서 실제 ~/.namu 부팅 로직(_ensure_db 등)이 실행됨
-
-    restrict_tools(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 설계 §8: sync_setup 등 원격 미노출
-
     if settings["path_secret"]:
-        mcp_server.mcp.settings.streamable_http_path = f"/mcp/{settings['path_secret']}"
+        return f"/mcp/{settings['path_secret']}"
+    return "/mcp"
+
+
+def configure_mcp_for_http(mcp_instance, settings: dict) -> None:
+    """FastMCP 인스턴스에 HTTP 서빙에 필요한 settings(경로/stateless/transport_security)를
+    적용한다.
+
+    streamable_http_path/stateless_http/transport_security는 FastMCP.streamable_http_app()
+    호출 시점에 self.settings에서 읽힌다(mcp 1.28.1 SDK 소스 확인 — server.py의
+    streamable_http_app()이 라우트를 만들 때마다 이 값들을 참조하므로, 호출 *전에* 값을
+    바꾸면 그대로 반영된다). 별도 경로 rewrite 미들웨어 같은 대안은 필요 없었다.
+    """
+    if settings["path_secret"]:
+        mcp_instance.settings.streamable_http_path = resolve_streamable_path(settings)
     # 원격 클라이언트(claude.ai)는 요청마다 새 세션일 수 있어 세션 고정을 강제하지
     # 않는 stateless 모드가 안전하다(v4 §4 스코프 — 단일 사용자 셀프호스팅 전제).
-    mcp_server.mcp.settings.stateless_http = True
+    mcp_instance.settings.stateless_http = True
 
     # 터널 경유 421 Misdirected Request 수정 (v4 연장): FastMCP는 host가
     # 127.0.0.1/localhost/::1이면 DNS rebinding 보호를 자동 켜고 allowed_hosts를 localhost
@@ -252,7 +258,7 @@ def build_app(settings: dict):
     # 호출 시점에 읽힘).
     transport_security = _build_transport_security(settings.get("allowed_hosts", []))
     if transport_security is not None:
-        mcp_server.mcp.settings.transport_security = transport_security
+        mcp_instance.settings.transport_security = transport_security
         if transport_security.enable_dns_rebinding_protection:
             logger.info(
                 "namu-http: allowed_hosts 확장 적용 (localhost 기본 3종 + 사용자 %d개)",
@@ -260,6 +266,15 @@ def build_app(settings: dict):
             )
         else:
             logger.info("namu-http: DNS rebinding 보호 비활성화 (NAMU_HTTP_ALLOWED_HOSTS=*)")
+
+
+def build_app(settings: dict):
+    """FastMCP 인스턴스를 재사용해 Starlette ASGI 앱을 만들고 미들웨어로 감싼다."""
+    import mcp_server  # 지연 import: 여기서 실제 ~/.namu 부팅 로직(_ensure_db 등)이 실행됨
+
+    restrict_tools(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 설계 §8: sync_setup 등 원격 미노출
+
+    configure_mcp_for_http(mcp_server.mcp, settings)
 
     app = mcp_server.mcp.streamable_http_app()
     app = PullDebounceMiddleware(app, settings["pull_interval"])

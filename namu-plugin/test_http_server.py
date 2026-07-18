@@ -359,6 +359,20 @@ def test_build_transport_security_multiple_hosts_all_added():
 
 
 # ---------------------------------------------------------------------------
+# resolve_streamable_path (namu-53 준비: 경로 결정을 갈아끼우기 쉬운 이음새로 분리)
+#
+# mcp_server import 없이 순수 로직만 검증한다(파일 상단 docstring 원칙).
+# ---------------------------------------------------------------------------
+
+def test_resolve_streamable_path_with_secret():
+    assert http_server.resolve_streamable_path({"path_secret": "abc123"}) == "/mcp/abc123"
+
+
+def test_resolve_streamable_path_without_secret():
+    assert http_server.resolve_streamable_path({"path_secret": ""}) == "/mcp"
+
+
+# ---------------------------------------------------------------------------
 # build_app() 배선 + 421→200 회귀 (실측 확정 갭 수정)
 #
 # mcp_server를 실제로 import해야 하는 구간이라(streamable_http_app() 생성 등) 파일

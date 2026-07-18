@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS learnings (
     machine     TEXT,
     verified_by TEXT CHECK(verified_by IN ('human','ai','unverified')),
     tags        TEXT,
-    kind        TEXT
+    kind        TEXT,
+    via         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_learnings_type    ON learnings(task_type);
@@ -60,6 +61,7 @@ def record(
     verified_by: str = "human",
     tags: list | None = None,
     kind: str = "lesson",
+    via: str | None = None,
 ) -> str:
     if not reason:
         raise ValueError("reason은 필수입니다")
@@ -92,6 +94,7 @@ def record(
         "verified_by": verified_by,
         "tags": tags,
         "kind": kind,
+        "via": via,
     }
 
     # YAML 먼저 (진실의 원천)
@@ -107,10 +110,10 @@ def record(
         with conn:
             conn.execute(
                 """INSERT INTO learnings
-                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind, via)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (entry_id, timestamp, task, task_type, outcome, reason,
-                 machine, verified_by, json.dumps(tags, ensure_ascii=False), kind),
+                 machine, verified_by, json.dumps(tags, ensure_ascii=False), kind, via),
             )
 
     return entry_id
@@ -137,11 +140,11 @@ def rebuild_from_yaml() -> int:
                 kind = d.get("kind") or "lesson"
                 conn.execute(
                     """INSERT OR IGNORE INTO learnings
-                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind, via)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                     (d.get("id"), d.get("timestamp"), d.get("task"), d.get("task_type"),
                      d.get("outcome"), d.get("reason"), d.get("machine"), d.get("verified_by"),
-                     json.dumps(tags, ensure_ascii=False), kind),
+                     json.dumps(tags, ensure_ascii=False), kind, d.get("via")),
                 )
     return len(docs)
 
@@ -181,7 +184,7 @@ def cache_is_stale(yaml_path, db_path) -> bool:
 
 _COLS = (
     "id", "timestamp", "task", "task_type", "outcome",
-    "reason", "machine", "verified_by", "tags", "kind",
+    "reason", "machine", "verified_by", "tags", "kind", "via",
 )
 
 
@@ -217,7 +220,7 @@ def _fts_query(
             params.append(task_type)
         sql = (
             "SELECT l.id, l.timestamp, l.task, l.task_type, l.outcome,"
-            " l.reason, l.machine, l.verified_by, l.tags, l.kind"
+            " l.reason, l.machine, l.verified_by, l.tags, l.kind, l.via"
             " FROM learnings_fts"
             " JOIN learnings l ON l.rowid = learnings_fts.rowid"
             f" WHERE {' AND '.join(conds)}"
@@ -237,7 +240,7 @@ def _fts_query(
             params.append(task_type)
         sql = (
             "SELECT id, timestamp, task, task_type, outcome,"
-            " reason, machine, verified_by, tags, kind"
+            " reason, machine, verified_by, tags, kind, via"
             " FROM learnings"
             f" WHERE {' AND '.join(conds)}"
             " ORDER BY id DESC"
@@ -263,7 +266,7 @@ def recall(
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         sql = (
             "SELECT id, timestamp, task, task_type, outcome,"
-            " reason, machine, verified_by, tags, kind"
+            " reason, machine, verified_by, tags, kind, via"
             f" FROM learnings {where} ORDER BY id DESC LIMIT ?"
         )
         return [_row_to_dict(r) for r in conn.execute(sql, params + [lim]).fetchall()]

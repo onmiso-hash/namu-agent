@@ -21,6 +21,7 @@ def record_fact(
     supersedes: str | None = None,
     verified_by: str = "human",
     tags: list | None = None,
+    via: str | None = None,
 ) -> str:
     if not source:
         raise ValueError("source는 필수입니다")
@@ -44,6 +45,7 @@ def record_fact(
         "machine": machine,
         "verified_by": verified_by,
         "tags": tags,
+        "via": via,
     }
 
     yaml_path = cfg.PROFILE_YAML_PATH

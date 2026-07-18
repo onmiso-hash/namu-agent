@@ -50,6 +50,32 @@ def test_record_fact_then_load_all_and_active(monkeypatch, tmp_path):
     assert active_docs[0]["id"] == entry_id
 
 
+def test_record_fact_stores_via_and_exposes_in_active_and_load_all(monkeypatch, tmp_path):
+    """via(출처 꼬리표, namu-50)가 active()/load_all() 결과에 실려 나오는지."""
+    _isolate_cfg(monkeypatch, tmp_path)
+
+    entry_id = _profile.record_fact(
+        subject="user", statement="선호 언어는 한국어", source="사용자가 직접 말함",
+        via="claude",
+    )
+
+    all_docs = _profile.load_all()
+    assert all_docs[0]["via"] == "claude"
+
+    active_docs = _profile.active()
+    assert active_docs[0]["id"] == entry_id
+    assert active_docs[0]["via"] == "claude"
+
+
+def test_record_fact_without_via_defaults_to_none(monkeypatch, tmp_path):
+    _isolate_cfg(monkeypatch, tmp_path)
+
+    _profile.record_fact(subject="user", statement="x", source="y")
+
+    all_docs = _profile.load_all()
+    assert all_docs[0]["via"] is None
+
+
 def test_supersedes_chain_only_latest_is_active(monkeypatch, tmp_path):
     """A <- B <- C 체인이면 active() == [C]만 남는다."""
     _isolate_cfg(monkeypatch, tmp_path)

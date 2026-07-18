@@ -25,19 +25,19 @@ def _make_yaml(path: Path, n: int) -> None:
 
 
 def _make_db(path: Path, n: int) -> None:
-    """n개의 row를 가진 최신 스키마 SQLite DB 생성(kind 컬럼 포함)."""
+    """n개의 row를 가진 최신 스키마 SQLite DB 생성(kind/via 컬럼 포함)."""
     with sqlite3.connect(path) as conn:
         conn.executescript(
             "CREATE TABLE IF NOT EXISTS learnings ("
             "id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, task TEXT NOT NULL,"
             "task_type TEXT, outcome TEXT, reason TEXT NOT NULL,"
-            "machine TEXT, verified_by TEXT, tags TEXT, kind TEXT);"
+            "machine TEXT, verified_by TEXT, tags TEXT, kind TEXT, via TEXT);"
         )
         for i in range(n):
             conn.execute(
-                "INSERT INTO learnings VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO learnings VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (f"FAKE{i:04d}", "2025-01-01T00:00:00+00:00", f"t{i}",
-                 "other", "success", f"r{i}", "test", "human", "[]", "lesson"),
+                 "other", "success", f"r{i}", "test", "human", "[]", "lesson", None),
             )
 
 
@@ -55,6 +55,23 @@ def _make_db_old_schema(path: Path, n: int) -> None:
                 "INSERT INTO learnings VALUES (?,?,?,?,?,?,?,?,?)",
                 (f"FAKE{i:04d}", "2025-01-01T00:00:00+00:00", f"t{i}",
                  "other", "success", f"r{i}", "test", "human", "[]"),
+            )
+
+
+def _make_db_missing_via(path: Path, n: int) -> None:
+    """via 컬럼만 없는(kind는 있는) 0.1.27 스키마 DB 생성 — namu-50 스키마 드리프트 재현용."""
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS learnings ("
+            "id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, task TEXT NOT NULL,"
+            "task_type TEXT, outcome TEXT, reason TEXT NOT NULL,"
+            "machine TEXT, verified_by TEXT, tags TEXT, kind TEXT);"
+        )
+        for i in range(n):
+            conn.execute(
+                "INSERT INTO learnings VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (f"FAKE{i:04d}", "2025-01-01T00:00:00+00:00", f"t{i}",
+                 "other", "success", f"r{i}", "test", "human", "[]", "lesson"),
             )
 
 
@@ -86,6 +103,40 @@ def test_old_schema_missing_kind_is_stale():
         _make_yaml(yaml_path, 3)
         _make_db_old_schema(db_path, 3)  # 개수 일치, but kind 컬럼 없음
         assert _db.cache_is_stale(yaml_path, db_path), "옛 스키마(kind 없음) → stale"
+
+
+def test_old_schema_missing_via_is_stale():
+    """개수·kind는 같아도 via 컬럼이 없는 0.1.27 스키마면 stale — namu-50 스키마
+    드리프트 재현(0.1.26의 kind 갭과 동일 패턴)."""
+    with tempfile.TemporaryDirectory() as td:
+        yaml_path = Path(td) / "learnings.yaml"
+        db_path   = Path(td) / "namu.db"
+        _make_yaml(yaml_path, 3)
+        _make_db_missing_via(db_path, 3)  # 개수 일치, kind 있음, but via 컬럼 없음
+        assert _db.cache_is_stale(yaml_path, db_path), "옛 스키마(via 없음) → stale"
+
+
+def test_rebuild_from_missing_via_schema_restores_none(monkeypatch):
+    """via 컬럼 없는 옛 db + via 없는 yaml → rebuild 후 via가 None으로 복원."""
+    with tempfile.TemporaryDirectory() as td:
+        yaml_path = Path(td) / "learnings.yaml"
+        db_path   = Path(td) / "namu.db"
+
+        import config as cfg
+        monkeypatch.setattr(cfg, "LEARNINGS_YAML_PATH", yaml_path)
+        monkeypatch.setattr(cfg, "NAMU_DB_PATH", db_path)
+        monkeypatch.setattr(cfg, "NAMU_MACHINE", "test")
+
+        _make_yaml(yaml_path, 3)  # via 키 없는 옛 yaml
+        _make_db_missing_via(db_path, 3)
+
+        assert _db.cache_is_stale(yaml_path, db_path)
+        _db.rebuild_from_yaml()
+        assert not _db.cache_is_stale(yaml_path, db_path)
+
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute("SELECT via FROM learnings").fetchall()
+        assert rows == [(None,)] * 3
 
 
 def test_missing_yaml_not_stale_when_db_empty():

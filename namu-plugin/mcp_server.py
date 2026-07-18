@@ -3,6 +3,7 @@
 # dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0"]
 # ///
 import json
+import re
 import sqlite3
 import time
 from contextlib import closing
@@ -11,7 +12,7 @@ from pathlib import Path
 import config as cfg
 import memory_sync
 import profile
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
 from db import search as _search
@@ -50,6 +51,34 @@ _ensure_db()
 _ensure_tasks_gitattributes()
 
 
+_VIA_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
+
+_VIA_ERROR_MSG = (
+    "출처(client) 식별값이 없거나 형식이 올바르지 않습니다 — NAMU 체험 MCP 주소 끝에 "
+    "?client=<당신의 AI 이름>을 붙여 등록하거나 URL을 고쳐 주세요. 예: "
+    "https://.../mcp?client=claude  |  Missing/invalid 'client' provenance tag: "
+    "append ?client=<your-ai-name> to the MCP URL, e.g. https://.../mcp?client=claude"
+)
+
+
+def _resolve_via(ctx: Context | None) -> str | None:
+    """URL 쿼리(`?client=`)에서 출처(via) 태그를 읽어 검증한다(namu-50).
+
+    stateless HTTP(웹) 경로에서만 request가 도달하므로, req가 None이면(stdio/직접
+    호출/테스트) 검증을 완전히 면제하고 None을 반환한다 — 기존 로컬 동작을 절대
+    바꾸지 않기 위함이다.
+    """
+    if ctx is None:
+        return None
+    req = getattr(getattr(ctx, "request_context", None), "request", None)
+    if req is None:
+        return None
+    client = (req.query_params.get("client") or "").strip()
+    if not _VIA_RE.match(client):
+        raise ValueError(_VIA_ERROR_MSG)
+    return client
+
+
 def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
     if tags is None or isinstance(tags, list):
         return tags
@@ -67,7 +96,12 @@ def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
 
 
 @mcp.tool()
-def namu_recall(query: str | None = None, task_type: str | None = None, limit: int = 5):
+def namu_recall(
+    query: str | None = None,
+    task_type: str | None = None,
+    limit: int = 5,
+    ctx: Context | None = None,
+):
     """Load relevant past memory BEFORE starting a task (context loading).
     Use at task/session start to recall how similar work went before and what
     facts/preferences are on file. Returns something useful even on weak
@@ -84,6 +118,7 @@ def namu_recall(query: str | None = None, task_type: str | None = None, limit: i
        "learnings": [...lesson/note dicts: timestamp, task, outcome, reason,
        kind, tags, ...]}
     """
+    _resolve_via(ctx)
     _ensure_db()
     with closing(get_conn()) as conn:
         return {
@@ -93,7 +128,12 @@ def namu_recall(query: str | None = None, task_type: str | None = None, limit: i
 
 
 @mcp.tool()
-def namu_search(query: str, outcome_filter: str | None = None, limit: int = 10):
+def namu_search(
+    query: str,
+    outcome_filter: str | None = None,
+    limit: int = 10,
+    ctx: Context | None = None,
+):
     """Search accumulated learnings for PATTERNS (analytical lookup during judgment).
     Use when you need precise matches to analyze success/failure trends, e.g.
     'have approaches like this failed before?'. Exact matches only — returns empty
@@ -106,6 +146,7 @@ def namu_search(query: str, outcome_filter: str | None = None, limit: int = 10):
       limit: max returned rows (default 10)
     Returns: {"results": [...dicts...], "summary": {"success": N, "failure": M, "partial": K}}
     """
+    _resolve_via(ctx)
     _ensure_db()
     with closing(get_conn()) as conn:
         return _search(conn, query, outcome_filter, limit)
@@ -124,6 +165,7 @@ def namu_record(
     statement: str | None = None,
     source: str | None = None,
     supersedes: str | None = None,
+    ctx: Context | None = None,
 ):
     """Record memory into one of two bowls (append-only self-learning).
     Which bowl depends on `kind`:
@@ -176,18 +218,20 @@ def namu_record(
     # 관측됐다 — ensure_db(캐시 재생성)/record(yaml+sqlite)/sync(git push) 세 구간
     # 중 어디서 지연이 생기는지 판정하려면 구간별 시간이 반드시 필요하다. db.py는
     # 코어라 침습을 최소화하고, record()는 전체 구간 하나로만 잰다.
+    via = _resolve_via(ctx)
     t0 = time.perf_counter()
     _ensure_db()
     t1 = time.perf_counter()
     if kind in ("lesson", "note"):
         entry_id = record(
-            task, outcome, reason, task_type, verified_by, _normalize_tags(tags), kind=kind
+            task, outcome, reason, task_type, verified_by, _normalize_tags(tags), kind=kind,
+            via=via,
         )
     elif kind == "fact":
         vb = verified_by if verified_by in ("human", "ai", "unverified") else "human"
         entry_id = profile.record_fact(
             subject, statement, source, supersedes=supersedes,
-            verified_by=vb, tags=_normalize_tags(tags),
+            verified_by=vb, tags=_normalize_tags(tags), via=via,
         )
     else:
         raise ValueError("kind는 'lesson'/'note'/'fact' 중 하나여야 합니다")
