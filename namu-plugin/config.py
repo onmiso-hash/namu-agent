@@ -1,5 +1,6 @@
 import os
 import platform
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv, find_dotenv
@@ -64,6 +65,46 @@ PROFILE_YAML_PATH = NAMU_DATA_ROOT / "memory" / "profile.yaml"
 
 # DB
 NAMU_DB_PATH = NAMU_DATA_ROOT / "db" / "namu.db"
+
+
+@dataclass(frozen=True)
+class DataPaths:
+    """메모리 코어가 실제로 읽고 쓰는 3경로를 담는 값 객체 (namu-53 이음새).
+
+    root 하나만 담고 property로 파생하는 형태가 아니라 3경로를 직접 담는다 —
+    `data_paths_for()`(root 미지정)가 재계산 없이 기존 모듈 상수를 그대로 반환해야
+    하기 때문이다(테스트가 `cfg.NAMU_DB_PATH` 등을 monkeypatch하는 것과 호환).
+    """
+
+    learnings_yaml: Path
+    profile_yaml: Path
+    db_path: Path
+
+
+def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
+    """데이터 루트를 받아 DataPaths를 만든다.
+
+    root가 None이면(개인/stdio 기본 동작) 기존 모듈 상수 3개를 그대로 담아 반환한다
+    — NAMU_DATA_ROOT로 재계산하지 않는다. 재계산하면 테스트의
+    cfg.NAMU_DB_PATH/cfg.LEARNINGS_YAML_PATH/cfg.PROFILE_YAML_PATH monkeypatch가
+    무시되고, 전역 동작 불변성(namu-53 요구사항)도 깨진다.
+
+    root가 주어지면(멀티테넌트 라우팅 등 외부 이음새) `root/memory/learnings.yaml`
+    등으로 파생한 경로를 담아 반환한다.
+    """
+    if root is None:
+        return DataPaths(
+            learnings_yaml=LEARNINGS_YAML_PATH,
+            profile_yaml=PROFILE_YAML_PATH,
+            db_path=NAMU_DB_PATH,
+        )
+    root = Path(root)
+    return DataPaths(
+        learnings_yaml=root / "memory" / "learnings.yaml",
+        profile_yaml=root / "memory" / "profile.yaml",
+        db_path=root / "db" / "namu.db",
+    )
+
 
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
 # 해석 규칙:

@@ -22,6 +22,7 @@ def record_fact(
     verified_by: str = "human",
     tags: list | None = None,
     via: str | None = None,
+    paths: "cfg.DataPaths | None" = None,
 ) -> str:
     if not source:
         raise ValueError("source는 필수입니다")
@@ -30,6 +31,8 @@ def record_fact(
 
     if tags is None:
         tags = []
+
+    p = paths or cfg.data_paths_for()
 
     entry_id = str(ULID())
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -48,7 +51,7 @@ def record_fact(
         "via": via,
     }
 
-    yaml_path = cfg.PROFILE_YAML_PATH
+    yaml_path = p.profile_yaml
     yaml_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_str = yaml.safe_dump(doc, allow_unicode=True, default_flow_style=False)
     with yaml_path.open("a", encoding="utf-8") as f:
@@ -57,15 +60,16 @@ def record_fact(
     return entry_id
 
 
-def load_all() -> list[dict]:
-    yaml_path = cfg.PROFILE_YAML_PATH
+def load_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:
+    p = paths or cfg.data_paths_for()
+    yaml_path = p.profile_yaml
     if not yaml_path.exists():
         return []
     return [d for d in yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")) if d]
 
 
-def active() -> list[dict]:
+def active(paths: "cfg.DataPaths | None" = None) -> list[dict]:
     """다른 어떤 항목의 supersedes 값으로도 지목되지 않은 항목만(원래 순서 유지)."""
-    docs = load_all()
+    docs = load_all(paths=paths)
     superseded_ids = {d.get("supersedes") for d in docs if d.get("supersedes")}
     return [d for d in docs if d.get("id") not in superseded_ids]

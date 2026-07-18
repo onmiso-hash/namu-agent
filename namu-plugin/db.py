@@ -43,9 +43,10 @@ _VALID_OUTCOMES = {"success", "failure", "partial"}
 _VALID_VERIFIED_BY = {"human", "ai", "unverified"}
 
 
-def init_db() -> None:
-    cfg.NAMU_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(cfg.NAMU_DB_PATH)) as conn:
+def init_db(paths: "cfg.DataPaths | None" = None) -> None:
+    p = paths or cfg.data_paths_for()
+    p.db_path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(p.db_path)) as conn:
         with conn:
             conn.executescript(_SCHEMA)
 
@@ -62,6 +63,7 @@ def record(
     tags: list | None = None,
     kind: str = "lesson",
     via: str | None = None,
+    paths: "cfg.DataPaths | None" = None,
 ) -> str:
     if not reason:
         raise ValueError("reason은 필수입니다")
@@ -78,6 +80,8 @@ def record(
 
     if tags is None:
         tags = []
+
+    p = paths or cfg.data_paths_for()
 
     entry_id = str(ULID())
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -98,15 +102,15 @@ def record(
     }
 
     # YAML 먼저 (진실의 원천)
-    yaml_path = cfg.LEARNINGS_YAML_PATH
+    yaml_path = p.learnings_yaml
     yaml_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_str = yaml.safe_dump(doc, allow_unicode=True, default_flow_style=False)
     with yaml_path.open("a", encoding="utf-8") as f:
         f.write("---\n" + yaml_str)
 
     # SQLite 나중 (검색 캐시)
-    init_db()
-    with closing(sqlite3.connect(cfg.NAMU_DB_PATH)) as conn:
+    init_db(paths=p)
+    with closing(sqlite3.connect(p.db_path)) as conn:
         with conn:
             conn.execute(
                 """INSERT INTO learnings
@@ -119,15 +123,16 @@ def record(
     return entry_id
 
 
-def rebuild_from_yaml() -> int:
-    yaml_path = cfg.LEARNINGS_YAML_PATH
-    cfg.NAMU_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+def rebuild_from_yaml(paths: "cfg.DataPaths | None" = None) -> int:
+    p = paths or cfg.data_paths_for()
+    yaml_path = p.learnings_yaml
+    p.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     docs = []
     if yaml_path.exists():
         docs = [d for d in yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")) if d]
 
-    with closing(sqlite3.connect(cfg.NAMU_DB_PATH)) as conn:
+    with closing(sqlite3.connect(p.db_path)) as conn:
         conn.executescript(
             "DROP TRIGGER IF EXISTS learnings_ai;"
             "DROP TABLE IF EXISTS learnings_fts;"
