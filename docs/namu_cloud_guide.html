@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>☁️ NAMU 공용 클라우드 MCP — 경로 A 사용 가이드</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f2f8f8;
+    --bg-card: #fbfdfd;
+    --fg: #172422;
+    --fg-soft: #566462;
+    --accent: #0f766e;
+    --accent-deep: #0b5750;
+    --accent-soft: #e3f4f2;
+    --border: #dfe9e7;
+    --code-bg: #10201d;
+    --code-fg: #e7f3f0;
+    --ok: #1a7f4b;
+    --warn: #a15c00;
+    --danger: #b3261e;
+    --danger-soft: #fbe9e7;
+    --shadow: 0 1px 3px rgba(15, 40, 36, 0.08);
+    --radius: 14px;
+    --maxw: 800px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1614;
+      --bg-soft: #141d1a;
+      --bg-card: #17211e;
+      --fg: #e7efec;
+      --fg-soft: #a2b3ae;
+      --accent: #4fd6c6;
+      --accent-deep: #7be6d8;
+      --accent-soft: #16302c;
+      --border: #24322e;
+      --code-bg: #0a1210;
+      --code-fg: #e2efeb;
+      --ok: #4fd18a;
+      --warn: #e0a94e;
+      --danger: #ef8b83;
+      --danger-soft: #2b1917;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.72;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px 96px; }
+
+  /* ---------- DOC NAV (공통, 5개 HTML 동일) ---------- */
+  .namu-docnav{
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    background:#2c5a39;padding:10px 16px;
+  }
+  .namu-docnav a{
+    display:inline-block;text-decoration:none;color:#e8f3ea;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    transition:.15s;
+  }
+  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
+  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
+
+  /* ---------- hero ---------- */
+  header.hero {
+    padding: 32px 0 26px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: .78rem; font-weight: 700; letter-spacing: .03em;
+    color: var(--accent-deep); background: var(--accent-soft);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  header.hero h1 { font-size: 1.85rem; margin: 16px 0 10px; letter-spacing: -.01em; }
+  header.hero p.lead { color: var(--fg-soft); margin: 0; font-size: 1.02rem; max-width: 60ch; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .badge {
+    font-size: .76rem; font-weight: 700; padding: 5px 11px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-deep); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+
+  /* ---------- toc ---------- */
+  nav.toc {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 8px;
+  }
+  nav.toc h2 { margin: 0 0 10px; font-size: 1.02rem; }
+  nav.toc ol { margin: 0; padding-left: 1.15em; columns: 2; }
+  @media (max-width: 560px) { nav.toc ol { columns: 1; } }
+  nav.toc li { margin: 4px 0; font-size: .93rem; }
+  nav.toc a { color: var(--accent-deep); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 3em; }
+  h2 {
+    font-size: 1.32rem; margin: 0 0 4px; padding-top: .4em;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section:first-of-type h2, #overview h2 { border-top: none; padding-top: 0; }
+  h2 .kicker {
+    font-family: "SFMono-Regular", Consolas, monospace; font-size: .8rem; font-weight: 700;
+    color: var(--accent); letter-spacing: .02em;
+  }
+  .sec-note { color: var(--fg-soft); margin: 4px 0 20px; }
+  h3 { font-size: 1.04rem; margin: 1.6em 0 .6em; }
+  a { color: var(--accent-deep); }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--accent-soft);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+  }
+
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 22px 22px;
+  }
+  .card + .card { margin-top: 14px; }
+
+  /* ---------- pre / cmd ---------- */
+  pre {
+    position: relative;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 14px 44px 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.86rem;
+    box-shadow: var(--shadow);
+    line-height: 1.6;
+    margin: 8px 0 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; white-space: pre; }
+  .copy-btn {
+    position: absolute; top: 8px; right: 8px;
+    font-size: 0.7rem; padding: 4px 8px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08);
+    color: var(--code-fg); cursor: pointer;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.18); }
+  .where {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+    padding: 3px 10px; border-radius: 999px; margin: 10px 0 0;
+  }
+  .where.pc { background: #e6f0e9; color: #2c5a39; }
+  .where.server { background: #e3ecf7; color: #2b4f8a; }
+  .where.web { background: #f5e9fb; color: #6b2f8a; }
+  @media (prefers-color-scheme: dark) {
+    .where.pc { background: #1c2a20; color: #8fd0aa; }
+    .where.server { background: #1c2636; color: #9db6e6; }
+    .where.web { background: #2a1e33; color: #d3a6ef; }
+  }
+
+  /* ---------- callouts ---------- */
+  .ok, .warn, .tip, .danger {
+    display: flex; gap: 11px; border-radius: 11px; padding: 13px 15px; font-size: .93rem; margin: 14px 0 0;
+    align-items: flex-start;
+  }
+  .ok { background: color-mix(in srgb, var(--ok) 12%, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border)); }
+  .ok .ic { color: var(--ok); }
+  .warn { background: color-mix(in srgb, var(--warn) 14%, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border)); }
+  .warn .ic { color: var(--warn); }
+  .danger { background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border)); }
+  .danger .ic { color: var(--danger); }
+  .tip { background: var(--bg-soft); border: 1px solid var(--border); color: var(--fg-soft); }
+  .ic { flex: none; font-weight: 700; }
+  .ok b, .warn b, .danger b, .tip b { color: var(--fg); }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.88rem; }
+  th, td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-soft); }
+  td code, th code { white-space: nowrap; }
+  .hl-row td { background: var(--accent-soft); font-weight: 600; }
+
+  /* ---------- forms grid ---------- */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
+  @media (max-width: 700px) { .grid3 { grid-template-columns: 1fr; } }
+  .form-card {
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px 16px 14px;
+  }
+  .form-card.current { background: var(--accent-soft); border-color: var(--accent); }
+  .form-card .ico { font-size: 22px; }
+  .form-card h4 { margin: 6px 0 4px; font-size: .98rem; }
+  .form-card p { margin: 0; font-size: .86rem; color: var(--fg-soft); }
+  .form-card .pill {
+    display: inline-block; margin-top: 8px; font-size: .7rem; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px; background: var(--accent); color: #fff;
+  }
+
+  /* ---------- steps ---------- */
+  .step { display: flex; gap: 14px; margin: 1.3em 0; align-items: flex-start; }
+  .step .num {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .92rem; box-shadow: var(--shadow);
+  }
+  .step .body { flex: 1; min-width: 0; }
+  .step .body h4 { margin: 3px 0 6px; font-size: 1rem; }
+
+  /* ---------- decision box ---------- */
+  .decision { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+  @media (max-width: 620px) { .decision { grid-template-columns: 1fr; } }
+  .decision .opt {
+    border: 2px solid var(--border); border-radius: 12px; padding: 16px;
+    background: var(--bg-card);
+  }
+  .decision .opt.rec { border-color: var(--accent); }
+  .decision .opt .tag { font-size: .72rem; font-weight: 700; color: var(--accent-deep); }
+  .decision .opt h4 { margin: 6px 0 6px; }
+  .decision .opt p { margin: 0; font-size: .88rem; color: var(--fg-soft); }
+
+  details {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 4px 14px 10px; margin: 10px 0; background: var(--bg-card);
+  }
+  details[open] { padding-bottom: 14px; }
+  summary { cursor: pointer; font-weight: 600; padding: 10px 0; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▸ "; color: var(--accent); }
+  details[open] summary::before { content: "▾ "; }
+
+  footer {
+    margin-top: 4em; padding-top: 1.4em; border-top: 1px solid var(--border);
+    color: var(--fg-soft); font-size: 0.85rem;
+  }
+
+  @media (max-width: 480px) {
+    header.hero h1 { font-size: 1.45rem; }
+    .step { gap: 10px; }
+    .step .num { width: 26px; height: 26px; font-size: 0.85rem; }
+    pre { font-size: 0.76rem; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="namu-docnav">
+  <a href="namu_guide.html">🌳 안내서</a>
+  <a href="namu_quickstart.html">🚀 빠른 시작</a>
+  <a href="install_guide.html">🔧 설치 가이드</a>
+  <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
+  <a href="namu_cloud_guide.html" class="is-current">☁️ 공용 클라우드</a>
+  <a href="https://github.com/onmiso-hash/namu-agent" target="_blank" rel="noopener">💻 GitHub</a>
+</nav>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">☁️ 경로 A · 중앙 호스팅 · 소수 신뢰 사용자 체험용</span>
+    <h1>NAMU 공용 클라우드 MCP — 경로 A 사용 가이드</h1>
+    <p class="lead">직접 서버를 띄우지 않고도, 중앙(onnamu.kr)이 대신 호스팅하는 <b>공용 NAMU 메모리 서버</b>에 접속만 하면 웹 브라우저의 claude.ai에서 바로 기억(교훈)을 꺼내 쓰고 기록할 수 있습니다.</p>
+    <div class="badges">
+      <span class="badge">🔑 웹에선 도구 3개만</span>
+      <span class="badge">👥 멀티유저(?user= 서랍 라우팅)</span>
+      <span class="badge">📅 기준일 2026-07-19(namu-54)</span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <h2>목차</h2>
+    <ol>
+      <li><a href="#overview">경로 B와 차이</a></li>
+      <li><a href="#connect">연결법</a></li>
+      <li><a href="#terms">user·client가 뭔가</a></li>
+      <li><a href="#rules">입력 규칙</a></li>
+      <li><a href="#auth">인증·격리 모델</a></li>
+      <li><a href="#future">안 되는 것 / 나중 계획</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1. 개요 -->
+  <section id="overview">
+    <h2><span class="kicker">1</span> 이게 뭔가 — 경로 B(셀프호스팅)와 차이</h2>
+    <p class="sec-note">경로 A는 "중앙에서 우리가 대신 호스팅해주는 공용 서버에 접속만 하면 되는" 형태입니다(사용자가 직접 서버를 띄우는 경로 B와 반대). <b>현재는 소수 신뢰 사용자 체험용</b>이며 일반 공개 서비스가 아닙니다 — 이유는 5·6절 인증 한계를 보세요.</p>
+
+    <div class="card">
+      <table>
+        <thead><tr><th></th><th>경로 B(셀프호스팅)</th><th>경로 A(공용 클라우드, 이 문서)</th></tr></thead>
+        <tbody>
+          <tr><td>서버는 누가 띄우나</td><td>사용자 본인이 직접</td><td>중앙(onnamu.kr)이 대신 호스팅</td></tr>
+          <tr><td>사용자 수</td><td>단일 사용자(자기 것 하나)</td><td>멀티유저(<code>?user=</code> 키로 사용자별 서랍 라우팅)</td></tr>
+          <tr><td>데이터 노출 범위</td><td>자기 <code>~/.namu</code> 하나만</td><td>중앙 저장소 안에서 <code>?user=</code> 키별 폴더로 분리</td></tr>
+        </tbody>
+      </table>
+
+      <div class="tip"><span class="ic">💡</span><span><b>라이브 사실</b> — 공용 서비스는 <code>namu-cloud-routing:v0.1.6</code> 이미지(내부 포트 8770, <code>namu_cloud_store</code> named volume)로 떠 있고, Cloudflare named tunnel(고정 도메인으로 상시 연결되는 터널)을 통해 <code>namu-cloud.onnamu.kr</code>에 연결돼 있습니다. 노출 도구는 개인용(경로 B)과 동일한 3종 <code>namu_recall</code>/<code>namu_record</code>/<code>namu_search</code>입니다 — <code>namu_sync_setup</code>과 tasks는 노출되지 않습니다(경로 B와 같은 이유, <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a> 1절 참고).</span></div>
+
+      <p class="sec-note" style="margin-top:14px">포트·이미지 태그·Cloudflare ingress 같은 인프라 세부는 onnamu-project/specs 관할이라 이 문서에서는 요약만 다루고 중복 관리하지 않습니다.</p>
+    </div>
+  </section>
+
+  <!-- 2. 연결법 -->
+  <section id="connect">
+    <h2><span class="kicker">2</span> 연결법</h2>
+    <div class="card">
+      <p>접속 URL 형식은 다음과 같습니다.</p>
+      <span class="where web">☁️ 접속 URL 형식</span>
+      <pre><code>https://namu-cloud.onnamu.kr/mcp/&lt;PATH_SECRET&gt;?user=&lt;내-키&gt;&amp;client=&lt;AI-이름&gt;</code></pre>
+      <ul>
+        <li><code>&lt;PATH_SECRET&gt;</code> — 운영자가 배포한 공유 시크릿 경로. 사용자에게 별도로 전달됩니다.</li>
+        <li><code>?user=</code>·<code>&amp;client=</code> — 필수 쿼리(각각 3절·4절에서 설명).</li>
+      </ul>
+
+      <h3>등록 방법 1 — claude.ai 커스텀 커넥터</h3>
+      <p>설정 → Connectors → Add custom connector에 위 URL을 통째로 입력합니다(<a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a> 3-3절과 동일한 절차).</p>
+
+      <h3>등록 방법 2 — Claude Code CLI</h3>
+      <span class="where pc">🖥 로컬 PC 터미널</span>
+      <pre><code>claude mcp add --transport http namu-cloud \
+  "https://namu-cloud.onnamu.kr/mcp/&lt;PATH_SECRET&gt;?user=&lt;키&gt;&amp;client=&lt;AI&gt;"</code></pre>
+    </div>
+  </section>
+
+  <!-- 3. user·client -->
+  <section id="terms">
+    <h2><span class="kicker">3</span> <code>user</code>·<code>client</code>가 뭔가</h2>
+    <div class="card">
+      <ul>
+        <li><b><code>user</code></b> — 내 서랍(폴더) 이름표입니다. 서버가 <code>?user=&lt;키&gt;</code>를 받아 <code>STORE_ROOT/users/&lt;키&gt;/</code>로 라우팅합니다. 같은 키를 쓰면 같은 기억 풀을 공유하고, 다른 키를 쓰면 서로 다른 서랍이 됩니다.</li>
+        <li><b><code>client</code></b> — 이 기억을 남긴 AI가 누구인지 나타내는 출처 태그(내부적으로 <code>via</code>로 저장). record 시 함께 저장돼, 나중에 "claude가 남긴 이력만" 같은 출처별 조회의 기준이 됩니다.</li>
+      </ul>
+      <div class="tip"><span class="ic">💡</span><span>역할을 한 줄로 요약하면: <b><code>user</code>=어느 서랍, <code>client</code>=어느 AI</b>입니다.</span></div>
+    </div>
+  </section>
+
+  <!-- 4. 입력 규칙 -->
+  <section id="rules">
+    <h2><span class="kicker">4</span> <code>user</code>·<code>client</code> 입력 규칙 (중요)</h2>
+    <div class="card">
+      <p>실코드로 검증된 형식은 다음과 같습니다.</p>
+      <table>
+        <thead><tr><th>값</th><th>형식</th></tr></thead>
+        <tbody>
+          <tr><td><code>user</code> 키</td><td>영숫자·<code>-</code>·<code>_</code> 1~64자 (<code>^[A-Za-z0-9_-]{1,64}$</code>)</td></tr>
+          <tr><td><code>client</code> 값</td><td>영숫자·<code>.</code>·<code>_</code>·<code>-</code> 1~40자 (<code>^[A-Za-z0-9._-]{1,40}$</code>)</td></tr>
+        </tbody>
+      </table>
+      <p class="sec-note">슬래시·공백·<code>..</code> 등 경로를 벗어나려는 문자는 거부됩니다.</p>
+
+      <div class="warn"><span class="ic">⚠</span><span><b>3개 도구(recall/record/search) 모두 <code>user</code>·<code>client</code> 둘 다 필수</b>입니다 — 하나라도 없거나 형식이 틀리면 도구 호출이 한국어+영어 상세 에러로 거부됩니다(에러 안내가 뜨니, URL 쿼리를 고쳐서 다시 붙이면 됩니다).</span></div>
+
+      <div class="tip"><span class="ic">💡</span><span><code>client</code> 이름은 <b>정확한 모델명 예시(<code>claude</code> / <code>chatgpt</code> / <code>gemini</code> / <code>cursor</code> / <code>copilot</code>)로 넣기를 권장</b>합니다. 애칭·변형도 형식만 맞으면 거부되지 않지만, <b>나중에 조회할 때 저장했던 값과 글자 그대로 똑같이 넣어야 찾힙니다</b> — <code>claude</code>와 <code>cld</code>는 서로 다른 값으로 저장됩니다. 자기만의 애칭을 쓸 거라면 매번 일관되게 쓰세요.</span></div>
+    </div>
+  </section>
+
+  <!-- 5. 인증·격리 -->
+  <section id="auth">
+    <h2><span class="kicker">5</span> 인증·격리 모델 (현재 — 반드시 읽을 것)</h2>
+    <div class="card">
+      <p>현재 인증은 <b>공유 <code>path_secret</code> 1개뿐</b>입니다. <code>?user=&lt;키&gt;</code>는 인증이 아니라 <b>폴더 이름표(라우팅 라벨)</b>일 뿐입니다.</p>
+
+      <div class="danger"><span class="ic">⛔</span><span>따라서 공유 시크릿 경로를 아는 사람은, 남의 <code>user</code> 키만 알아내면 그 서랍도 열 수 있습니다 — 이건 서로 협조한다는 전제 위의 <b>협조적 격리</b>이지, 암호학적으로 잠긴 접근 통제가 아닙니다. (경로 이탈 문자는 <code>_validate_user_key</code>/<code>_paths_for_user</code>가 막아주지만, "남의 키를 그대로 지정"하는 행위 자체는 막지 못합니다.)</span></div>
+
+      <p class="sec-note" style="margin-top:14px">그래서 현재 공용 서버는 <b>서로 신뢰하는 소수 체험용</b>이며, 아무나 접속하는 일반 공개 서비스로 쓰기엔 아직 부족합니다.</p>
+    </div>
+  </section>
+
+  <!-- 6. 안 되는 것 -->
+  <section id="future">
+    <h2><span class="kicker">6</span> 지금 안 되는 것 / 나중 계획</h2>
+    <div class="card">
+      <ul>
+        <li><b>미구현: 사용자별 인증</b> — 각 사용자가 자기 서랍에만 접근하도록 암호학적으로 잠그는 기능. 이게 갖춰져야 일반 공개가 가능합니다.</li>
+        <li><b>방향</b> — OAuth 사용자별 토큰으로 전환할 예정입니다. 상세 설계는 <a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/remote_mcp_design.md">remote_mcp_design.md</a> §11을 참고하세요.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    이 문서는 초보자용 요약본입니다. 원문(설계 근거·최신 갱신)은 GitHub의
+    <a href="https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md">namu_cloud_guide.md</a>(namu-cloud-routing repo)를 참고하세요.
+    <br>단일 사용자 셀프호스팅은 <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a>, 설치형·clone 개발형 안내는 <a href="install_guide.html">설치 가이드</a>, 전체 그림은 <a href="namu_guide.html">안내서</a>를 참고하세요.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  try {
+    var blocks = document.querySelectorAll('pre');
+    blocks.forEach(function (pre) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copy-btn';
+      btn.textContent = '복사';
+      btn.addEventListener('click', function () {
+        var code = pre.querySelector('code');
+        var text = code ? code.textContent : pre.textContent;
+        var done = function () {
+          btn.textContent = '복사됨';
+          setTimeout(function () { btn.textContent = '복사'; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {});
+        } else {
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            done();
+          } catch (e) {}
+        }
+      });
+      pre.appendChild(btn);
+    });
+  } catch (e) {}
+})();
+</script>
+
+</body>
+</html>

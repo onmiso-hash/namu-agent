@@ -258,6 +258,7 @@
   <a href="namu_quickstart.html">🚀 빠른 시작</a>
   <a href="install_guide.html">🔧 설치 가이드</a>
   <a href="remote_mcp_guide.html" class="is-current">🌐 웹에서 쓰기</a>
+  <a href="namu_cloud_guide.html">☁️ 공용 클라우드</a>
   <a href="https://github.com/onmiso-hash/namu-agent" target="_blank" rel="noopener">💻 GitHub</a>
 </nav>
 
@@ -369,6 +370,14 @@
 
     <div class="tip"><span class="ic">💡</span><span><b>권장: 시크릿 경로 단독 모드.</b> claude.ai의 Request headers(헤더) 설정 UI는 2026-07 기준 베타·점진 롤아웃 중이라 계정에 아예 안 보일 수 있습니다. 헤더 UI가 없으면 <code>NAMU_HTTP_PATH_SECRET</code>만 설정하고 <b>URL 자체</b>(<code>https://&lt;host&gt;/mcp/&lt;secret&gt;</code>)로 인증하는 방식이 가장 간단합니다. 헤더 UI가 보인다면 <code>NAMU_HTTP_TOKEN</code>을 추가로 얹어 이중화해도 됩니다.</span></div>
     <div class="tip"><span class="ic">💡</span><span>헤더 인증을 쓸 경우 서버가 실제로 검사하는 헤더 이름은 <code>x-api-key</code> 또는 <code>Authorization: Bearer &lt;token&gt;</code> 둘뿐입니다. 커넥터 등록 시 헤더 이름을 반드시 이 중 하나로 맞추세요.</span></div>
+
+    <h3>2-1. 도구를 실제로 부를 때는 <code>?client=</code>가 추가로 필요합니다</h3>
+    <p>위 표는 <b>서버 접속</b>(엔드포인트에 도달하는 것) 인증이고, 이와 별개로 <b>도구 호출</b>(<code>namu_recall</code>/<code>namu_record</code>/<code>namu_search</code>를 실제로 부르는 것) 시에는 URL 쿼리에 <code>&amp;client=&lt;AI 이름&gt;</code>(출처 태그, 내부적으로는 <code>via</code>로 저장됨)을 반드시 붙여야 합니다. 이 값이 없거나 형식이 틀리면 접속 자체(<code>initialize</code>/<code>tools/list</code>)는 통과해도 도구 호출은 한국어+영어 상세 에러로 거부됩니다.</p>
+    <ul>
+      <li><b>형식</b> — 영숫자·<code>.</code>·<code>_</code>·<code>-</code> 1~40자(<code>^[A-Za-z0-9._-]{1,40}$</code>)</li>
+      <li><b>권장 값</b> — 정확한 모델명(<code>claude</code> / <code>chatgpt</code> / <code>gemini</code> / <code>cursor</code> / <code>copilot</code>)을 넣기를 권장합니다. 애칭·변형도 형식만 맞으면 거부되지 않지만, <b>나중에 조회할 때 저장했던 값과 글자 그대로 똑같이 넣어야 찾힙니다</b> — <code>claude</code>와 <code>cld</code>는 서로 다른 값으로 저장됩니다.</li>
+    </ul>
+    <div class="ok"><span class="ic">✓</span><span><b>stdio(로컬 설치형·clone 개발형)는 면제입니다</b> — 이 검증은 HTTP/웹 경로(<code>request</code>가 존재하는 경우)에서만 걸립니다. Claude Code가 <code>mcp_server.py</code>를 stdio로 직접 실행하는 로컬 사용법은 그대로입니다(변경 없음).</span></div>
   </section>
 
   <!-- 3. 절차 A -->
@@ -414,7 +423,9 @@ NAMU_HTTP_PATH_SECRET="&lt;임의의 긴 문자열&gt;" \
           <h4>claude.ai에 등록하기 전, curl로 먼저 확인합니다</h4>
           <p>curl은 터미널에서 HTTP 요청을 직접 보내볼 수 있는 도구입니다 — 브라우저 없이 서버가 살아있는지 확인할 때 씁니다.</p>
           <span class="where pc">🖥 로컬 PC 터미널 (터널 URL을 향해 요청)</span>
-          <pre><code>curl -sS -X POST "https://&lt;터널 URL&gt;/mcp/&lt;secret&gt;" \
+          <pre><code># 이 스모크 테스트는 initialize만 호출하고 실제 도구는 안 부르므로 ?client= 없이도 통과합니다.
+# 실제 도구 호출 시에는 URL에 ?client=&lt;AI 이름&gt;이 필요합니다(2-1절 참고).
+curl -sS -X POST "https://&lt;터널 URL&gt;/mcp/&lt;secret&gt;" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'</code></pre>
@@ -427,7 +438,8 @@ NAMU_HTTP_PATH_SECRET="&lt;임의의 긴 문자열&gt;" \
         <span class="num">4</span>
         <div class="body">
           <h4>claude.ai에 Custom Connector를 등록합니다</h4>
-          <p>claude.ai → 설정 → Connectors → <b>Add custom connector</b>. Remote MCP server URL에 시크릿 경로 단독 모드라면 <code>https://&lt;터널 URL&gt;/mcp/&lt;secret&gt;</code>을 넣습니다. 헤더 인증을 함께 쓴다면 URL은 <code>/mcp</code>(또는 <code>/mcp/&lt;secret&gt;</code>)로 두고 Request headers에 <code>x-api-key: &lt;토큰&gt;</code>을 추가합니다.</p>
+          <p>claude.ai → 설정 → Connectors → <b>Add custom connector</b>. Remote MCP server URL에 시크릿 경로 단독 모드라면 <code>https://&lt;터널 URL&gt;/mcp/&lt;secret&gt;?client=claude</code>를 넣습니다. 헤더 인증을 함께 쓴다면 URL은 <code>/mcp?client=claude</code>(또는 <code>/mcp/&lt;secret&gt;?client=claude</code>)로 두고 Request headers에 <code>x-api-key: &lt;토큰&gt;</code>을 추가합니다.</p>
+          <div class="warn"><span class="ic">⚠</span><span><code>?client=</code>를 빠뜨리면 접속(<code>initialize</code>)은 되지만 실제 도구 호출이 거부됩니다(2-1절 참고).</span></div>
           <p>등록 후 대화에서 "namu 메모리에서 recall 해봐"처럼 직접 도구 호출을 유도해 동작을 확인하세요 — 자동 브리핑이 없으므로 첫 호출은 직접 유도해야 합니다.</p>
           <div class="warn"><span class="ic">⚠</span><span>PC가 꺼지거나 서버 프로세스가 죽으면 웹에서 접속이 끊깁니다. 상시 가동이 필요하면 아래 5절(절차 B)로 가세요.</span></div>
         </div>

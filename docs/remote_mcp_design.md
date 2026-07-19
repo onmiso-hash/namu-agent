@@ -136,3 +136,25 @@ pull을 매 요청마다 하지 않는 이유: git pull은 네트워크 왕복(0
 - 경로 A: 중앙 호스팅 + GitHub App (installation token) — 멀티유저 전제라 별도 태스크로.
 - 멀티유저 격리·OAuth 2.1 서버 구현.
 - tasks 도구의 웹 노출.
+
+### 11-1. 경로 A 현재 구현 상태 (namu-54 시점)
+
+위 "스코프 제외"는 이 문서(v4) 확정 시점의 결정이었지만, 그 이후 경로 A는 별도 태스크·별도 repo(`namu-cloud-routing`)로 **이미 라우팅까지는 구현·라이브**됐다.
+
+- `?user=<키>` URL 쿼리로 사용자를 식별해 `STORE_ROOT/users/<키>/`로 라우팅하고, 개인용(경로 B)의 3도구(recall/record/search)를 그대로 미러링한다. `?client=`(via, 출처 태그)도 함께 이식됐다(v0.1.5~).
+- 인증 방식은 개인용과 동일한 **공유 `path_secret`**이다 — 새 인증 체계를 도입한 게 아니라 기존 방식을 그대로 재사용한 것이다.
+- **미완**은 '사용자별 인증'이다. 현재 `?user=`는 인증이 아니라 폴더 라벨(요청자가 임의로 지정할 수 있는 위조 가능한 쿼리 값)이다 — 그래서 공유 시크릿을 아는 사람이라면 남의 `user` 키를 그대로 지정해 그 서랍도 열 수 있다(협조적 격리). 이 상태로는 일반 공개에 부족하다. 사용자용 설명은 [`namu_cloud_guide.md`](https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md) 5절 참고(namu-54로 namu-cloud-routing repo로 이동).
+
+### 11-2. 사용자별 인증(OAuth) 미래 설계 스케치
+
+핵심 전환은 "신원이 어디에 담기는가"다. 지금은 신원이 URL 안에 있다 — 공유 `path_secret`(누구나 같은 값) + `?user=` 이름표(위조 가능한 쿼리 값이라 진짜 인증이 아니다). OAuth로 가면 신원이 URL에서 완전히 빠지고, **사용자별 토큰**(HTTP `Authorization: Bearer` 헤더)으로 옮겨간다.
+
+- **접속 URL** — 모든 사용자가 같은 주소 하나(예: `https://namu-cloud.onnamu.kr/mcp`)를 쓴다. URL 안에는 비밀번호도, 누구인지도 들어가지 않는다. claude.ai에 이 주소를 등록하면 OAuth 로그인 창이 뜨고, 로그인하면 그 사람만의 토큰이 발급돼 claude.ai가 저장하며, 이후 매 요청에 자동으로 첨부된다.
+- **라우팅** — 여전히 단일 컨테이너이고, 분기 방식만 바뀐다. 요청 도착(Bearer 토큰) → ① 토큰 검증(진위·만료) → ② 토큰에서 `user_id` 추출(지금의 `?user=` 자리를 대체) → ③ `users/<user_id>/`로 라우팅(지금과 동일한 폴더 분기, `_paths_for_user` 로직 그대로 재사용). 딱 하나 바뀌는 건 '누구'라는 정보의 출처다 — URL 쿼리(위조 가능) → 암호학적으로 검증된 토큰(위조 불가). 그래서 남의 서랍 접근이 구조적으로 차단된다.
+- **토큰 발급 주체 2안**
+  - (a) 서버(namu-cloud) 자신이 직접 authorization server 역할을 맡아 발급·검증.
+  - (b) 외부 IdP(구글·GitHub 로그인 등)에 위임하고, 서버는 '외부 신원 → 서랍' 매핑만 관리.
+  - 후자가 대체로 구현 부담이 작다(이 문서 §11에서 언급했던 GitHub App 방향이 이쪽에 가깝다). MCP는 streamable HTTP 전송에서 OAuth 2.1을 표준으로 지원한다 — 서버가 protected resource 역할을, `/.well-known` 메타데이터가 authorization server를 지정하는 구조다. claude.ai 커스텀 커넥터도 OAuth 플로우를 지원한다.
+- **부수** — `?client=`(via, 출처 태그)는 보안 축이 아니라 '어느 AI가 남겼나'를 나타내는 별개 축이라, OAuth 도입 이후에도 쿼리로 그대로 남을 수 있다. 역할 분리는 그대로 유지된다: '누구'=토큰, '어느 AI'=`?client=`.
+
+구현은 별도 태스크(사용자별 인증 계층 신설)로 유예된 상태다.

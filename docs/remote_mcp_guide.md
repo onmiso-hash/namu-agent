@@ -2,7 +2,7 @@
 
 > 📅 2026-07-17(namu-45) · 선행: `docs/remote_mcp_design.md`(설계 원본, v4 확정본) · namu-44(인증·디바운스 pull·터널 실측)·namu-45(클라우드 컨테이너 이미지) 구현 결과를 사용자 관점으로 정리한 문서. **2026-07-17 사용자 소유 상시 서버에 실제로 배포해 전 구간을 실측 검증한 뒤 이 개정판에 반영했다** — 자세한 내용은 4절 "검증 상태"를 볼 것.
 >
-> **범위** — 경로 B(셀프호스팅, 단일 사용자)만 다룬다. 중앙 호스팅(경로 A)·멀티유저·OAuth는 스코프 밖이다(`remote_mcp_design.md` §11).
+> **범위** — 경로 B(셀프호스팅, 단일 사용자)만 다룬다. 중앙 호스팅(경로 A, 공용 클라우드 MCP)은 이제 별도 사용자 가이드가 있다 — [`namu_cloud_guide.md`](https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md)(namu-cloud-routing repo, namu-54로 이동). 설계 상세는 여전히 `remote_mcp_design.md` §11. 멀티유저·OAuth는 스코프 밖이다.
 
 이 문서는 [설치형 사용설명서](install_guide.md)·[사용설명서](usage_guide.md)와 대상 독자가 다르다 — Claude Code/agy 없이 **웹 브라우저의 claude.ai에서 NAMU 기억(교훈)을 쓰고 싶은 사람**을 위한 것이다.
 
@@ -47,6 +47,16 @@
 
 헤더 인증을 쓸 경우 서버가 실제로 검사하는 헤더는 **`x-api-key`** 또는 **`Authorization: Bearer <token>`** 둘뿐이다(claude.ai UI 자체는 최대 4개 헤더명을 허용하지만, 그중 이 서버가 인식하는 건 이 두 가지뿐이므로 커넥터 등록 시 헤더 이름을 반드시 이 중 하나로 맞출 것).
 
+### 2-1. 도구를 실제로 부를 때는 `?client=`가 추가로 필요하다 (namu-50)
+
+위 표는 **서버 접속**(엔드포인트에 도달하는 것) 인증이고, 이와 별개로 **도구 호출**(`namu_recall`/`namu_record`/`namu_search`를 실제로 부르는 것) 시에는 URL 쿼리에 `&client=<AI 이름>`(출처 태그, 내부적으로는 `via`로 저장됨)을 반드시 붙여야 한다. 이 값이 없거나 형식이 틀리면 접속 자체(`initialize`/`tools/list`)는 통과해도 도구 호출은 한국어+영어 상세 에러로 거부된다.
+
+- **형식** — 영숫자·`.`·`_`·`-` 1~40자(`^[A-Za-z0-9._-]{1,40}$`).
+- **권장 값** — 정확한 모델명(`claude` / `chatgpt` / `gemini` / `cursor` / `copilot`)을 넣을 것을 권장한다. 애칭·변형도 형식만 맞으면 거부되지 않지만, **나중에 조회할 때 저장했던 값과 글자 그대로 똑같이 넣어야 찾힌다** — `claude`와 `cld`는 서로 다른 값으로 저장된다. 애칭을 쓸 거라면 매번 일관되게 쓸 것.
+- **stdio(로컬 설치형·clone 개발형)는 면제다** — 이 검증은 HTTP/웹 경로(`request`가 존재하는 경우)에서만 걸린다. Claude Code가 `mcp_server.py`를 stdio로 직접 실행하는 로컬 사용법은 이 문서의 다른 절과 무관하게 그대로다(변경 없음).
+
+3절·4절의 연결 URL 예시는 이미 이 요건을 반영해 갱신됐다.
+
 ## 3. 연결 절차 A — 자기 PC + 터널 (1차 검증, 실측 완료)
 
 가장 간단하고 배포물이 필요 없는 경로다. 지금 쓰고 있는 PC의 `~/.namu`를 그대로 웹에 노출한다.
@@ -87,6 +97,8 @@ claude.ai는 **공개 인터넷에서 접근 가능한 URL**이 필수다(사설
 
 ```bash
 # 로컬 PC 터미널 (터널 URL을 향해 요청을 보내지만, 명령 자체는 로컬 PC에서 실행)
+# 이 스모크 테스트는 initialize만 호출하고 실제 도구(namu_recall 등)는 안 부르므로 ?client= 없이도 통과한다.
+# 실제 도구 호출 시에는 URL에 ?client=<AI 이름>이 필요하다(2-1절 참고).
 curl -sS -X POST "https://<터널 URL>/mcp/<secret>" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
@@ -100,7 +112,7 @@ curl -sS -X POST "https://<터널 URL>/mcp/<secret>" \
 ### 3-3. claude.ai에 Custom Connector 등록
 
 1. claude.ai → 설정 → Connectors → **Add custom connector**.
-2. Remote MCP server URL에 터널 URL + 엔드포인트 경로를 넣는다. 시크릿 경로 단독 모드면 `https://<터널 URL>/mcp/<secret>`, 헤더 인증을 함께 쓴다면 URL은 `/mcp`(또는 `/mcp/<secret>`)로 두고 Request headers 설정에 `x-api-key: <토큰>`(또는 `Authorization: Bearer <토큰>`)을 추가한다(헤더 UI가 안 보이면 시크릿 경로 단독 모드만 가능 — 2절 참고).
+2. Remote MCP server URL에 터널 URL + 엔드포인트 경로 + `?client=<AI 이름>`(2-1절)을 넣는다. 시크릿 경로 단독 모드면 `https://<터널 URL>/mcp/<secret>?client=claude`, 헤더 인증을 함께 쓴다면 URL은 `/mcp?client=claude`(또는 `/mcp/<secret>?client=claude`)로 두고 Request headers 설정에 `x-api-key: <토큰>`(또는 `Authorization: Bearer <토큰>`)을 추가한다(헤더 UI가 안 보이면 시크릿 경로 단독 모드만 가능 — 2절 참고). `?client=`를 빠뜨리면 접속(`initialize`)은 되지만 실제 도구 호출이 거부된다.
 3. 등록 후 대화에서 "namu 메모리에서 recall 해봐"처럼 직접 도구 호출을 유도해 동작을 확인한다(1절 — 자동 브리핑이 없으므로 첫 호출은 사용자가 유도해야 함).
 
 **제약** — PC가 꺼지거나 서버 프로세스가 죽으면 웹에서 접속이 끊긴다. 상시 가동이 필요하면 4절로 간다.
