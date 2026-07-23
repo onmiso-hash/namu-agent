@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAMU 기억 시스템 설계도</title>
+<style>
+  :root {
+    --bg: #F3F5F1;
+    --surface: #FFFFFF;
+    --surface-2: #EBEFE8;
+    --ink: #19201B;
+    --ink-soft: #4A544C;
+    --ink-faint: #79847B;
+    --border: #DCE1D8;
+    --border-strong: #C6CDC1;
+    --accent: #2E6E4E;
+    --accent-soft: #E7F1EA;
+    --c-truth: #2E6E4E;   --c-truth-bg: #E7F1EA;
+    --c-cache: #A9711F;   --c-cache-bg: #F5EAD5;
+    --c-net:   #3B679C;   --c-net-bg:   #E4EBF5;
+    --c-client:#586171;   --c-client-bg:#E9EBEF;
+    --c-plan:  #8A7F6A;   --c-plan-bg:  #F1EEE7;
+    --sheet: #FBFAF5;
+    --sheet-ink: #1A211C;
+    --sheet-line: #8A948C;
+    --font-sans: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    --font-mono: ui-monospace, "Cascadia Code", "Consolas", "D2Coding", "Menlo", monospace;
+    --maxw: 1120px;
+    --readw: 760px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F1310; --surface: #161B16; --surface-2: #1C221C;
+      --ink: #E7ECE4; --ink-soft: #A6B0A6; --ink-faint: #6E786F;
+      --border: #29312A; --border-strong: #384038;
+      --accent: #6FC496; --accent-soft: #16251B;
+      --c-truth: #6FC496; --c-truth-bg: #14251A;
+      --c-cache: #D2A054; --c-cache-bg: #241B0E;
+      --c-net:   #7AA6DE; --c-net-bg:   #131E2A;
+      --c-client:#9BA5B1; --c-client-bg:#1A1E24;
+      --c-plan:  #B0A488; --c-plan-bg:  #201D16;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1310; --surface: #161B16; --surface-2: #1C221C;
+    --ink: #E7ECE4; --ink-soft: #A6B0A6; --ink-faint: #6E786F;
+    --border: #29312A; --border-strong: #384038;
+    --accent: #6FC496; --accent-soft: #16251B;
+    --c-truth: #6FC496; --c-truth-bg: #14251A;
+    --c-cache: #D2A054; --c-cache-bg: #241B0E;
+    --c-net:   #7AA6DE; --c-net-bg:   #131E2A;
+    --c-client:#9BA5B1; --c-client-bg:#1A1E24;
+    --c-plan:  #B0A488; --c-plan-bg:  #201D16;
+  }
+  :root[data-theme="light"] {
+    --bg: #F3F5F1; --surface: #FFFFFF; --surface-2: #EBEFE8;
+    --ink: #19201B; --ink-soft: #4A544C; --ink-faint: #79847B;
+    --border: #DCE1D8; --border-strong: #C6CDC1;
+    --accent: #2E6E4E; --accent-soft: #E7F1EA;
+    --c-truth: #2E6E4E; --c-truth-bg: #E7F1EA;
+    --c-cache: #A9711F; --c-cache-bg: #F5EAD5;
+    --c-net:   #3B679C; --c-net-bg:   #E4EBF5;
+    --c-client:#586171; --c-client-bg:#E9EBEF;
+    --c-plan:  #8A7F6A; --c-plan-bg:  #F1EEE7;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--font-sans); line-height: 1.65; -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  header.top {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+  }
+  .top .wrap { display: flex; align-items: center; gap: 18px; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
+  .brand .mark { font-size: 20px; line-height: 1; }
+  nav.toc { display: flex; gap: 2px; flex-wrap: wrap; margin-left: auto; }
+  nav.toc a {
+    font: 500 12.5px/1 var(--font-sans); color: var(--ink-soft); text-decoration: none;
+    padding: 7px 10px; border-radius: 7px; white-space: nowrap;
+  }
+  nav.toc a:hover { background: var(--surface-2); color: var(--ink); }
+  @media (max-width: 860px) { nav.toc { display: none; } }
+  .hero { padding: 64px 0 40px; }
+  .eyebrow { font: 600 12px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+  h1 { font-size: clamp(30px, 5vw, 50px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 800; margin: 0 0 20px; text-wrap: balance; max-width: 15ch; }
+  .lede { font-size: clamp(16px, 2.2vw, 19px); color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .metarow { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 28px; }
+  .chip { font: 500 12.5px/1 var(--font-mono); color: var(--ink-soft); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 7px 12px; }
+  .chip b { color: var(--ink); font-weight: 600; }
+  section { padding: 40px 0; border-top: 1px solid var(--border); }
+  .kicker { font: 600 12px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .kicker .num { color: var(--accent); }
+  h2 { font-size: clamp(23px, 3.4vw, 31px); line-height: 1.12; letter-spacing: -0.025em; font-weight: 750; margin: 0 0 14px; text-wrap: balance; }
+  h3 { font-size: 17px; letter-spacing: -0.01em; margin: 30px 0 12px; }
+  section > .wrap > p, .prose p { max-width: var(--readw); color: var(--ink-soft); }
+  section > .wrap > p strong, .prose strong { color: var(--ink); font-weight: 650; }
+  code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+  :not(pre) > code { background: var(--surface-2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; color: var(--ink); white-space: nowrap; }
+  .sheet {
+    background: var(--sheet); color: var(--sheet-ink);
+    border: 1px solid var(--border-strong); border-radius: 14px;
+    padding: 22px 20px 18px; margin: 22px 0;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 14px 34px -22px rgba(0,0,0,0.35);
+    overflow-x: auto;
+  }
+  .sheet-cap { font: 600 11.5px/1.4 var(--font-mono); letter-spacing: 0.04em; color: #55605a; text-transform: uppercase; margin: 4px 2px 16px; display: flex; align-items: center; gap: 8px; }
+  .sheet-cap::before { content: "◇"; color: #2E6E4E; }
+  .mermaid { display: flex; justify-content: center; min-width: max-content; font-family: var(--font-mono); color: #55605a; }
+  .mermaid text { font-family: var(--font-mono) !important; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 22px 0; }
+  .legend .item { display: flex; gap: 11px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 13px 14px; }
+  .legend .sw { width: 16px; height: 16px; border-radius: 5px; flex: 0 0 auto; margin-top: 2px; border: 1.5px solid; }
+  .sw.truth { background: var(--c-truth-bg); border-color: var(--c-truth); }
+  .sw.cache { background: var(--c-cache-bg); border-color: var(--c-cache); }
+  .sw.net   { background: var(--c-net-bg);   border-color: var(--c-net); }
+  .sw.client{ background: var(--c-client-bg);border-color: var(--c-client); }
+  .sw.plan  { background: var(--c-plan-bg);  border-color: var(--c-plan); border-style: dashed; }
+  .legend .lab { font-size: 13.5px; }
+  .legend .lab b { display: block; font-weight: 650; color: var(--ink); margin-bottom: 2px; }
+  .legend .lab span { color: var(--ink-faint); font-size: 12.5px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin: 22px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; position: relative; overflow: hidden; }
+  .card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); opacity: 0.85; }
+  .card .tag { font: 600 11px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+  .card h4 { margin: 10px 0 8px; font-size: 18px; letter-spacing: -0.01em; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  .card .field { margin-top: 12px; font: 500 12px/1.5 var(--font-mono); color: var(--ink-faint); }
+  .card .field b { color: var(--ink); }
+  .tablewrap { overflow-x: auto; margin: 22px 0; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 12px 15px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th { background: var(--surface-2); font-weight: 650; color: var(--ink); font-size: 12.5px; letter-spacing: 0.01em; position: sticky; top: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+  td code { white-space: nowrap; }
+  .pill { display: inline-block; font: 600 11px/1.3 var(--font-mono); padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+  .pill.truth { color: var(--c-truth); border-color: var(--c-truth); background: var(--c-truth-bg); }
+  .pill.cache { color: var(--c-cache); border-color: var(--c-cache); background: var(--c-cache-bg); }
+  .pill.plan  { color: var(--c-plan);  border-color: var(--c-plan);  background: var(--c-plan-bg); }
+  .note { display: flex; gap: 13px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: 12px; padding: 15px 17px; margin: 22px 0; max-width: var(--readw); }
+  .note .ic { color: var(--accent); font-weight: 700; flex: 0 0 auto; }
+  .note p { margin: 0; font-size: 13.5px; color: var(--ink); }
+  .note.warn { background: var(--c-cache-bg); border-color: color-mix(in srgb, var(--c-cache) 40%, var(--border)); }
+  .note.warn .ic { color: var(--c-cache); }
+  .principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 22px 0; }
+  .pr { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 17px 18px; }
+  .pr .n { font: 800 13px/1 var(--font-mono); color: var(--accent); }
+  .pr h4 { margin: 9px 0 6px; font-size: 15px; }
+  .pr p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+  ul.clean { max-width: var(--readw); padding-left: 0; list-style: none; }
+  ul.clean li { position: relative; padding-left: 22px; margin: 9px 0; color: var(--ink-soft); font-size: 14px; }
+  ul.clean li::before { content: "\203A"; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
+  ul.clean li b { color: var(--ink); }
+  footer { padding: 40px 0 70px; border-top: 1px solid var(--border); color: var(--ink-faint); font-size: 12.5px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
+  footer code { color: var(--ink-soft); }
+  :target { scroll-margin-top: 72px; }
+  a:focus-visible, nav.toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="mark">🌳</span> NAMU · 기억 설계도</div>
+    <nav class="toc">
+      <a href="#overview">전체상</a>
+      <a href="#axes">3축</a>
+      <a href="#bowls">그릇</a>
+      <a href="#map">저장지도</a>
+      <a href="#flows">흐름</a>
+      <a href="#machine">머신·AI</a>
+      <a href="#remote">원격 MCP</a>
+      <a href="#principles">원칙</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero"><div class="wrap">
+  <div class="eyebrow">Memory Architecture · 코드 기준 2026-07</div>
+  <h1>기억은 하나, 실행 엔진은 빌려 쓴다</h1>
+  <p class="lede">NAMU의 기억은 <strong>머신마다</strong>, <strong>AI마다</strong>, 그리고 <strong>기억의 종류마다</strong> 남기는 방법과 사는 곳이 다릅니다. 이 문서는 그 전체 구성을 다이어그램으로 한 장에 펼쳐, 매번 다시 묻지 않아도 되게 만든 설계도입니다.</p>
+  <div class="metarow">
+    <span class="chip">데이터 루트 <b>~/.namu</b> (고정)</span>
+    <span class="chip">진실의 원천 <b>learnings.yaml · profile.yaml</b></span>
+    <span class="chip">인터페이스 <b>MCP · 도구 4종</b></span>
+    <span class="chip">동기화 <b>Git (선택)</b></span>
+  </div>
+</div></div>
+
+<section id="legend"><div class="wrap">
+  <div class="kicker"><span class="num">00</span> 이 문서의 색 약속</div>
+  <h2>모든 다이어그램은 같은 4색 범례를 씁니다</h2>
+  <p>색이 곧 성격입니다. 아래 다섯 갈래만 기억하면 이후 모든 그림이 같은 규칙으로 읽힙니다. 도면(다이어그램)은 라이트/다크 어느 테마에서든 똑같이 보이도록 <strong>고정된 "도면 시트"</strong> 위에 그렸습니다.</p>
+  <div class="legend">
+    <div class="item"><span class="sw truth"></span><span class="lab"><b>진실의 원천 · 동기화</b><span>append-only YAML. Git으로 PC 간 공유. 지우거나 고치지 않음.</span></span></div>
+    <div class="item"><span class="sw cache"></span><span class="lab"><b>로컬 캐시 · 재생성</b><span>기기 종속. gitignore. 언제든 원천에서 다시 만들어짐.</span></span></div>
+    <div class="item"><span class="sw net"></span><span class="lab"><b>네트워크 · 원격</b><span>MCP 서버·터널·클라우드 컨테이너 등 전송/호스팅 계층.</span></span></div>
+    <div class="item"><span class="sw client"></span><span class="lab"><b>AI 클라이언트 · 엔진</b><span>Claude Code·agy·웹 등. 빌려 쓰고 교체 가능한 부품.</span></span></div>
+    <div class="item"><span class="sw plan"></span><span class="lab"><b>예정 · 미구현</b><span>설계는 확정, 코드는 아직. (예: 제3그릇 scrapbook)</span></span></div>
+  </div>
+</div></section>
+
+<section id="overview"><div class="wrap">
+  <div class="kicker"><span class="num">01</span> 전체상</div>
+  <h2>어떤 AI가 붙어도, 바라보는 기억은 하나다</h2>
+  <p>NAMU의 독립성은 인터페이스가 아니라 <strong>메모리 레이어(MCP)</strong>에 있습니다. Claude Code·agy·웹 Claude 등 실행 엔진은 전부 같은 MCP 서버를 통해 같은 <code>~/.namu</code> 기억 풀을 읽고 씁니다. 엔진은 교체돼도 기억은 그대로 누적됩니다.</p>
+  <div class="sheet">
+    <div class="sheet-cap">전체 구성 — 클라이언트 → MCP → 코어 → 원천 → 동기화</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#F1EFE8','clusterBorder':'#C6CDC1'}}}%%
+flowchart LR
+  subgraph CL["AI 클라이언트 (교체 가능)"]
+    direction TB
+    cc["Claude Code"]
+    agy["agy / Gemini"]
+    web["claude.ai 웹"]
+    cur["Cursor 등 MCP 클라이언트"]
+  end
+  subgraph SRV["MCP 메모리 서버 (mcp_server.py)"]
+    direction TB
+    t1["namu_recall"]
+    t2["namu_record"]
+    t3["namu_search"]
+    t4["namu_sync_setup"]
+  end
+  core["메모리 코어 · db.py&lt;br/&gt;검증 · 라우팅 · 검색"]
+  subgraph TRUTH["~/.namu — 진실의 원천"]
+    direction TB
+    ly["learnings.yaml"]
+    py["profile.yaml"]
+  end
+  cache["SQLite namu.db&lt;br/&gt;검색 캐시"]
+  git["Git 원격 저장소&lt;br/&gt;(개인 private repo)"]
+  pcs["다른 PC들&lt;br/&gt;hp · samsung · cloud"]
+
+  cc --&gt; SRV
+  agy --&gt; SRV
+  web --&gt; SRV
+  cur --&gt; SRV
+  SRV --&gt; core
+  core --&gt; ly
+  core --&gt; py
+  core -.인덱싱.-&gt; cache
+  cache -.관련도 검색.-&gt; core
+  ly &lt;--&gt;|push / pull| git
+  py &lt;--&gt;|push / pull| git
+  git &lt;--&gt; pcs
+
+  classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
+  classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  classDef client fill:#E9EBEF,stroke:#586171,color:#2A2F36,stroke-width:1.5px;
+  class cc,agy,web,cur client;
+  class t1,t2,t3,t4,core net;
+  class ly,py,git,pcs truth;
+  class cache cache;
+    </pre>
+  </div>
+  <div class="note"><span class="ic">✦</span><p><strong>핵심 문장:</strong> "NAMU는 AI 모델이 아니라, MCP를 지원하는 AI 클라이언트를 지원한다. AI는 바뀌어도 기억은 하나다." 도구가 4개인 이유는 <code>recall</code>·<code>record</code>·<code>search</code>에 동기화 설정 <code>sync_setup</code>이 더해지기 때문입니다. (웹 커넥터에는 앞의 3개만 노출)</p></div>
+</div></section>
+
+<section id="axes"><div class="wrap">
+  <div class="kicker"><span class="num">02</span> 세 개의 축</div>
+  <h2>"다르게 남긴다"는 건 세 축이 겹쳐 있다는 뜻</h2>
+  <p>기억이 달라지는 방향은 딱 세 가지입니다. 이 셋은 서로 직교(independent)합니다 — 하나의 기록은 세 축의 좌표를 동시에 갖습니다. 예: <em>"hp 머신에서 · Claude Code가 · 교훈(lesson)으로"</em> 남긴 한 줄.</p>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">Axis A · 종류</span>
+      <h4>기억의 종류 (그릇)</h4>
+      <p>무엇을 기억하느냐에 따라 사는 그릇이 갈립니다. 교훈·대화기록은 검색 컬렉션으로, 사실·선호는 통째 로딩하는 작은 요약본으로.</p>
+      <div class="field">필드 <b>kind</b> = lesson · note · fact <span style="color:var(--c-plan)">(+ scrapbook 예정)</span></div>
+    </div>
+    <div class="card">
+      <span class="tag">Axis B · 머신</span>
+      <h4>어느 기기에서</h4>
+      <p>PC마다 스냅샷·작업 컨텍스트는 따로 쌓이지만, 원천 풀은 Git으로 하나로 합류합니다. 저장은 분산, 진실은 통합.</p>
+      <div class="field">필드 <b>machine</b> = hp · samsung · web · cloud …</div>
+    </div>
+    <div class="card">
+      <span class="tag">Axis C · AI</span>
+      <h4>어느 AI·엔진이</h4>
+      <p>누가 남겼는지는 출처 태그로 남습니다. 실행 엔진은 빌려 쓰는 부품이라, 기억 풀은 엔진별로 나뉘지 않고 하나로 통합됩니다.</p>
+      <div class="field">필드 <b>via / client</b> = claude · agy · web …</div>
+    </div>
+  </div>
+  <div class="note"><span class="ic">i</span><p><strong>왜 통합하나?</strong> namu-35 결정 — "개발 모드/설치 모드" 구분을 폐지하고 데이터 루트를 <code>~/.namu</code> 하나로 고정했습니다. 어느 프로젝트에서 실행하든, 어느 엔진으로 실행하든 교훈은 한 풀에 모입니다. 분기(branching)가 없으니 오배선도 구조적으로 불가능합니다.</p></div>
+</div></section>
+
+<section id="bowls"><div class="wrap">
+  <div class="kicker"><span class="num">03</span> 그릇 (Axis A 상세)</div>
+  <h2>지금은 두 그릇, 곧 세 그릇</h2>
+  <p><code>namu_record</code>는 <strong>도구 하나</strong>지만 <code>kind</code> 파라미터로 서로 다른 그릇에 라우팅합니다. 웹 커넥터의 3-도구 제약 때문에 도구 수를 늘리지 않고, 라우팅으로 그릇을 나눈 설계입니다.</p>
+  <div class="sheet">
+    <div class="sheet-cap">kind 라우팅 — 하나의 record, 갈라지는 저장소</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+flowchart TB
+  rec["namu_record( kind )"]
+  rec --&gt;|"lesson · note"| ly["learnings.yaml&lt;br/&gt;교훈 + 정제된 대화기록"]
+  rec --&gt;|"fact"| py["profile.yaml&lt;br/&gt;사실 · 선호"]
+  rec -.-&gt;|"scrapbook / memo (예정)"| sb["scrapbook.yaml&lt;br/&gt;일회성 일상 메모"]
+  ly --&gt;|INSERT + 트리거| fts["SQLite FTS5&lt;br/&gt;trigram 검색 캐시"]
+  py --&gt; nocache["캐시 없음 · 통째 로딩"]
+  sb -.-&gt; future["재생성 로직도 함께 예정"]
+
+  classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
+  classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  classDef plan fill:#F1EEE7,stroke:#8A7F6A,color:#4A4436,stroke-width:1.3px,stroke-dasharray:5 4;
+  class rec net;
+  class ly,py truth;
+  class fts,nocache cache;
+  class sb,future plan;
+    </pre>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>그릇</th><th>kind</th><th>담는 것</th><th>접근 패턴</th><th>SQLite 캐시</th><th>정정 방식</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="pill truth">learnings.yaml</span></td>
+        <td><code>lesson</code> / <code>note</code></td>
+        <td>일반화할 교훈 + 정제된 대화기록</td>
+        <td>검색 컬렉션 — FTS로 관련도순/최신순 일부만</td>
+        <td>있음 <span style="color:var(--ink-faint)">(namu.db, 재생성)</span></td>
+        <td>append-only. 각 항목이 독립 사실</td>
+      </tr>
+      <tr>
+        <td><span class="pill truth">profile.yaml</span></td>
+        <td><code>fact</code></td>
+        <td>사용자·환경에 관한 사실·선호</td>
+        <td>통째 로딩 — 활성 항목 전체 반환</td>
+        <td><b>없음</b> <span style="color:var(--ink-faint)">(작아서)</span></td>
+        <td>append + <code>supersedes</code> 포워드 포인터</td>
+      </tr>
+      <tr style="opacity:.85">
+        <td><span class="pill plan">scrapbook.yaml</span></td>
+        <td><code>scrapbook</code>/<code>memo</code></td>
+        <td>영화 시간표 같은 일회성 일상 메모</td>
+        <td>(설계 진행 중)</td>
+        <td>(예정)</td>
+        <td><span style="color:var(--c-plan)">namu-56 · 미구현</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note warn"><span class="ic">⚑</span><p><strong>왜 세 번째 그릇이 필요한가:</strong> "영화 시간표"처럼 일회성 정보를 저장하라고 지시하면, 지금은 마땅한 그릇이 없어 <code>learnings.yaml</code>(엔지니어링 지식베이스)이 오염됩니다. 이를 막기 위한 전용 서랍이 <strong>namu-56</strong>으로 등록돼 있습니다. — <em>진행 중, 아직 코드로는 존재하지 않습니다.</em></p></div>
+
+  <h3>recall vs search — 같은 query, 다른 목적</h3>
+  <ul class="clean">
+    <li><b>recall</b> = 작업 <b>시작 전 맥락 로딩</b>. "뭐라도 준다" — 매칭이 약하면 최신순으로 폴백. <code>profile</code> 전체 + <code>learnings</code> 검색결과를 <code>{profile, learnings}</code> 한 dict로 반환.</li>
+    <li><b>search</b> = 판단 중 <b>패턴 분석</b>. 정확히 매칭되는 것만, 없으면 빈 결과 + 항상 <code>{success, failure, partial}</code> 경향 요약 첨부. (learnings 전용 — profile은 검색 대상이 아님)</li>
+  </ul>
+</div></section>
+
+<section id="map"><div class="wrap">
+  <div class="kicker"><span class="num">04</span> 저장 지도 (Axis B 상세)</div>
+  <h2>모든 것이 사는 곳: <code>~/.namu</code></h2>
+  <p>학습 기억이든 작업 상태든, 물리적으로는 전부 개인 풀 <code>~/.namu</code> 아래 한곳에 모입니다. 무엇이 Git으로 공유되고(초록), 무엇이 기기에만 남는 캐시인지(주황)를 색으로 구분해 보세요.</p>
+  <div class="sheet">
+    <div class="sheet-cap">~/.namu 파일 트리 — 원천 · 캐시 · 작업상태</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+flowchart TB
+  root["~/.namu/"]
+  root --&gt; mem["memory/"]
+  root --&gt; db["db/"]
+  root --&gt; tasks["tasks/[프로젝트명]/"]
+  root --&gt; gitmeta[".git · .namu_sync · .gitattributes"]
+
+  mem --&gt; lyaml["learnings.yaml"]
+  mem --&gt; pyaml["profile.yaml"]
+  db --&gt; sqlite["namu.db"]
+  db --&gt; synclog["sync.log"]
+  tasks --&gt; tm["task.md — 불변 목적"]
+  tasks --&gt; ctx["context.[machine].md — 기기별 뷰"]
+  tasks --&gt; log["log.md — append-only 권위"]
+
+  classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
+  classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  classDef folder fill:#FFFFFF,stroke:#9AA39A,color:#2A2F2B,stroke-width:1.3px;
+  class root,mem,db,tasks folder;
+  class lyaml,pyaml,tm,log truth;
+  class sqlite,synclog,ctx cache;
+  class gitmeta net;
+    </pre>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">Git으로 공유</span>
+      <h4>PC 간 합류하는 것</h4>
+      <p><code>learnings.yaml</code> · <code>profile.yaml</code> · tasks의 <code>log.md</code>·<code>.project</code>. <code>.gitattributes</code>의 <code>merge=union</code> + ULID 키 덕분에 오프라인 다중 PC 병합 충돌이 0.</p>
+    </div>
+    <div class="card">
+      <span class="tag">기기에만</span>
+      <h4>재생성되는 캐시</h4>
+      <p><code>db/</code>는 gitignore 대상. <code>namu.db</code>는 yaml↔db 항목 수가 어긋나면 서버 부팅 시 자동 재생성. <code>context.[machine].md</code>는 <code>log.md</code>로부터 다시 그릴 수 있는 뷰.</p>
+    </div>
+    <div class="card">
+      <span class="tag">분류 기준</span>
+      <h4>두 갈래로 나뉜 성격</h4>
+      <p><b>개인전역지식</b> = <code>memory/*.yaml</code> (프로젝트 무관 한 풀). <b>프로젝트상태</b> = <code>tasks/[basename(프로젝트)]/</code>. 저장 위치는 같은 <code>~/.namu</code>지만 귀속 기준이 다릅니다.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="flows"><div class="wrap">
+  <div class="kicker"><span class="num">05</span> 흐름</div>
+  <h2>쓰기 · 읽기 · 동기화가 도는 방식</h2>
+  <p>세 가지 대표 흐름을 플로우차트로 폈습니다. 특히 <strong>동기화</strong>는 "record 직후 push, 세션 시작 시 pull"이 기본이며, 충돌은 union 병합으로 구조적으로 녹입니다.</p>
+
+  <h3>① 기록 흐름 — <code>namu_record</code></h3>
+  <div class="sheet">
+    <div class="sheet-cap">record — 원천 먼저, 캐시 나중, 그리고 자동 push</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+flowchart LR
+  a["AI가 record 호출&lt;br/&gt;reason 필수"]
+  a --&gt; vchk{"reason/source&lt;br/&gt;비었나?"}
+  vchk --&gt;|비면 ValueError| err["거부 — 근거 없는 기록 차단"]
+  vchk --&gt;|OK| chk{"kind ?"}
+  chk --&gt;|lesson/note| ins["learnings.yaml append&lt;br/&gt;→ SQLite INSERT (트리거 FTS)"]
+  chk --&gt;|fact| pins["profile.yaml append&lt;br/&gt;(캐시 없음)"]
+  ins --&gt; push["sync_push() — 활성 시&lt;br/&gt;commit + push"]
+  pins --&gt; push
+  push --&gt; done["ULID 반환"]
+
+  classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  classDef warn fill:#F7E4DE,stroke:#B5543C,color:#4A1E13,stroke-width:1.4px;
+  class a,push,done net;
+  class ins,pins truth;
+  class err warn;
+    </pre>
+  </div>
+
+  <h3>② 조회 흐름 — <code>namu_recall</code></h3>
+  <div class="sheet">
+    <div class="sheet-cap">recall — 두 그릇을 합쳐 맥락으로 반환</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+flowchart LR
+  q["recall( query? )"]
+  q --&gt; p["profile.active()&lt;br/&gt;supersedes 안 걸린 것 전체"]
+  q --&gt; l{"query 있나?"}
+  l --&gt;|있음| fts["SQLite FTS 관련도순"]
+  fts --&gt; few{"결과 부족?"}
+  few --&gt;|부족| recent["최신순 폴백"]
+  few --&gt;|충분| ok1["그대로"]
+  l --&gt;|없음| recent2["id DESC 최신 N개"]
+  p --&gt; merge["{ profile, learnings } 합쳐 반환"]
+  ok1 --&gt; merge
+  recent --&gt; merge
+  recent2 --&gt; merge
+
+  classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
+  classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  class q,merge net;
+  class p truth;
+  class fts,recent,recent2,ok1 cache;
+    </pre>
+  </div>
+
+  <h3>③ 동기화 흐름 — 다중 PC 합류</h3>
+  <div class="sheet">
+    <div class="sheet-cap">sync — push/pull + union 병합으로 충돌 0</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#EFF3EC','clusterBorder':'#C6CDC1'}}}%%
+flowchart TB
+  setup["namu_sync_setup 1회&lt;br/&gt;.namu_sync 마커 + origin + .gitattributes"]
+  setup --&gt; gate{"활성 조건 3개&lt;br/&gt;NAMU_SYNC≠0 · 마커 · .git"}
+  gate --&gt;|충족| onrec["record 직후: push"]
+  gate --&gt;|충족| onsess["세션 시작: pull (union)"]
+  onrec --&gt; conflict{"push 거부&lt;br/&gt;(divergence)?"}
+  conflict --&gt;|예| retry["pull --no-rebase (union) → 재push 1회"]
+  conflict --&gt;|아니오| remote["Git 원격 (개인 repo)"]
+  retry --&gt; remote
+  onsess --&gt; stale{"yaml↔db 수 불일치?"}
+  stale --&gt;|예| rebuild["namu.db 자동 재생성"]
+  remote &lt;--&gt; otherpc["다른 PC들"]
+
+  classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  class setup,onrec,onsess,retry,remote,otherpc net;
+  class rebuild cache;
+    </pre>
+  </div>
+  <div class="note"><span class="ic">✦</span><p>동기화는 <strong>선택 기능</strong>입니다 — <code>namu_sync_setup</code>으로 명시 활성화하기 전엔 전부 로컬에만 남습니다. 원격 repo는 사용자가 미리 준비한 <strong>개인 private repo</strong>이며, 함수는 로컬 wiring만 담당합니다.</p></div>
+</div></section>
+
+<section id="machine"><div class="wrap">
+  <div class="kicker"><span class="num">06</span> 머신·AI별 차이 (Axis B·C)</div>
+  <h2>같은 풀에 남되, 출처는 필드로 새긴다</h2>
+  <p>기억 풀은 하나지만, 각 항목에는 "어느 기기에서 · 누가" 남겼는지가 필드로 박힙니다. 나중에 <code>GROUP BY machine</code>이나 태그로 기계적 추출이 가능하도록 설계된 구조입니다.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>필드</th><th>축</th><th>어떻게 정해지나</th><th>예시 값</th><th>쓰임</th></tr></thead>
+    <tbody>
+      <tr><td><code>machine</code></td><td>B · 머신</td><td><code>.env</code>의 <code>NAMU_MACHINE</code> → 없으면 호스트명 → <code>unknown</code></td><td><code>hp · samsung · web · cloud</code></td><td>기기별 통계·컨텍스트 분리</td></tr>
+      <tr><td><code>via</code> / <code>client</code></td><td>C · AI</td><td>기록한 엔진이 주입 (웹 라우팅은 <code>?client=</code>)</td><td><code>claude · agy · web</code></td><td>어느 AI가 남겼나 (출처 태그)</td></tr>
+      <tr><td><code>verified_by</code></td><td>검증</td><td>기록 시 지정 (백필 불가)</td><td><code>human · ai · unverified</code></td><td>"사람이 검증한 것만" 필터</td></tr>
+      <tr><td><code>id</code></td><td>정렬</td><td>서버가 ULID 자동 생성</td><td><code>01KY4F…</code></td><td>시간순 정렬 + 머지 충돌 0</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">머신 (B)</span>
+      <h4>분산 저장, 통합 진실</h4>
+      <p><code>context.[machine].md</code>는 PC마다 따로 — 재생성 가능한 뷰. 권위는 공유되는 <code>log.md</code>. <code>NAMU_MACHINE</code>은 <code>.env</code>에 PC별로 한 번만 설정합니다.</p>
+    </div>
+    <div class="card">
+      <span class="tag">AI (C)</span>
+      <h4>엔진은 부품, 기억은 코어</h4>
+      <p>기본 워커 = 메인 AI의 네이티브 서브에이전트(추가 비용 0·보안). 외부 엔진(agy·Gemini)은 설치/작업 시 고르는 override. 선택값은 <code>namu_workers.yaml</code>에.</p>
+    </div>
+    <div class="card">
+      <span class="tag">불변식</span>
+      <h4>실행 위치로 분기하지 않는다</h4>
+      <p>어느 프로젝트·어느 엔진에서 기록하든 한 풀로 통합(namu-35). 나중에 공개 커뮤니티 풀이 생기면 task명·태그로 기계 추출하도록 설계됨.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="remote"><div class="wrap">
+  <div class="kicker"><span class="num">07</span> 원격 MCP — 개인 · 공용</div>
+  <h2>기억을 네트워크 너머로 여는 두 경로</h2>
+  <p>stdio 로컬 서버가 기본이지만, 웹 Claude(claude.ai) 같은 원격 클라이언트를 붙이려면 HTTP로도 서빙해야 합니다. 여기에 두 갈래가 있습니다 — <strong>경로 B(개인 셀프호스팅)</strong>는 구현·라이브, <strong>경로 A(공용 멀티유저)</strong>는 라우팅까지 라이브·인증은 미완입니다.</p>
+  <div class="sheet">
+    <div class="sheet-cap">원격 위상 — 경로 B(개인) / 경로 A(공용)</div>
+    <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'12.5px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#EEF2F7','clusterBorder':'#C6CDC1'}}}%%
+flowchart TB
+  web["claude.ai 웹 커넥터&lt;br/&gt;(Streamable HTTP)"]
+
+  subgraph B["경로 B · 개인 셀프호스팅 (구현·라이브)"]
+    direction TB
+    httpb["http_server.py&lt;br/&gt;토큰 헤더 OR 시크릿 경로"]
+    homeb["단일 사용자의 ~/.namu"]
+    httpb --&gt; homeb
+  end
+  subgraph A["경로 A · 공용 멀티유저 (라우팅 라이브 · 인증 미완)"]
+    direction TB
+    route["namu-cloud-routing&lt;br/&gt;?user=키 · ?client=출처"]
+    store["STORE_ROOT/users/[키]/"]
+    route --&gt; store
+  end
+
+  web --&gt;|"내 서버 URL"| httpb
+  web --&gt;|"공용 URL + ?user="| route
+  homeb &lt;--&gt;|git| gh["GitHub 원천"]
+  store &lt;--&gt;|git| gh
+
+  classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
+  classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
+  classDef client fill:#E9EBEF,stroke:#586171,color:#2A2F36,stroke-width:1.5px;
+  class web client;
+  class httpb,route net;
+  class homeb,store,gh truth;
+    </pre>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">경로 B · 개인</span>
+      <h4>두 배포 형태</h4>
+      <p><b>①</b> 자기 PC 상시구동 + 터널(cloudflared)로 공개 HTTPS — 지금 쓰는 그 <code>~/.namu</code> 그대로. <b>②</b> 클라우드 컨테이너(Railway 등) — 부팅 시 GitHub에서 clone. 인증은 토큰 헤더 또는 시크릿 경로.</p>
+    </div>
+    <div class="card">
+      <span class="tag">경로 A · 공용</span>
+      <h4>지금은 "협조적 격리"</h4>
+      <p><code>?user=키</code>로 <code>users/[키]/</code> 서랍에 라우팅. 다만 <code>?user=</code>는 <b>인증이 아니라 위조 가능한 라벨</b> — 공유 시크릿을 아는 사람은 남의 키도 지정 가능. 일반 공개엔 부족합니다.</p>
+    </div>
+    <div class="card">
+      <span class="tag">미래</span>
+      <h4>신원을 URL → 토큰으로</h4>
+      <p>OAuth 2.1 도입 시 신원이 URL에서 빠지고 사용자별 <code>Bearer</code> 토큰으로 이동 → 남의 서랍 접근이 구조적으로 차단. <code>?client=</code>(어느 AI)는 별개 축이라 그대로 유지.</p>
+    </div>
+  </div>
+  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code 전용 글루라 웹에서 동작하지 않습니다. tasks 도구도 웹엔 노출하지 않습니다 — 웹 노출은 <code>recall·record·search</code> 3종뿐.</p></div>
+</div></section>
+
+<section id="principles"><div class="wrap">
+  <div class="kicker"><span class="num">08</span> 흔들리지 않는 원칙</div>
+  <h2>이 설계가 지키는 여섯 가지</h2>
+  <div class="principles">
+    <div class="pr"><div class="n">01</div><h4>독립성은 메모리 레이어에</h4><p>인터페이스가 아니라 MCP에 포터블하게. 실행 엔진은 빌려 쓰고 교체 가능한 부품.</p></div>
+    <div class="pr"><div class="n">02</div><h4>원본이 곧 기억</h4><p><code>learnings.yaml</code>이 진실의 원천(append-only). SQLite는 재생성 가능한 캐시일 뿐.</p></div>
+    <div class="pr"><div class="n">03</div><h4>append-only 로그</h4><p><code>learnings.yaml</code>과 작업 <code>log.md</code>는 수정·삭제하지 않는다. 정정은 새 항목으로.</p></div>
+    <div class="pr"><div class="n">04</div><h4>승인 게이트</h4><p>워커 호출 전, 검수 fail 후 재실행 전 반드시 사용자 확인. 자동 재실행 금지.</p></div>
+    <div class="pr"><div class="n">05</div><h4>판단 이유 기록</h4><p>결과만이 아니라 <code>reason</code>(왜)까지. 근거 없는 기록은 <code>ValueError</code>로 차단.</p></div>
+    <div class="pr"><div class="n">06</div><h4>데이터 루트 고정</h4><p><code>~/.namu</code> 고정 상수 — 환경변수로도 못 바꿈. 분기가 없으니 오배선도 불가능.</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <span>🌳 <b>NAMU 기억 시스템 설계도</b></span>
+  <span>근거: <code>config.py</code> · <code>memory_sync.py</code> · <code>db.py</code> · <code>docs/mcp_memory_design.md</code> · <code>docs/remote_mcp_design.md</code></span>
+  <span>코드 기준 시점 2026-07 · 예정 항목(scrapbook)은 namu-56 진행 중</span>
+</div></footer>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose', flowchart: { htmlLabels: true, useMaxWidth: true } });
+</script>
+</body>
+</html>
