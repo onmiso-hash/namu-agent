@@ -72,11 +72,18 @@
   }
   img { max-width: 100%; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
-  header.top {
-    position: sticky; top: 0; z-index: 20;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
-  }
+  .topbar { position: sticky; top: 0; z-index: 30; }
+  .sitenav { background: color-mix(in srgb, var(--surface-2) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+  .sitenav .wrap { display: flex; align-items: center; gap: 6px 24px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+  .site-brand { display: flex; align-items: center; gap: 7px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; font-size: 14px; white-space: nowrap; }
+  .site-brand b { color: var(--accent); font-weight: 800; }
+  .site-groups { display: flex; align-items: center; gap: 6px 18px; flex-wrap: wrap; }
+  .grp { display: inline-flex; align-items: center; gap: 8px; }
+  .glab { font: 700 10px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); border-right: 1px solid var(--border-strong); padding-right: 9px; }
+  .site-groups a { font: 500 13px/1 var(--font-sans); color: var(--ink-soft); text-decoration: none; padding: 4px 3px; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .site-groups a:hover { color: var(--ink); }
+  .site-groups a.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 650; }
+  .top { z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
   .top .wrap { display: flex; align-items: center; gap: 18px; height: 56px; }
   .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
   .brand .mark { font-size: 20px; line-height: 1; }
@@ -161,26 +168,48 @@
   footer { padding: 40px 0 70px; border-top: 1px solid var(--border); color: var(--ink-faint); font-size: 12.5px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
   footer code { color: var(--ink-soft); }
-  :target { scroll-margin-top: 72px; }
+  :target { scroll-margin-top: 118px; }
   a:focus-visible, nav.toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
 
-<header class="top">
-  <div class="wrap">
-    <div class="brand"><span class="mark">🌳</span> NAMU · 기억 설계도</div>
-    <nav class="toc">
-      <a href="#overview">전체상</a>
-      <a href="#axes">3축</a>
-      <a href="#bowls">그릇</a>
-      <a href="#map">저장지도</a>
-      <a href="#flows">흐름</a>
-      <a href="#machine">머신·AI</a>
-      <a href="#remote">원격 MCP</a>
-      <a href="#principles">원칙</a>
-    </nav>
+<header class="topbar">
+  <div class="sitenav">
+    <div class="wrap">
+      <a class="site-brand" href="./index.html">🌳 onnamu <b>docs</b></a>
+      <div class="site-groups">
+        <span class="grp"><span class="glab">설계</span>
+          <a class="active" aria-current="page" href="./memory_architecture.html">기억 설계도</a>
+          <a href="./mcp_memory_design.html">MCP 메모리</a>
+          <a href="./remote_mcp_design.html">원격 MCP</a>
+        </span>
+        <span class="grp"><span class="glab">가이드</span>
+          <a href="./install_guide.html">설치</a>
+          <a href="./usage_guide.html">사용법</a>
+          <a href="./remote_mcp_guide.html">원격 연결</a>
+        </span>
+        <span class="grp"><span class="glab">계획</span>
+          <a href="./plan.html">로드맵</a>
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="top">
+    <div class="wrap">
+      <div class="brand"><span class="mark">🌳</span> NAMU · 기억 설계도</div>
+      <nav class="toc">
+        <a href="#overview">전체상</a>
+        <a href="#axes">3축</a>
+        <a href="#bowls">그릇</a>
+        <a href="#map">저장지도</a>
+        <a href="#flows">흐름</a>
+        <a href="#machine">머신·AI</a>
+        <a href="#remote">원격 MCP</a>
+        <a href="#principles">원칙</a>
+      </nav>
+    </div>
   </div>
 </header>
 
