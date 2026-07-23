@@ -112,8 +112,8 @@
   }
   .sheet-cap { font: 600 11.5px/1.4 var(--font-mono); letter-spacing: 0.04em; color: #55605a; text-transform: uppercase; margin: 4px 2px 16px; display: flex; align-items: center; gap: 8px; }
   .sheet-cap::before { content: "◇"; color: #2E6E4E; }
-  .mermaid { display: flex; justify-content: center; min-width: max-content; font-family: var(--font-mono); color: #55605a; }
-  .mermaid text { font-family: var(--font-mono) !important; }
+  .mermaid { display: block; text-align: center; color: var(--sheet-ink); }
+  .mermaid svg { max-width: none; height: auto; }
   .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 22px 0; }
   .legend .item { display: flex; gap: 11px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 13px 14px; }
   .legend .sw { width: 16px; height: 16px; border-radius: 5px; flex: 0 0 auto; margin-top: 2px; border: 1.5px solid; }
@@ -216,7 +216,7 @@
   <div class="sheet">
     <div class="sheet-cap">전체 구성 — 클라이언트 → MCP → 코어 → 원천 → 동기화</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#F1EFE8','clusterBorder':'#C6CDC1'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#F1EFE8','clusterBorder':'#C6CDC1'}}}%%
 flowchart LR
   subgraph CL["AI 클라이언트 (교체 가능)"]
     direction TB
@@ -302,7 +302,7 @@ flowchart LR
   <div class="sheet">
     <div class="sheet-cap">kind 라우팅 — 하나의 record, 갈라지는 저장소</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
 flowchart TB
   rec["namu_record( kind )"]
   rec --&gt;|"lesson · note"| ly["learnings.yaml&lt;br/&gt;교훈 + 정제된 대화기록"]
@@ -369,7 +369,7 @@ flowchart TB
   <div class="sheet">
     <div class="sheet-cap">~/.namu 파일 트리 — 원천 · 캐시 · 작업상태</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
 flowchart TB
   root["~/.namu/"]
   root --&gt; mem["memory/"]
@@ -423,7 +423,7 @@ flowchart TB
   <div class="sheet">
     <div class="sheet-cap">record — 원천 먼저, 캐시 나중, 그리고 자동 push</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
 flowchart LR
   a["AI가 record 호출&lt;br/&gt;reason 필수"]
   a --&gt; vchk{"reason/source&lt;br/&gt;비었나?"}
@@ -448,7 +448,7 @@ flowchart LR
   <div class="sheet">
     <div class="sheet-cap">recall — 두 그릇을 합쳐 맥락으로 반환</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
 flowchart LR
   q["recall( query? )"]
   q --&gt; p["profile.active()&lt;br/&gt;supersedes 안 걸린 것 전체"]
@@ -476,7 +476,7 @@ flowchart LR
   <div class="sheet">
     <div class="sheet-cap">sync — push/pull + union 병합으로 충돌 0</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#EFF3EC','clusterBorder':'#C6CDC1'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#EFF3EC','clusterBorder':'#C6CDC1'}}}%%
 flowchart TB
   setup["namu_sync_setup 1회&lt;br/&gt;.namu_sync 마커 + origin + .gitattributes"]
   setup --&gt; gate{"활성 조건 3개&lt;br/&gt;NAMU_SYNC≠0 · 마커 · .git"}
@@ -540,7 +540,7 @@ flowchart TB
   <div class="sheet">
     <div class="sheet-cap">원격 위상 — 경로 B(개인) / 경로 A(공용)</div>
     <pre class="mermaid">
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Consolas, monospace','fontSize':'12.5px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#EEF2F7','clusterBorder':'#C6CDC1'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontSize':'12.5px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#EEF2F7','clusterBorder':'#C6CDC1'}}}%%
 flowchart TB
   web["claude.ai 웹 커넥터&lt;br/&gt;(Streamable HTTP)"]
 
@@ -611,7 +611,12 @@ flowchart TB
 
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose', flowchart: { htmlLabels: true, useMaxWidth: true } });
+  mermaid.initialize({
+    startOnLoad: true,
+    securityLevel: 'loose',
+    fontFamily: '"Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif',
+    flowchart: { htmlLabels: true, useMaxWidth: false, padding: 10, nodeSpacing: 55, rankSpacing: 60 }
+  });
 </script>
 </body>
 </html>
