@@ -72,33 +72,21 @@
   }
   img { max-width: 100%; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
-  .topbar { position: sticky; top: 0; z-index: 30; }
-  /* row 1 — 문서 사이를 오가는 사이트 네비 (주) */
-  .sitenav { position: relative; z-index: 2; background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
-  .sitenav .wrap { display: flex; align-items: center; gap: 10px 22px; flex-wrap: wrap; min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
-  .site-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; font-size: 15px; white-space: nowrap; }
-  .site-brand b { color: var(--accent); font-weight: 800; }
-  .site-groups { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; }
-  .menu { position: relative; }
-  .menu-btn { display: inline-flex; align-items: center; gap: 6px; font: 600 14px/1 var(--font-sans); color: var(--ink-soft); background: none; border: none; cursor: pointer; padding: 8px 12px; border-radius: 8px; }
-  .menu-btn:hover, .menu:hover .menu-btn, .menu.open .menu-btn { color: var(--ink); background: var(--surface-2); }
-  .menu-btn.has-active { color: var(--accent); }
-  .menu-btn .chev { font-size: 8px; color: var(--ink-faint); transition: transform .15s ease; }
-  .menu:hover .menu-btn .chev, .menu.open .menu-btn .chev { transform: rotate(180deg); }
-  .menu-panel { position: absolute; top: calc(100% + 6px); left: 0; min-width: 200px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; box-shadow: 0 14px 34px -12px rgba(0,0,0,.32); padding: 6px; display: flex; flex-direction: column; gap: 1px; opacity: 0; visibility: hidden; transform: translateY(-5px); transition: opacity .14s ease, transform .14s ease, visibility .14s; z-index: 40; }
-  .menu:hover .menu-panel, .menu.open .menu-panel { opacity: 1; visibility: visible; transform: translateY(0); }
-  .menu:last-child .menu-panel { left: auto; right: 0; }
-  .menu-panel a { font: 500 13.5px/1.2 var(--font-sans); color: var(--ink-soft); text-decoration: none; padding: 9px 12px; border-radius: 7px; white-space: nowrap; }
-  .menu-panel a:hover { background: var(--surface-2); color: var(--ink); }
-  .menu-panel a.active { color: var(--accent); font-weight: 650; background: var(--accent-soft); }
-  /* row 2 — 이 문서 안의 목차 (종속) */
-  .pagenav { position: relative; z-index: 1; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
-  .pagenav .wrap { display: flex; align-items: center; gap: 12px; min-height: 42px; padding-top: 3px; padding-bottom: 3px; }
-  .pnlabel { font: 700 9.5px/1 var(--font-mono); letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; }
-  nav.toc { display: flex; gap: 1px; flex-wrap: wrap; }
-  nav.toc a { font: 500 12.5px/1 var(--font-sans); color: var(--ink-faint); text-decoration: none; padding: 6px 9px; border-radius: 7px; white-space: nowrap; }
+  header.top {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+  }
+  .top .wrap { display: flex; align-items: center; gap: 18px; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
+  .brand .mark { font-size: 20px; line-height: 1; }
+  nav.toc { display: flex; gap: 2px; flex-wrap: wrap; margin-left: auto; }
+  nav.toc a {
+    font: 500 12.5px/1 var(--font-sans); color: var(--ink-soft); text-decoration: none;
+    padding: 7px 10px; border-radius: 7px; white-space: nowrap;
+  }
   nav.toc a:hover { background: var(--surface-2); color: var(--ink); }
-  @media (max-width: 860px) { .pagenav { display: none; } }
+  @media (max-width: 860px) { nav.toc { display: none; } }
   .hero { padding: 64px 0 40px; }
   .eyebrow { font: 600 12px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
   h1 { font-size: clamp(30px, 5vw, 50px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 800; margin: 0 0 20px; text-wrap: balance; max-width: 15ch; }
@@ -173,57 +161,49 @@
   footer { padding: 40px 0 70px; border-top: 1px solid var(--border); color: var(--ink-faint); font-size: 12.5px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
   footer code { color: var(--ink-soft); }
-  :target { scroll-margin-top: 118px; }
+  :target { scroll-margin-top: 72px; }
   a:focus-visible, nav.toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  /* ---------- DOC NAV (가이드 HTML과 동일) ---------- */
+  .namu-docnav{
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    background:#2c5a39;padding:10px 16px;
+  }
+  .namu-docnav a{
+    display:inline-block;text-decoration:none;color:#e8f3ea;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    transition:.15s;
+  }
+  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
+  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
 </style>
 </head>
 <body>
 
-<header class="topbar">
-  <div class="sitenav">
-    <div class="wrap">
-      <a class="site-brand" href="./index.html">🌳 onnamu <b>docs</b></a>
-      <nav class="site-groups" aria-label="문서">
-        <div class="menu">
-          <button class="menu-btn has-active" type="button" aria-expanded="false" aria-haspopup="true">설계 <span class="chev">▼</span></button>
-          <div class="menu-panel" role="menu">
-            <a class="active" aria-current="page" href="./memory_architecture.html">기억 설계도</a>
-            <a href="./mcp_memory_design.html">MCP 메모리 설계</a>
-            <a href="./remote_mcp_design.html">원격 MCP 설계</a>
-          </div>
-        </div>
-        <div class="menu">
-          <button class="menu-btn" type="button" aria-expanded="false" aria-haspopup="true">가이드 <span class="chev">▼</span></button>
-          <div class="menu-panel" role="menu">
-            <a href="./install_guide.html">설치 가이드</a>
-            <a href="./usage_guide.html">사용 가이드</a>
-            <a href="./remote_mcp_guide.html">원격 연결 가이드</a>
-          </div>
-        </div>
-        <div class="menu">
-          <button class="menu-btn" type="button" aria-expanded="false" aria-haspopup="true">계획 <span class="chev">▼</span></button>
-          <div class="menu-panel" role="menu">
-            <a href="./plan.html">로드맵 · 계획</a>
-          </div>
-        </div>
-      </nav>
-    </div>
-  </div>
-  <div class="pagenav">
-    <div class="wrap">
-      <span class="pnlabel">이 문서</span>
-      <nav class="toc" aria-label="이 문서 목차">
-        <a href="#overview">전체상</a>
-        <a href="#axes">3축</a>
-        <a href="#bowls">그릇</a>
-        <a href="#map">저장지도</a>
-        <a href="#flows">흐름</a>
-        <a href="#machine">머신·AI</a>
-        <a href="#remote">원격 MCP</a>
-        <a href="#principles">원칙</a>
-      </nav>
-    </div>
+<nav class="namu-docnav">
+  <a href="namu_guide.html">🌳 안내서</a>
+  <a href="namu_quickstart.html">🚀 빠른 시작</a>
+  <a href="install_guide.html">🔧 설치 가이드</a>
+  <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
+  <a href="namu_cloud_guide.html">☁️ 공용 클라우드</a>
+  <a href="memory_architecture.html" class="is-current">📐 기억 설계도</a>
+  <a href="https://github.com/onmiso-hash/namu-agent" target="_blank" rel="noopener">💻 GitHub</a>
+</nav>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="mark">🌳</span> NAMU · 기억 설계도</div>
+    <nav class="toc">
+      <a href="#overview">전체상</a>
+      <a href="#axes">3축</a>
+      <a href="#bowls">그릇</a>
+      <a href="#map">저장지도</a>
+      <a href="#flows">흐름</a>
+      <a href="#machine">머신·AI</a>
+      <a href="#remote">원격 MCP</a>
+      <a href="#principles">원칙</a>
+    </nav>
   </div>
 </header>
 
@@ -660,31 +640,6 @@ flowchart TB
     fontFamily: '"Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif',
     flowchart: { htmlLabels: true, useMaxWidth: false, padding: 10, nodeSpacing: 55, rankSpacing: 60 }
   });
-</script>
-<script>
-  (function () {
-    var menus = Array.prototype.slice.call(document.querySelectorAll('.menu'));
-    function closeAll(except) {
-      menus.forEach(function (m) {
-        if (m !== except) {
-          m.classList.remove('open');
-          var b = m.querySelector('.menu-btn');
-          if (b) b.setAttribute('aria-expanded', 'false');
-        }
-      });
-    }
-    menus.forEach(function (m) {
-      var btn = m.querySelector('.menu-btn');
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var open = m.classList.toggle('open');
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        closeAll(m);
-      });
-    });
-    document.addEventListener('click', function () { closeAll(null); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(null); });
-  })();
 </script>
 </body>
 </html>
