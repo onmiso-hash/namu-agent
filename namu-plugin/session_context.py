@@ -192,6 +192,16 @@ def _one_line(text: str, limit: int = 70) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
+def _flat(text: str) -> str:
+    """자르지 않고 한 줄로만 접는다 — 맨 위 task의 `다음:` 전용(namu-57 1-2 보완).
+
+    나머지 줄은 좁은 CLI 폭 때문에 잘라야 하지만, 맨 위 task의 "다음"만은 전문을
+    싣는다. 이 한 줄이 곧 재진입 지점이라 잘리면 세션이 log.md를 한 번 더 읽어야
+    착수할 수 있고, 그러면 "이어서 하자" 한마디로 이어지지 않는다(사용자 지적).
+    """
+    return " ".join(text.split())
+
+
 def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[str], str | None]:
     """(브리핑 본문 줄들, 맨 위 task 제목) 반환. 열린 task가 없으면 ([], None).
 
@@ -227,7 +237,11 @@ def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[
         if i >= _OPEN_TASK_LINES:
             continue
         marker = "▸ " if i == 0 else ""
-        next_text = _one_line(note) if note else "(기록 없음)"
+        if note:
+            # 맨 위(▸)만 전문 — 재진입 지점이라 잘리면 안 된다(_flat 주석 참고).
+            next_text = _flat(note) if i == 0 else _one_line(note)
+        else:
+            next_text = "(기록 없음)"
         parts.append(
             f"- {marker}**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}"
             f"\n  - 다음: {next_text}"
@@ -236,7 +250,10 @@ def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[
         parts.append(f"- … ({len(open_tasks) - _OPEN_TASK_LINES}개 더)")
     parts.append("")
     parts.append(
-        "▸는 가장 최근 활동한 task일 뿐 **단정이 아닙니다** — 어느 task를 이어갈지는 사용자에게 확인하세요."
+        "▸는 가장 최근 활동한 task일 뿐 **단정이 아닙니다** — 나머지도 전부 열려 있습니다. "
+        "다만 사용자가 대상을 지목하지 않고 \"이어서 하자\"고만 하면 **되묻지 말고 ▸의 "
+        "`다음:`부터 착수하세요** — 이어갈 지점은 이미 log의 마지막 `[다음]` 줄에 적혀 "
+        "있으니 사용자에게 다시 물을 이유가 없습니다. 다른 task를 원하면 사용자가 이름을 댑니다."
     )
     if missing_next:
         parts.append(

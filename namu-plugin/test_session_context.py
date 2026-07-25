@@ -219,6 +219,44 @@ def test_build_markdown_next_tag_in_log_wins_over_context(tmp_path):
     assert "낡은 context 다음" not in md
 
 
+def test_build_markdown_top_task_next_is_not_truncated(tmp_path):
+    """맨 위(▸) task의 '다음:'만 전문으로 싣는다(namu-57 1-2 보완).
+
+    그 한 줄이 곧 재진입 지점이라, 잘리면 사용자가 "이어서 하자"고 해도 log.md를
+    다시 읽어야 착수할 수 있다. 아래 task는 좁은 CLI 폭을 위해 그대로 자른다.
+    """
+    long_next = (
+        "3단계 착수 — config.py에 그릇 레지스트리 신설 후 "
+        "memory_sync.ensure_gitattributes_union()을 레지스트리 파생으로 교체하고 "
+        "임시 clone 2개로 오프라인 양쪽 append 충돌 여부를 실측한다"
+    )
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    # 최신(맨 위) task
+    _make_task(
+        tasks_root, "top-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-06-28 09:00:00 hp · 시작",
+            f"[다음] 2026-06-29 18:00:00 hp · {long_next}",
+        ],
+    )
+    # 더 오래된 task — 같은 길이의 '다음'이 붙어도 이쪽은 잘려야 한다
+    _make_task(
+        tasks_root, "older-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-06-01 09:00:00 hp · 시작",
+            f"[다음] 2026-06-02 18:00:00 hp · {long_next}",
+        ],
+    )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert f"다음: {long_next}" in md          # ▸ 맨 위는 전문
+    assert md.count(f"다음: {long_next}") == 1  # 아래 task는 잘려서 전문이 아님
+    assert "…" in md                            # 잘린 흔적이 실제로 있다
+
+
 def test_build_markdown_no_task_learnings_only(tmp_path):
     """활성 task 없고 교훈 있음 → '💡 최근 교훈'만, task 섹션 없음."""
     conn = _setup_mem_db([
