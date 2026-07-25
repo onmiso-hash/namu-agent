@@ -355,6 +355,217 @@ def test_namu_record_bowl_tasks_via_roundtrip(fake_home):
     assert "SEARCH 1 웹에서 기록 claude" in result.stdout
 
 
+# ---------------------------------------------------------------------------
+# ⑧ namu_recall — 기존 2키 불변 + 신규 'tasks' 키(namu-57 2단계 보완)
+# ---------------------------------------------------------------------------
+
+
+def test_namu_recall_existing_two_keys_unchanged(fake_home):
+    """profile/learnings 키의 형태·내용이 project 인자 추가 전과 동일해야 한다(하위 호환)."""
+    result = _run_probe(
+        fake_home,
+        "mcp_server.namu_record(task='t1', outcome='success', reason='r1')\n"
+        "r = mcp_server.namu_recall(query='t1')\n"
+        "print('RESULT', sorted(r.keys()), r['learnings'][0]['task'], isinstance(r['profile'], list))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT ['learnings', 'profile', 'tasks'] t1 True" in result.stdout
+
+
+def test_namu_recall_lists_open_tasks_with_full_next(fake_home):
+    _make_pool_task(
+        fake_home, "proj-x", "namu-57",
+        "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n"
+        "[다음] 2026-07-25 10:00:00 hp · 여기부터 이어서 하기 아주 길게 설명하는 재진입 지점\n",
+    )
+    result = _run_probe(
+        fake_home,
+        "r = mcp_server.namu_recall(project='proj-x')\n"
+        "print('RESULT', len(r['tasks']), r['tasks'][0]['project'], r['tasks'][0]['slug'],"
+        " repr(r['tasks'][0]['next']))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert (
+        "RESULT 1 proj-x namu-57 '여기부터 이어서 하기 아주 길게 설명하는 재진입 지점'"
+        in result.stdout
+    )
+
+
+def test_namu_recall_next_is_none_when_no_next_tag(fake_home):
+    _make_pool_task(
+        fake_home, "proj-x", "namu-57",
+        "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n",
+    )
+    result = _run_probe(
+        fake_home,
+        "r = mcp_server.namu_recall(project='proj-x')\n"
+        "print('RESULT', r['tasks'][0]['next'])\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT None" in result.stdout
+
+
+def test_namu_recall_stdio_default_project_is_cwd(tmp_path, fake_home):
+    _make_pool_task(fake_home, "my-proj", "namu-1", "# log\n[결정] 2026-07-25 10:00:00 hp · in my-proj\n")
+    _make_pool_task(fake_home, "other-proj", "namu-2", "# log\n[결정] 2026-07-25 10:00:00 hp · in other-proj\n")
+    cwd = tmp_path / "my-proj"
+    cwd.mkdir()
+
+    result = _run_probe(
+        fake_home,
+        "r = mcp_server.namu_recall()\n"
+        "print('RESULT', [t['project'] for t in r['tasks']])\n",
+        cwd=cwd,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT ['my-proj']" in result.stdout
+
+
+def test_namu_recall_web_default_project_merges_all(fake_home):
+    _make_pool_task(fake_home, "proj-a", "namu-1", "# log\n[결정] 2026-07-25 10:00:00 hp · a\n")
+    _make_pool_task(fake_home, "proj-b", "namu-2", "# log\n[결정] 2026-07-25 10:00:00 hp · b\n")
+
+    result = _run_probe(
+        fake_home,
+        "r = mcp_server.namu_recall(ctx=_WEB_CTX)\n"
+        "print('RESULT', sorted(t['project'] for t in r['tasks']))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT ['proj-a', 'proj-b']" in result.stdout
+
+
+def test_namu_recall_project_star_merges_all_even_on_stdio(tmp_path, fake_home):
+    _make_pool_task(fake_home, "proj-a", "namu-1", "# log\n[결정] 2026-07-25 10:00:00 hp · a\n")
+    _make_pool_task(fake_home, "proj-b", "namu-2", "# log\n[결정] 2026-07-25 10:00:00 hp · b\n")
+    cwd = tmp_path / "unrelated-proj"
+    cwd.mkdir()
+
+    result = _run_probe(
+        fake_home,
+        "r = mcp_server.namu_recall(project='*')\n"
+        "print('RESULT', sorted(t['project'] for t in r['tasks']))\n",
+        cwd=cwd,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT ['proj-a', 'proj-b']" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# ⑨ namu_record(bowl='tasks', create=True) — 새 task 생성(namu-57 2단계 보완)
+# ---------------------------------------------------------------------------
+
+
+def test_namu_record_create_writes_task_and_log_and_start_line(fake_home):
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
+        " create=True, title='새 설계 작업', purpose='웹에서 새 task를 만들 수 있어야 한다',"
+        " done_when=['조건1', '조건2'])\n"
+        "print('RESULT', repr(line))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+    task_dir = fake_home / ".namu" / "tasks" / "proj-new" / "namu-99"
+    task_md = (task_dir / "task.md").read_text(encoding="utf-8")
+    log_md = (task_dir / "log.md").read_text(encoding="utf-8")
+
+    assert "# namu-99 — 새 설계 작업" in task_md
+    assert "웹에서 새 task를 만들 수 있어야 한다" in task_md
+    assert "- [ ] 조건1" in task_md
+    assert "- [ ] 조건2" in task_md
+    assert not (task_dir / "context.hp.md").exists()  # context.<machine>.md는 만들지 않는다
+    assert any(f.name.startswith("context.") for f in task_dir.iterdir()) is False
+
+    lines = log_md.splitlines()
+    assert lines[-1].startswith("[시작] ")
+    assert lines[-1].endswith(" · 작업 생성, 목적·완료조건 확정")
+
+    assert str(task_dir) in result.stdout
+    assert "[시작]" in result.stdout
+
+
+def test_namu_record_create_without_purpose_raises(fake_home):
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99', create=True)\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    assert not (fake_home / ".namu" / "tasks" / "proj-new").exists()
+
+
+def test_namu_record_create_existing_slug_raises(fake_home):
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
+
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', create=True,"
+        " purpose='덮어쓰기 시도')\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    # 기존 log.md가 덮어써지지 않았는지 확인
+    log_text = (fake_home / ".namu" / "tasks" / "proj-x" / "namu-57" / "log.md").read_text(encoding="utf-8")
+    assert log_text == "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n"
+
+
+def test_namu_record_missing_slug_without_create_still_raises(fake_home):
+    """create 없이 없는 슬러그면 기존과 동일하게 거절(안내 문구 포함)."""
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
+
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='ghost', text='x')\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    assert "create=True" in result.stdout
+
+
+def test_namu_record_create_path_traversal_slug_rejected(fake_home):
+    result = _run_probe(
+        fake_home,
+        "for bad in ('../evil', 'a/b', 'a\\\\b', '..'):\n"
+        "    try:\n"
+        "        mcp_server.namu_record(bowl='tasks', project='proj-x', task=bad, create=True,"
+        " purpose='p')\n"
+        "        print('NO_ERROR', bad)\n"
+        "    except ValueError as e:\n"
+        "        print('VALUEERROR', bad)\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "NO_ERROR" not in result.stdout
+    assert result.stdout.count("VALUEERROR") == 4
+    # 실제로 부모 경로 밖으로 폴더가 새지 않았는지 확인
+    assert not (fake_home / ".namu" / "evil").exists()
+    assert not (fake_home / ".namu" / "tasks" / "evil").exists()
+
+
+def test_namu_record_create_then_recall_roundtrip(fake_home):
+    """create=True로 만든 task가 곧바로 namu_recall의 열린 task 목록에 나온다."""
+    result = _run_probe(
+        fake_home,
+        "mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-100', create=True,"
+        " purpose='왕복 확인용')\n"
+        "r = mcp_server.namu_recall(project='proj-x')\n"
+        "print('RESULT', [t['slug'] for t in r['tasks']], r['tasks'][0]['title'])\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT ['namu-100'] namu-100" in result.stdout
+
+
 if __name__ == "__main__":
     import pytest as _pytest
 

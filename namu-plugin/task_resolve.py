@@ -217,6 +217,43 @@ def next_note(task_dir: Path) -> str | None:
     return None
 
 
+def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str | None]]:
+    """열린 task 전부 + 재진입 지점(next)을 project와 함께 묶어 최근 활동순으로 반환한다.
+
+    (namu-57 2단계 보완) 웹에는 세션 훅이 없어 로컬 브리핑 코드(scripts/
+    namu_active_task.py `_collect`가 하던 일)를 도구(namu_recall)로도 그대로
+    내보내야 한다 — 로직 이중 구현을 피하려고 이 함수 하나에 모았다.
+
+    `projects`가 None이면 개인 풀의 모든 프로젝트(`list_projects()`)를 합친다
+    (namu_search bowl='tasks'의 project=None/웹 기본값과 같은 "전체 합침" 의미).
+    항목이 하나뿐인 리스트를 주면 그 프로젝트 하나만 본다(stdio 기본값 등).
+
+    반환 항목: `{"project", "slug", "title", "last_ts", "next"}`. `next`는
+    자르지 않은 전문이다(잘리면 재진입 지점 의미가 없어진다) — 없으면 None.
+    """
+    if projects is None:
+        projects = list_projects()
+
+    rows: list[dict[str, str | None]] = []
+    for project in projects:
+        tasks_dir = tasks_root_for(project)
+        project_name = tasks_dir.name
+        for task_dir in find_open_tasks(tasks_dir):
+            ts = _latest_log_ts(task_dir / "log.md")
+            rows.append(
+                {
+                    "project": project_name,
+                    "slug": task_dir.name,
+                    "title": _extract_task_title(task_dir / "task.md"),
+                    "last_ts": f"{ts[0]} {ts[1]}" if ts else None,
+                    "next": next_note(task_dir),
+                }
+            )
+
+    rows.sort(key=lambda r: r["last_ts"] or "", reverse=True)
+    return rows
+
+
 def find_latest_closed_task(tasks_dir: Path) -> Path | None:
     """tasks_dir에서 log 타임스탬프가 가장 최신인 '닫힌' task 폴더 반환. 없으면 None."""
     for task_dir in _sorted_task_dirs(tasks_dir):

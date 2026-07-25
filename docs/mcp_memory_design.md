@@ -36,9 +36,10 @@
 
 | 항목 | 내용 |
 |------|------|
-| 입력 | `query`(str, 선택): 주제 키워드 / `task_type`(str, 선택): 필터, learnings에만 적용 / `limit`(int, 기본 5, learnings에만 적용) |
-| 출력 | **두 그릇 dict** — `{"profile": [...활성 fact 전부, limit 없음...], "learnings": [...검색결과: 시각, 작업유형, 결과, **판단 이유**, kind, 태그...]}` (#49, 2026-07-18 변경 — 과거엔 learnings 리스트만 반환) |
-| 동작 | `profile`은 항상 `profile.active()`로 전체 반환(작아서 필터·limit 없음). `learnings`는 query 있으면 FTS 관련도순 → 결과 부족하면 최신순 폴백, query 없으면 `ORDER BY id DESC` 최신 N개(kind=lesson/note 모두 포함) |
+| 입력 | `query`(str, 선택): 주제 키워드 / `task_type`(str, 선택): 필터, learnings에만 적용 / `limit`(int, 기본 5, learnings에만 적용) / `project`(str, 선택, namu-57 2단계 보완): 열린 task를 볼 프로젝트 — `namu_search(bowl='tasks')`와 동일 규칙(stdio는 생략 시 현재 프로젝트, 웹은 생략 시 전체 프로젝트 합침, `'*'`는 양쪽 모두 명시적 전체) |
+| 출력 | **세 그릇 dict** — `{"profile": [...활성 fact 전부, limit 없음...], "learnings": [...검색결과: 시각, 작업유형, 결과, **판단 이유**, kind, 태그...], "tasks": [...열린 task 전부, 최근 활동순: {"project","slug","title","last_ts","next"}...]}` (namu-57 2단계 보완, 2026-07-25 — 기존 `profile`/`learnings` 키는 형태·내용 100% 하위호환, `tasks`는 신규 추가) |
+| 동작 | `profile`은 항상 `profile.active()`로 전체 반환(작아서 필터·limit 없음). `learnings`는 query 있으면 FTS 관련도순 → 결과 부족하면 최신순 폴백, query 없으면 `ORDER BY id DESC` 최신 N개(kind=lesson/note 모두 포함). `tasks`는 `task_resolve.open_tasks_briefing()`이 `find_open_tasks`+`next_note`를 조합해 산출 — `next`는 그 task의 마지막 `[다음]` 로그 줄 **전문**(자르지 않음, 없으면 `None`)이라 이것만 보고 바로 이어 작업할 수 있다. 최근 활동 스크롤백(로그 줄 나열)은 이 도구가 아니라 `namu_search(bowl='tasks')` 몫이다(토큰 절약) |
+| 웹 사용 이유 (namu-57 2단계 보완) | 웹(claude.ai 커넥터)엔 세션 훅이 없어 로컬처럼 브리핑이 자동 주입되지 않는다 — "남은 작업/다음 작업 뭐야"류 질문에 웹 AI가 이 도구를 먼저 부르도록 docstring이 유도한다(훅이 없는 환경에서 유일한 유도 수단) |
 
 ### 2. `namu_record` — 결과+이유 기록, `bowl`(또는 `kind`)로 세 그릇 라우팅 (자가학습 핵심)
 작업이 끝나면 결과뿐 아니라 **판단 이유**까지, 또는 프로젝트 작업 로그 한 줄을
@@ -50,11 +51,12 @@ append-only로 저장한다. `bowl`(learnings/tasks/profile, 생략 시 `kind`�
 | 공통 입력 | `bowl`(str, 선택): `learnings`\|`tasks`\|`profile` — 생략하면 `kind`에서 유도(fact→profile, lesson/note→learnings, 기존 호출 100% 하위호환). 명시한 `bowl`이 `kind`와 모순되면(예: `bowl='learnings'`+`kind='fact'`) 즉시 `ValueError` |
 | `learnings` 전용 입력 (`kind=lesson`\|`note`, 기본 `lesson`) | `task`(str) / `outcome`(str, 선택): success/failure/partial — lesson은 필수, note는 생략 가능 / `reason`(str, **필수**) / `task_type`(str) / `tags`(list, 선택) |
 | `profile` 전용 입력 (`kind=fact`) | `subject`(str, free-form 권장값 user/environment/preference) / `statement`(str) / `source`(str, **필수** — "왜 이걸 믿나/어떻게 알았나") / `supersedes`(str, 선택 — 정정 대상 옛 fact id) |
-| `tasks` 전용 입력 (namu-57 2단계 신규) | `project`(str): 프로젝트 폴더명 — stdio는 생략 시 "현재 프로젝트", 웹은 **필수**(cwd 개념이 없음, `'*'`는 기록에 못 씀) / `task`(str): task 슬러그(폴더명 완전일치 우선, 없으면 `namu-57`처럼 접두일치 — 후보 0개/2개+면 열린 task 목록·후보를 곁들여 `ValueError`, **새 폴더를 만들지 않음**) / `text`(str, **필수**, 개행은 공백으로 접힘) / `tag`(str, 기본 `기록`, `]`·개행 금지) |
-| 출력 | 기록된 항목 ID(ULID) — tasks는 ID가 없으므로 **실제로 append된 log.md 한 줄**(문자열) |
-| 동작 | learnings → **learnings.yaml에 먼저 append** → SQLite INSERT(트리거가 FTS 채움, 기존 경로). profile → **profile.yaml에 append**(profile.record_fact, SQLite 관여 없음). tasks → 해당 task의 `log.md`에 `[tag] YYYY-MM-DD HH:MM:SS <machine> · text` 한 줄 append(`via`가 있으면 끝에 ` (via <라벨>)`) — git `merge=union`이라 여러 곳에서 동시 append해도 충돌이 0이다 |
+| `tasks` 전용 입력 | `project`(str): 프로젝트 폴더명 — stdio는 생략 시 "현재 프로젝트", 웹은 **필수**(cwd 개념이 없음, `'*'`는 기록에 못 씀) / `task`(str): task 슬러그(폴더명 완전일치 우선, 없으면 `namu-57`처럼 접두일치 — 후보 0개/2개+면 열린 task 목록·후보를 곁들여 `ValueError`(0개 케이스는 `create=True` 안내 문구도 곁들임), `create=False`(기본) 상태에선 **새 폴더를 만들지 않음** |
+| `tasks`, `create=True` 전용 입력 (namu-57 2단계 보완 신규) | 새 task 폴더를 만든다(웹은 로컬 `/namu-task` 스킬이 없어 이게 유일한 생성 경로). `project`(str, 위와 동일 규칙) / `task`(str, **새** 슬러그 — 폴더명 안전 문자만 허용: 영문/숫자/하이픈/언더스코어, 첫 글자 영문/숫자, `/`·`\`·`..` 등 경로 조작 문자는 `ValueError`) / `purpose`(str, **필수** — 목적 없는 task는 나중에 아무도 못 읽음, 빈 값이면 `ValueError`) / `title`(str, 선택, 생략 시 슬러그) / `done_when`(list[str], 선택 — 완료조건 체크박스로 렌더링) |
+| 출력 | 기록된 항목 ID(ULID) — tasks는 ID가 없으므로 **실제로 append된 log.md 한 줄**(문자열). `create=True`는 사람이 읽을 수 있는 요약 문자열(생성 경로 + append된 `[시작]` 줄) |
+| 동작 | learnings → **learnings.yaml에 먼저 append** → SQLite INSERT(트리거가 FTS 채움, 기존 경로). profile → **profile.yaml에 append**(profile.record_fact, SQLite 관여 없음). tasks(기존 슬러그) → 해당 task의 `log.md`에 `[tag] YYYY-MM-DD HH:MM:SS <machine> · text` 한 줄 append(`via`가 있으면 끝에 ` (via <라벨>)`) — git `merge=union`이라 여러 곳에서 동시 append해도 충돌이 0이다. tasks `create=True` → 이미 존재하면 `ValueError`(덮어쓰기 금지, task.md는 불변 목적·log.md는 append-only), 없으면 `task.md`+`log.md` 2파일을 SKILL.md '파일 템플릿' 형식대로 새로 쓰고(`context.<machine>.md`는 만들지 않음 — namu-57 신규 생성 중단) `[시작]` 줄을 append한 뒤 `memory_sync.sync_push` |
 | 자동 채움 | learnings/profile: `id`(ULID)/`timestamp`(UTC)/`machine`. tasks: 실제 현지시각(`datetime.now()`)·`machine` — 지어 쓰면 멀티 PC 간 선후가 뒤집힌다 |
-| ⚠️ 원칙 | learnings: `reason` 빈 값이면 `ValueError`. profile: `source` 빈 값이면 `ValueError`. tasks: `text` 빈 값, `]`·개행이 든 `tag`면 `ValueError`. 이유/근거 없는 데이터 → 엉뚱한 패턴 도출 위험. **`tasks`의 `[완료]`/`[중단]` 태그는 task 전체 종료 신호다** — 중간 진행 보고에 쓰면 브리핑의 열린 task 목록에서 사라진다(실제 사고 2건, 오용 금지는 경고일 뿐 코드로 강제하지 않음) |
+| ⚠️ 원칙 | learnings: `reason` 빈 값이면 `ValueError`. profile: `source` 빈 값이면 `ValueError`. tasks: `text` 빈 값, `]`·개행이 든 `tag`면 `ValueError`. tasks `create=True`: `purpose` 빈 값, 슬러그 경로조작 문자, 기존 슬러그 재사용 모두 `ValueError`. 이유/근거 없는 데이터 → 엉뚱한 패턴 도출 위험. **`tasks`의 `[완료]`/`[중단]` 태그는 task 전체 종료 신호다** — 중간 진행 보고에 쓰면 브리핑의 열린 task 목록에서 사라진다(실제 사고 2건, 오용 금지는 경고일 뿐 코드로 강제하지 않음) |
 
 **저장 트리거 정책 — kind/bowl별 (#49 + namu-57 2단계 tasks 추가):**
 

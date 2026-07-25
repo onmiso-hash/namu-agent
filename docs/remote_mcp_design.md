@@ -108,6 +108,7 @@ pull을 매 요청마다 하지 않는 이유: git pull은 네트워크 왕복(0
 - 레이어 B 부재: 자동 세션 브리핑·`/namu-task`·서브에이전트 없음. 웹 Claude가 recall을 스스로 부르게 하려면 **도구 description이 유일한 유도 수단** — 기존 docstring이 이미 "BEFORE starting a task" 등으로 작성돼 있어 그대로 노출된다.
 - tasks(작업 상태) 도구는 노출하지 않는다 — tasks는 프로젝트 cwd 귀속 개념이라 웹 대화에는 대응 개념이 없다. 이번 스코프는 learnings 3종 + `namu_sync_setup` 제외(원격 서버에서 sync_setup은 entrypoint가 대신함) → **웹 노출 도구는 recall/record/search 3종**.
   → **namu-57 2단계에서 개정(2026-07-25):** 위 근거는 namu-34(tasks를 `~/.namu/tasks/<프로젝트명>/` 개인 풀로 이전)로 이미 무효다 — tasks가 더 이상 로컬 cwd 파일시스템에만 있지 않고 개인 풀에 모이므로, 웹도 프로젝트를 **이름으로 지목**하면 얼마든지 대응 개념이 성립한다. 결론: tasks는 여전히 별도 도구를 새로 만들지 않는다(**웹 노출 도구는 여전히 3개**) — 대신 기존 `namu_search`/`namu_record`에 `bowl='tasks'` 경로와 `project`/`task`/`machine`/`via`/`since`/`until` 축을 추가해 흡수한다. `project`를 생략하면 웹은 **전체 프로젝트를 합쳐서** 반환(웹은 cwd가 없으므로 "어제 뭐 했지"에 프로젝트 없이도 답해야 한다), stdio는 "현재 프로젝트"로 좁힌다. `project='*'`는 양쪽 모두에서 명시적 전체 조회. 도구 개수를 안 늘린 이유는 플랫폼 제약이 아니라(§9 확정) 스코프 결정이었음이 재확인됐다. 구현 상세는 `docs/mcp_memory_design.md`의 `namu_search`/`namu_record` 도구 명세 참고.
+  → **namu-57 2단계 보완(2026-07-25):** 웹은 세션 훅이 없으므로 `namu_recall`이 브리핑 역할을 대신한다 — `tasks` 키로 열린 task 전부와 각 task의 재진입 지점(`next`, 전문)을 돌려준다. 새 task 생성도 별도 도구 없이 `namu_record(bowl='tasks', create=True, purpose=...)`로 가능(웹은 로컬 `/namu-task` 스킬이 없어 이게 유일한 생성 경로) — 이 경로로도 도구 개수는 늘지 않는다(여전히 3개).
 
 ## 9. 구현 순서 (마이그레이션 계획)
 

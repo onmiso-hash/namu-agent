@@ -12,6 +12,7 @@ from task_resolve import (
     has_legacy_tasks,
     journal,
     list_projects,
+    open_tasks_briefing,
     record_project_marker,
     resolve_active_task,
     tasks_root_for,
@@ -637,3 +638,55 @@ def test_journal_via_filter(fake_home):
 
     all_rows = journal()
     assert {r["via"] for r in all_rows} == {"claude", None}
+
+
+# ---------------------------------------------------------------------------
+# open_tasks_briefing (namu-57 2단계 보완) — namu_recall의 "tasks" 필드가
+# 부르는 코어 함수, scripts/namu_active_task.py와도 공유한다.
+# ---------------------------------------------------------------------------
+
+
+def test_open_tasks_briefing_all_projects_merged_newest_first(pool):
+    # pool 픽스처: namu-agent/namu-56-scrapbook(열림, 최신활동 07-25 09:00),
+    # namu-agent/namu-55-cloud-portal([완료]로 닫힘 — 제외돼야 함),
+    # onnamu-project/deploy-1(열림, 07-22 10:00).
+    rows = open_tasks_briefing()
+    assert [(r["project"], r["slug"]) for r in rows] == [
+        ("namu-agent", "namu-56-scrapbook"),
+        ("onnamu-project", "deploy-1"),
+    ]
+    assert rows[0]["last_ts"] == "2026-07-25 09:00:00"
+
+
+def test_open_tasks_briefing_single_project_filter(pool):
+    rows = open_tasks_briefing(["namu-agent"])
+    assert [r["slug"] for r in rows] == ["namu-56-scrapbook"]
+    assert rows[0]["project"] == "namu-agent"
+
+
+def test_open_tasks_briefing_next_is_full_untruncated(fake_home):
+    long_next = "아주 긴 재진입 지점 설명 " * 20  # 잘리면 안 되는 긴 문자열
+    _make_pool_task(
+        fake_home,
+        "proj-x",
+        "namu-99",
+        "# log\n"
+        "[시작] 2026-07-24 09:00:00 hp · 시작\n"
+        f"[다음] 2026-07-25 10:00:00 hp · {long_next}\n",
+    )
+    rows = open_tasks_briefing(["proj-x"])
+    assert len(rows) == 1
+    assert rows[0]["next"] == long_next.strip()
+    assert len(rows[0]["next"]) == len(long_next.strip())
+
+
+def test_open_tasks_briefing_next_none_when_no_next_tag(fake_home):
+    _make_pool_task(
+        fake_home,
+        "proj-x",
+        "namu-99",
+        "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n",
+    )
+    rows = open_tasks_briefing(["proj-x"])
+    assert len(rows) == 1
+    assert rows[0]["next"] is None

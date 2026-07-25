@@ -106,6 +106,18 @@ def _default_search_project(ctx: Context | None) -> str | None:
     return cfg.tasks_dir_for().name
 
 
+def _resolve_recall_project(project: str | None, ctx: Context | None) -> str | None:
+    """namu_recall(bowl='tasks' 부분)용 project 기본값 — namu_search와 완전히 같은
+    규칙(_default_search_project 재사용)이다(namu-57 2단계 보완). 조회 경로라
+    project='*'를 명시 전체 조회로 허용한다(_resolve_record_project과 다른 점).
+    """
+    if project == "*":
+        return None
+    if project is None:
+        return _default_search_project(ctx)
+    return project
+
+
 def _resolve_record_project(project: str | None, ctx: Context | None) -> str:
     """namu_record(bowl='tasks')용 project 정규화. 기록은 반드시 프로젝트 하나에
     쓰므로(namu-57 2단계 2단위) '*'(전체)는 허용하지 않는다 — 조회(namu_search)와
@@ -154,6 +166,7 @@ def _resolve_task_slug(project: str, task: str | None) -> str:
     if not prefix:
         raise ValueError(
             f"프로젝트 {project!r}에서 task {task!r}를 찾을 수 없습니다{hint}"
+            " — 새로 만들려면 create=True와 purpose를 함께 주세요"
         )
     raise ValueError(
         f"task {task!r}가 여러 후보와 일치합니다: {', '.join(prefix)}{hint} — 더 구체적으로 지정하세요"
@@ -219,6 +232,89 @@ def _record_task_entry(
     return line
 
 
+_NEW_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def _validate_new_task_slug(task: str | None) -> str:
+    """create=True용 새 슬러그 검증(namu-57 2단계 보완). 폴더명으로 안전한 문자만
+    허용해 경로 조작(`/`, `\\`, `..`, 절대경로 등)을 원천 차단한다 — 정규식이
+    영문/숫자/하이픈/언더스코어만 통과시키므로 `/`나 `..`는 애초에 매치되지 않는다.
+    """
+    task = (task or "").strip()
+    if not task:
+        raise ValueError("task(슬러그)는 필수입니다")
+    if not _NEW_SLUG_RE.match(task):
+        raise ValueError(
+            f"task 슬러그 {task!r}가 올바르지 않습니다 — 영문/숫자/하이픈(-)/언더스코어(_)만 "
+            "허용되고 첫 글자는 영문/숫자여야 합니다(경로 문자 금지: '/', '\\\\', '..' 등)"
+        )
+    return task
+
+
+def _create_task_entry(
+    project: str | None,
+    task: str | None,
+    title: str | None,
+    purpose: str | None,
+    done_when: list[str] | None,
+    via: str | None,
+    ctx: Context | None,
+) -> str:
+    """bowl='tasks', create=True 경로: 새 task 폴더(task.md+log.md)를 만들고
+    `[시작]` 줄을 append한다. `context.<machine>.md`는 만들지 않는다(namu-57 신규
+    생성 중단). SKILL.md '파일 템플릿' 절의 형식을 그대로 따른다.
+    """
+    resolved_project = _resolve_record_project(project, ctx)
+    slug = _validate_new_task_slug(task)
+
+    purpose = (purpose or "").strip()
+    if not purpose:
+        raise ValueError(
+            "create=True일 때 purpose는 필수입니다(목적 없는 task는 나중에 아무도 못 읽습니다)"
+        )
+
+    task_dir = task_resolve.tasks_root_for(resolved_project) / slug
+    if task_dir.exists():
+        raise ValueError(
+            f"task {slug!r}는 프로젝트 {resolved_project!r}에 이미 있습니다 — 덮어쓸 수 "
+            "없습니다(task.md는 불변 목적, log.md는 append-only). 기존 task에 기록하려면 "
+            "create=False로 호출하세요"
+        )
+
+    display_title = (title or slug).strip() or slug
+    machine = cfg.NAMU_MACHINE
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    if done_when:
+        done_when_lines = "\n".join(f"- [ ] {item}" for item in done_when)
+    else:
+        done_when_lines = "- [ ] ..."
+
+    task_md = (
+        f"# {slug} — {display_title}\n"
+        f"📅 생성 {today} [{machine}] · 🔗 관련: __\n"
+        "\n"
+        "## 목적\n"
+        f"{purpose}\n"
+        "\n"
+        "## 완료조건\n"
+        f"{done_when_lines}\n"
+    )
+    log_md = f"# log — {slug}\n(append만. 이 파일이 이 task의 권위 있는 기록이다)\n\n"
+
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.md").write_text(task_md, encoding="utf-8")
+    (task_dir / "log.md").write_text(log_md, encoding="utf-8")
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    start_line = f"[시작] {ts} {machine} · 작업 생성, 목적·완료조건 확정"
+    if via:
+        start_line += f" (via {via})"
+    _append_task_log_line(task_dir, start_line)
+
+    return f"task 생성됨: {task_dir}\n{start_line}"
+
+
 _KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
 _VALID_RECORD_BOWLS = ("learnings", "tasks", "profile")
 
@@ -268,6 +364,7 @@ def namu_recall(
     query: str | None = None,
     task_type: str | None = None,
     limit: int = 5,
+    project: str | None = None,
     ctx: Context | None = None,
 ):
     """Load relevant past memory BEFORE starting a task (context loading).
@@ -277,21 +374,40 @@ def namu_recall(
     recent entries. For warming up context, not precise analysis. For
     pattern/trend analysis use namu_search instead.
 
+    ALSO call this whenever the user asks something like "what's left to do" /
+    "let's continue" / "where were we" — on the web there is no session hook
+    to auto-brief you, so this tool's `tasks` field IS the briefing: it lists
+    every currently-open task and its exact re-entry point. For a scrollback
+    of recent activity lines (not just the resume point) use namu_search
+    instead (bowl='tasks').
+
     Args:
       query: topic keywords (optional; omit to get the most recent learnings)
       task_type: filter by code/doc/analysis/other (optional; learnings only)
       limit: max learnings entries (default 5, small for token efficiency)
-    Returns: two-bowl dict —
+      project: which project's open tasks to include (folder name, e.g.
+        'namu-agent'). Omit for the same default as namu_search(bowl='tasks'):
+        "current project" on stdio (has a cwd), "all projects merged" on the
+        web (no cwd there). project='*' forces "all projects" explicitly on
+        either side.
+    Returns: three-bowl dict —
       {"profile": [...active facts/preferences, all of them, no limit...],
        "learnings": [...lesson/note dicts: timestamp, task, outcome, reason,
-       kind, tags, ...]}
+       kind, tags, ...],
+       "tasks": [...every OPEN task, most-recent-activity first: {"project",
+       "slug", "title", "last_ts", "next"}, where `next` is the full,
+       untruncated re-entry point (the task's last `[다음]` log line) or None
+       if it was never left with one...]}
     """
     _resolve_via(ctx)
     _ensure_db()
+    resolved_project = _resolve_recall_project(project, ctx)
+    projects = [resolved_project] if resolved_project is not None else None
     with closing(get_conn()) as conn:
         return {
             "profile": profile.active(),
             "learnings": _recall(conn, query, task_type, limit),
+            "tasks": task_resolve.open_tasks_briefing(projects),
         }
 
 
@@ -374,6 +490,10 @@ def namu_record(
     project: str | None = None,
     text: str | None = None,
     tag: str | None = None,
+    create: bool = False,
+    title: str | None = None,
+    purpose: str | None = None,
+    done_when: list[str] | None = None,
     ctx: Context | None = None,
 ):
     """Append-only record into one of THREE memory bowls. Pick `bowl`
@@ -400,17 +520,35 @@ def namu_record(
       including the web). Required: project (folder name, e.g.
       'namu-agent'; on stdio omit for "current project", on the web it's
       MANDATORY — no cwd there), task (slug or unique prefix like
-      'namu-57'; must already exist, this never creates a task folder —
-      0/2+ matches raise ValueError listing open tasks/candidates), text
-      (the note, newlines collapsed to spaces). tag defaults to '기록'
-      (must not contain ']' or a newline). Line format:
+      'namu-57'; must already exist, this never creates a task folder unless
+      create=True — 0/2+ matches raise ValueError listing open
+      tasks/candidates and, for the 0-match case, a hint to pass
+      create=True), text (the note, newlines collapsed to spaces). tag
+      defaults to '기록' (must not contain ']' or a newline). Line format:
       `[tag] YYYY-MM-DD HH:MM:SS <machine> · text`.
       WARNING: tags '[완료]'/'[중단]' mean the WHOLE TASK is closing and
       drop it from open-task briefings — never use them for a mid-task
       progress note (this caused real incidents twice).
 
+    bowl='tasks', create=True (namu-57 2단계 보완, new): create a brand-new
+      task folder instead of appending to an existing one — this is how the
+      web starts new work (e.g. design sessions) since it has no local
+      /namu-task skill. Required: project (same rule as above), task (the
+      new slug — folder-name-safe chars only: letters/digits/hyphen/
+      underscore, first char alphanumeric; '/', '\\', '..' etc. are
+      rejected), purpose (non-empty — WHY this task exists; nobody can make
+      sense of a task with no purpose later). Optional: title (defaults to
+      the slug), done_when (list of completion-condition strings rendered
+      as an unchecked checklist). Raises ValueError if the slug already
+      exists (task.md is an immutable purpose statement, log.md is
+      append-only — creation never overwrites). Writes task.md + log.md
+      following the SKILL.md templates (no context.<machine>.md — that
+      legacy file is no longer created), appends a `[시작]` line, and
+      returns a human-readable string with the created path and that line.
+
     id/timestamp/machine are filled in by the server for every bowl.
-    Returns: ULID str (learnings/profile) or the appended log line (tasks).
+    Returns: ULID str (learnings/profile) or the appended log line / task
+    creation summary (tasks).
     """
     # namu-38: samsung 라이브 실측에서 record 직후 git 단계까지 12분 공백이
     # 관측됐다 — ensure_db(캐시 재생성)/record(yaml+sqlite)/sync(git push) 세 구간
@@ -424,7 +562,10 @@ def namu_record(
     resolved_bowl = _resolve_record_bowl(bowl, kind)
 
     if resolved_bowl == "tasks":
-        result = _record_task_entry(project, task, text, tag, via, ctx)
+        if create:
+            result = _create_task_entry(project, task, title, purpose, done_when, via, ctx)
+        else:
+            result = _record_task_entry(project, task, text, tag, via, ctx)
         t2 = time.perf_counter()
         memory_sync.sync_push(f"task: {task} ({cfg.NAMU_MACHINE})")
         t3 = time.perf_counter()
