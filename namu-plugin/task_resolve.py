@@ -172,6 +172,51 @@ def find_active_task(tasks_dir: Path) -> tuple[str, str] | None:
     return None
 
 
+def find_open_tasks(tasks_dir: Path) -> list[Path]:
+    """tasks_dir의 '열린'(닫히지 않은) task 폴더 전부를 최근 활동순으로 반환.
+
+    `find_active_task`는 이 목록의 첫 번째만 뽑아 "진행 중 1개"로 단정했는데,
+    실측상 열린 task가 6개인데도 1개만 보이는 게 브리핑이 계속 빗나간 원인이었다
+    (namu-57 증상 A). 목록을 그대로 넘겨 호출자가 전부 보여주게 한다.
+    """
+    return [d for d in _sorted_task_dirs(tasks_dir) if not _is_closed(d)]
+
+
+def next_note(task_dir: Path) -> str | None:
+    """해당 task의 "다음 할 일" 한 줄. 없으면 None.
+
+    권위는 log.md의 마지막 `[다음]` 태그 줄이다(namu-57 1-4) — 별도 파일
+    관리 없이 append-only 로그 한 곳에만 남기면 되므로 실제로 기록된다.
+    `context.<machine>.md`의 `## ▶ 다음`은 **읽기 폴백**으로만 남긴다(기존 40개
+    호환, 신규 생성은 중단). `(완료)` 표기는 다음 할 일이 아니므로 제외한다.
+    """
+    entries = []
+    try:
+        lines = (task_dir / "log.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+
+    for line in lines:
+        parsed = _parse_log_line(line)
+        if parsed is not None and parsed["tag"] == "다음" and parsed["text"]:
+            entries.append(parsed["text"])
+    if entries:
+        return entries[-1]
+
+    try:
+        context_files = sorted(task_dir.glob("context.*.md"))
+    except OSError:
+        return None
+    for ctx_path in context_files:
+        try:
+            body = _extract_next_section(ctx_path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if body and body.strip() != "(완료)":
+            return body.strip()
+    return None
+
+
 def find_latest_closed_task(tasks_dir: Path) -> Path | None:
     """tasks_dir에서 log 타임스탬프가 가장 최신인 '닫힌' task 폴더 반환. 없으면 None."""
     for task_dir in _sorted_task_dirs(tasks_dir):
@@ -195,6 +240,153 @@ def tasks_root_for(project_dir: str | Path) -> Path:
     """
     key = os.path.basename(str(project_dir).rstrip("/\\"))
     return Path.home() / ".namu" / "tasks" / key
+
+
+def _tasks_pool_root() -> Path:
+    """모든 프로젝트의 tasks가 모이는 개인 풀 루트 `~/.namu/tasks/`."""
+    return Path.home() / ".namu" / "tasks"
+
+
+def list_projects() -> list[str]:
+    """개인 풀에 tasks가 쌓인 프로젝트 이름 목록(`~/.namu/tasks/` 하위 폴더명, 정렬)."""
+    try:
+        return sorted(p.name for p in _tasks_pool_root().iterdir() if p.is_dir())
+    except OSError:
+        return []
+
+
+# `[태그] YYYY-MM-DD [HH:MM:SS] [<machine> ·] <내용>`
+# 실물 log.md는 시각·machine이 빠진 변주가 섞여 있어(namu-51: 시각만, namu-39: machine 생략)
+# 뒤쪽 두 조각은 선택이다. 형식을 강제하는 대신 관대하게 읽고, 없는 값은 None으로 둔다.
+_LOG_LINE_RE = re.compile(
+    r"^\[(?P<tag>[^\]]*)\]\s+"
+    r"(?P<date>\d{4}-\d{2}-\d{2})"
+    r"(?:\s+(?P<time>\d{2}:\d{2}:\d{2}))?"
+    r"(?:\s+(?P<rest>.*))?$"
+)
+
+# machine으로 인정할 토큰: 공백 없는 짧은 낱말(hp, samsung, web …).
+# 본문에도 `·`가 흔히 쓰이므로, 앞 조각이 이 모양일 때만 machine으로 본다
+# (`[완료] ... 코어 · 이음새` 같은 줄에서 "코어"를 machine으로 오인하지 않기 위함).
+_MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,20}$")
+
+
+def _split_machine(rest: str) -> tuple[str | None, str]:
+    """log 줄의 타임스탬프 뒤 나머지에서 (machine, text)를 분리."""
+    head, sep, tail = rest.partition("·")
+    if sep and _MACHINE_RE.match(head.strip()):
+        return (head.strip(), tail.strip())
+    return (None, rest.strip())
+
+
+def _parse_log_line(line: str) -> dict[str, str | None] | None:
+    """log.md 한 줄 → {ts, tag, machine, text}. 날짜가 없는 줄이면 None.
+
+    ts는 항상 `YYYY-MM-DD HH:MM:SS`로 정규화한다(시각 누락은 00:00:00) — 문자열
+    사전순 비교가 곧 시간순이 되어 정렬·범위 필터가 파싱 없이 성립한다.
+    """
+    match = _LOG_LINE_RE.match(line.strip())
+    if not match:
+        return None
+    time_str = match.group("time") or "00:00:00"
+    machine, text = _split_machine(match.group("rest") or "")
+    return {
+        "ts": f"{match.group('date')} {time_str}",
+        "tag": match.group("tag"),
+        "machine": machine,
+        "text": text,
+    }
+
+
+def _normalize_bound(value: str, *, end: bool) -> str:
+    """since/until 인자를 ts와 같은 폭(`YYYY-MM-DD HH:MM:SS`)으로 맞춘다.
+
+    날짜만 준 경우 since는 그날 00:00:00, until은 그날 23:59:59로 확장한다 —
+    `until='2026-07-25'`가 그날 기록을 잘라내지 않도록(사용자 직관 우선).
+    """
+    value = value.strip()
+    if len(value) <= 10:
+        return f"{value} 23:59:59" if end else f"{value} 00:00:00"
+    return value
+
+
+def _task_matches(slug: str, task: str) -> bool:
+    """task 필터: 폴더명 완전 일치 또는 `namu-49`처럼 앞부분(슬러그 접두)만 지목."""
+    return slug == task or slug.startswith(f"{task}-")
+
+
+def journal(
+    project: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    machine: str | None = None,
+    task: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, str | None]]:
+    """모든 log.md의 날짜 붙은 줄을 합쳐 시간순(최신 우선) 통합 뷰로 반환한다.
+
+    반환 항목: `{ts, project, task_slug, tag, machine, text}`.
+
+    파일은 손대지 않고 **읽을 때 합친다**(log.md가 권위, 원칙 #2). task 경계를 넘어
+    시간순으로 세우므로 "어제 무슨 일이 있었나"가 추측 없이 답된다.
+
+    project를 생략하면 개인 풀의 모든 프로젝트를 합친다(웹에서 프로젝트를 몰라도
+    조회 가능). 값을 주면 basename만 키로 쓰므로 이름(`namu-agent`)이든 경로든
+    동일하게 동작한다(`tasks_root_for`와 같은 규칙, 특례 0).
+
+    stdlib 전용 유지 — statusline(plain python3)과 공유하는 모듈이다.
+    """
+    if project is None:
+        targets = [(name, _tasks_pool_root() / name) for name in list_projects()]
+    else:
+        root = tasks_root_for(project)
+        targets = [(root.name, root)]
+
+    since_bound = _normalize_bound(since, end=False) if since else None
+    until_bound = _normalize_bound(until, end=True) if until else None
+
+    entries: list[dict[str, str | None]] = []
+    for project_name, tasks_root in targets:
+        try:
+            log_files = list(tasks_root.glob("*/log.md"))
+        except OSError:
+            continue
+
+        for log_path in log_files:
+            task_slug = log_path.parent.name
+            if task is not None and not _task_matches(task_slug, task):
+                continue
+            try:
+                lines = log_path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+
+            for line in lines:
+                parsed = _parse_log_line(line)
+                if parsed is None:
+                    continue
+                ts = parsed["ts"]
+                if since_bound is not None and ts < since_bound:
+                    continue
+                if until_bound is not None and ts > until_bound:
+                    continue
+                if machine is not None and parsed["machine"] != machine:
+                    continue
+                entries.append(
+                    {
+                        "ts": ts,
+                        "project": project_name,
+                        "task_slug": task_slug,
+                        "tag": parsed["tag"],
+                        "machine": parsed["machine"],
+                        "text": parsed["text"],
+                    }
+                )
+
+    entries.sort(key=lambda e: (e["ts"], e["project"], e["task_slug"]), reverse=True)
+    if limit is not None:
+        entries = entries[:limit]
+    return entries
 
 
 def resolve_active_task(ws: str) -> tuple[str, str] | None:

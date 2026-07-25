@@ -2,6 +2,7 @@ import os
 import pytest
 from pathlib import Path
 from task_resolve import (
+    _parse_log_line,
     _parse_log_ts,
     _line_tag,
     _log_says_closed,
@@ -9,6 +10,8 @@ from task_resolve import (
     find_active_task,
     find_latest_closed_task,
     has_legacy_tasks,
+    journal,
+    list_projects,
     record_project_marker,
     resolve_active_task,
     tasks_root_for,
@@ -447,3 +450,151 @@ def test_is_closed_legacy_fallback_to_log_when_no_context(tmp_path):
     # context.*.md 없음(레거시)
 
     assert _is_closed(task_dir) is True
+
+
+# ---------------------------------------------------------------------------
+# journal — log.md 시간순 통합 뷰 (namu-57 1-1)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_log_line_full_form():
+    got = _parse_log_line("[결정] 2026-07-19 17:08:34 hp · 게이트 통과")
+    assert got == {
+        "ts": "2026-07-19 17:08:34",
+        "tag": "결정",
+        "machine": "hp",
+        "text": "게이트 통과",
+    }
+
+
+def test_parse_log_line_missing_time_is_normalized():
+    """시각 누락은 00:00:00으로 채운다 — 문자열 비교가 곧 시간순이 되도록."""
+    got = _parse_log_line("[시작] 2026-07-25 hp · 착수")
+    assert got["ts"] == "2026-07-25 00:00:00"
+    assert got["machine"] == "hp"
+
+
+def test_parse_log_line_missing_machine(tmp_path):
+    """실물 변주(namu-39): machine 없이 본문이 바로 오는 줄 — machine은 None."""
+    got = _parse_log_line("[완료] 2026-07-15 02:04:14 종료 처리")
+    assert got["machine"] is None
+    assert got["text"] == "종료 처리"
+
+
+def test_parse_log_line_body_with_middot_is_not_machine():
+    """본문에도 `·`가 흔히 쓰인다 — 앞 조각이 짧은 낱말일 때만 machine으로 본다."""
+    got = _parse_log_line("[완료] 2026-07-15 02:04:14 코어 이음새 완료 · 다음은 라우팅")
+    assert got["machine"] is None
+    assert got["text"] == "코어 이음새 완료 · 다음은 라우팅"
+
+
+def test_parse_log_line_non_log_line_is_none():
+    assert _parse_log_line("# log — namu-57") is None
+    assert _parse_log_line("(append만. context 꼬이면 이걸로 복원)") is None
+
+
+def _make_pool_task(home: Path, project: str, slug: str, log_body: str) -> Path:
+    """개인 풀(`<home>/.namu/tasks/<project>/<slug>/`)에 log.md를 만든다."""
+    task_dir = home / ".namu" / "tasks" / project / slug
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.md").write_text(f"# {slug}\n", encoding="utf-8")
+    (task_dir / "log.md").write_text(log_body, encoding="utf-8")
+    return task_dir
+
+
+@pytest.fixture
+def pool(fake_home):
+    """2개 프로젝트·3개 task에 걸친 log 줄 6개(시간 뒤섞임)."""
+    _make_pool_task(
+        fake_home,
+        "namu-agent",
+        "namu-56-scrapbook",
+        "# log\n"
+        "[시작] 2026-07-20 21:10:00 hp · 작업 등록\n"
+        "[설계] 2026-07-25 09:00:00 hp · 그릇 성격 확정\n",
+    )
+    _make_pool_task(
+        fake_home,
+        "namu-agent",
+        "namu-55-cloud-portal",
+        "# log\n"
+        "[분담] 2026-07-19 17:04:00 samsung · 코더 위임\n"
+        "[완료] 2026-07-19 17:08:34 hp · 게이트 통과\n",
+    )
+    _make_pool_task(
+        fake_home,
+        "onnamu-project",
+        "deploy-1",
+        "# log\n"
+        "[시작] 2026-07-22 10:00:00 samsung · 배포 착수\n"
+        "설명 줄(날짜 없음)\n",
+    )
+    return fake_home
+
+
+def test_journal_merges_all_projects_newest_first(pool):
+    rows = journal()
+    assert [r["ts"] for r in rows] == [
+        "2026-07-25 09:00:00",
+        "2026-07-22 10:00:00",
+        "2026-07-20 21:10:00",
+        "2026-07-19 17:08:34",
+        "2026-07-19 17:04:00",
+    ]
+    # 날짜 없는 줄은 버린다
+    assert all(r["text"] != "설명 줄(날짜 없음)" for r in rows)
+    # 프로젝트 경계를 넘어 합쳐진다
+    assert {r["project"] for r in rows} == {"namu-agent", "onnamu-project"}
+
+
+def test_journal_entry_shape(pool):
+    top = journal(limit=1)[0]
+    assert top == {
+        "ts": "2026-07-25 09:00:00",
+        "project": "namu-agent",
+        "task_slug": "namu-56-scrapbook",
+        "tag": "설계",
+        "machine": "hp",
+        "text": "그릇 성격 확정",
+    }
+
+
+def test_journal_project_filter_accepts_name_or_path(pool):
+    by_name = journal(project="onnamu-project")
+    by_path = journal(project="/somewhere/else/onnamu-project")
+    assert len(by_name) == 1
+    assert by_name == by_path
+
+
+def test_journal_task_filter_matches_slug_prefix(pool):
+    """`namu-55`처럼 앞부분만 지목해도 `namu-55-cloud-portal`이 걸린다."""
+    rows = journal(task="namu-55")
+    assert len(rows) == 2
+    assert {r["task_slug"] for r in rows} == {"namu-55-cloud-portal"}
+    assert journal(task="namu-55-cloud-portal") == rows
+
+
+def test_journal_machine_filter(pool):
+    rows = journal(machine="samsung")
+    assert [r["text"] for r in rows] == ["배포 착수", "코더 위임"]
+
+
+def test_journal_since_until_are_inclusive_days(pool):
+    """날짜만 준 until은 그날 끝(23:59:59)까지 — 그날 기록이 잘리면 안 된다."""
+    assert len(journal(until="2026-07-19")) == 2
+    assert len(journal(since="2026-07-20")) == 3
+    assert len(journal(since="2026-07-19", until="2026-07-20")) == 3
+
+
+def test_journal_limit_applies_after_sort(pool):
+    rows = journal(limit=2)
+    assert [r["ts"] for r in rows] == ["2026-07-25 09:00:00", "2026-07-22 10:00:00"]
+
+
+def test_journal_empty_pool_returns_empty(fake_home):
+    assert journal() == []
+    assert journal(project="nonexistent") == []
+
+
+def test_list_projects_lists_pool_dirs(pool):
+    assert list_projects() == ["namu-agent", "onnamu-project"]

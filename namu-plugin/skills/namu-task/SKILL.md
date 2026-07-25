@@ -8,7 +8,9 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 **작업 루트** — **개인 풀** `~/.namu/tasks/<basename(현재 프로젝트 폴더)>/`(`config.py`의 `tasks_dir_for(project_dir)`, 생략 시 `os.getcwd()` — 규칙 실구현은 `task_resolve.tasks_root_for()` 단일 함수, #34로 #26 개정). tasks는 학습 기억(교훈·db, `~/.namu/memory`·`~/.namu/db`)과 **별개 산출 기준**을 쓰지만(교훈·db=고정 상수 `NAMU_DATA_ROOT`, tasks=항상 프로젝트 폴더명 하나) 물리적으로는 같은 `~/.namu` 계열에 모인다 — 어느 프로젝트(이 개발 repo 포함)에서 실행하든 tasks 위치엔 영향을 주지 않으며 특례가 없다(namu-35: 데이터 루트가 환경변수가 아닌 고정 상수가 되며 "개발 repo 예외" 자체가 존재하지 않게 됐다). tasks는 여전히 성격상 **프로젝트 종속 데이터**이지만, 공유는 그 프로젝트의 git이 아니라 `~/.namu`의 **개인 전역 동기화**(record 후 auto-push 범위 확장 + `namu_tasks_push.py` CLI)에 편승한다. 아래 `TASKS_DIR` 표기는 이 규칙(개인 풀 tasks 루트)을 가리키는 약칭이다.
 
-**tasks 저장 후 push** — 신규 3파일 생성, `context.<machine>.md` 덮어쓰기, `log.md` append 등 `TASKS_DIR` 아래 파일을 갱신한 직후마다(아래 "중간 상태 저장" 지점 포함) `namu_tasks_push.py` CLI를 호출한다 — 대상은 항상 `~/.namu`(git repo·origin 원격이 없으면 조용히 no-op, 실패해도 작업 절차를 막지 않는다). 개발 repo에서는 `python3 scripts/namu_tasks_push.py`(repo 루트 기준), 설치형 플러그인에서는 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/namu_tasks_push.py`를 쓴다.
+**상태는 log.md 한 곳에** (namu-57) — `context.<machine>.md`는 **더 이상 만들지 않는다**. 기존 40개는 읽기 폴백으로 남기되(삭제하지 않음), 새 task의 진행 상태·다음 할 일은 전부 `log.md`에 append한다. 이유: 별도 파일을 손으로 갱신하기를 기대한 결과 실사용 40개 중 "다음"이 비어 있는 task가 속출해 브리핑이 빈칸으로 나왔다. 기기 구분은 파일명이 아니라 log 줄의 `<machine>` 도장으로 충분하다.
+
+**tasks 저장 후 push** — 신규 2파일 생성, `log.md` append 등 `TASKS_DIR` 아래 파일을 갱신한 직후마다(아래 "중간 상태 저장" 지점 포함) `namu_tasks_push.py` CLI를 호출한다 — 대상은 항상 `~/.namu`(git repo·origin 원격이 없으면 조용히 no-op, 실패해도 작업 절차를 막지 않는다). 개발 repo에서는 `python3 scripts/namu_tasks_push.py`(repo 루트 기준), 설치형 플러그인에서는 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/namu_tasks_push.py`를 쓴다.
 
 ---
 
@@ -20,13 +22,14 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 ## 신규 경로 (tasks/\<slug\>/ 없음)
 
-**1. 폴더 + 3파일 생성**
+**1. 폴더 + 2파일 생성**
 
 사용자에게 목적(왜 하는가)·완료조건을 물어본다. 답을 받으면:
 
 - `TASKS_DIR/<slug>/task.md` — 아래 템플릿대로 작성 → 사용자 확인 후 확정
-- `TASKS_DIR/<slug>/context.<machine>.md` — 아래 템플릿으로 초기화
 - `TASKS_DIR/<slug>/log.md` — 아래 템플릿으로 초기화
+
+`context.<machine>.md`는 만들지 않는다(namu-57 — 위 "상태는 log.md 한 곳에" 참조).
 
 **2. log `[시작]` 줄 append**
 
@@ -34,7 +37,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 [시작] YYYY-MM-DD HH:MM:SS <machine> · 작업 생성, 목적·완료조건 확정
 ```
 
-3파일 생성·append 직후 `namu_tasks_push.py`(위 "tasks 저장 후 push" 참조) 호출.
+2파일 생성·append 직후 `namu_tasks_push.py`(위 "tasks 저장 후 push" 참조) 호출.
 
 **3. recall** — `namu_recall`로 관련 과거 교훈 조회. 신규는 항상 실행.
 
@@ -59,16 +62,27 @@ fail이면 멈추고 사용자에게 보여준다:
 - 재실행이면 입력한 N회까지 6~7단계 반복, N회 소진 시 다시 게이트로.
 
 > **중간 상태 저장** — 검수 게이트 통과 직후, 또는 작업을 끊을 때마다:
-> - `context.<machine>.md` 덮어쓰기 ("▶ 다음" 갱신)
 > - 결정·분담·막힘 발생 시 `log.md` append
-> - 위 두 파일 갱신 직후 `namu_tasks_push.py` 호출
+> - append 직후 `namu_tasks_push.py` 호출
+
+**⛔ 세션을 끊기 전 필수 — `[다음]` 한 줄** (namu-57, 빠뜨리면 안 됨)
+
+작업을 중간에 멈추거나 세션이 끝날 때, `log.md`에 반드시 이 줄을 append한다:
+
+```
+[다음] YYYY-MM-DD HH:MM:SS <machine> · 다음 세션이 정확히 어디서부터 시작하면 되는지
+```
+
+브리핑은 각 task의 **마지막 `[다음]` 줄**을 "다음 할 일"로 읽는다. 이 줄이 없으면
+브리핑에 `다음: (기록 없음)`으로 뜨고, 다음 세션은 상태를 처음부터 다시 파악해야 한다.
+"무엇을 했는지"가 아니라 **"어디서 이어서 시작하는지"** 를 쓴다.
 
 **9. 기록 및 마무리**
 
 - `namu_record`로 결과·판단 이유 저장. 사용자가 게이트를 통과시킨 경우 `verified_by: human`.
-- `log.md`에 `[완료]` 또는 `[중단]` 줄 append.
-- 완료조건이 모두 체크됐으면 **모든** `context.*.md`(다른 machine 것 포함)의 "▶ 다음"을 `(완료)` **단독으로** 갱신 — 뒷말을 붙이면(예: `(완료) — 후속 이월: ...`) 완료 판정(정확 일치)에 안 걸려 statusLine에 유령 task로 남는다. 이월·후속 메모는 "지금 어디까지"나 log에 쓸 것. 폴더는 그대로 둔다.
-- 위 log·context 갱신 직후 `namu_tasks_push.py` 호출로 마무리.
+- `log.md`에 `[완료]` 또는 `[중단]` 줄 append. 이 두 태그는 **task 전체의 진짜 종료**에만 쓴다 — 중간 마일스톤 완료에 `[완료]`를 쓰면 진행 중 task가 닫힌 것으로 오판된다(namu-50 실제 사고). 마일스톤은 `[단계]`를 쓸 것.
+- 레거시 task(이미 `context.*.md`가 있는 기존 40개)를 닫을 때만: **모든** `context.*.md`(다른 machine 것 포함)의 "▶ 다음"을 `(완료)` **단독으로** 갱신 — 뒷말을 붙이면(예: `(완료) — 후속 이월: ...`) 완료 판정(정확 일치)에 안 걸려 statusLine에 유령 task로 남는다. 이월·후속 메모는 log에 쓸 것. 폴더는 그대로 둔다. 새 task는 `context.*.md`가 없으므로 `[완료]`/`[중단]` 줄만으로 닫힌다.
+- 위 갱신 직후 `namu_tasks_push.py` 호출로 마무리.
 
 ---
 
@@ -76,15 +90,14 @@ fail이면 멈추고 사용자에게 보여준다:
 
 **0. 다른 PC 흔적 확인 (안전장치)**
 
-`TASKS_DIR/<slug>/` 안에 `context.<other-machine>.md` (현재 machine이 아닌 파일)나 `log.md` 꼬리가
-현재 `context.<machine>.md`보다 더 최신 타임스탬프로 보이면:
+`log.md` 꼬리에 **다른 machine** 도장이 찍힌 줄이 이 PC의 마지막 줄보다 최신이면:
 > "다른 PC 작업 흔적 있음 — git pull 했는지 확인하라" 안내 후 **멈춤**.
 
 **1. 상태 복원**
 
 - `TASKS_DIR/<slug>/task.md` → 목적·완료조건 복원
-- `TASKS_DIR/<slug>/context.<machine>.md` → "▶ 다음"부터 읽기 (재진입 지점)
-- `TASKS_DIR/<slug>/log.md` 꼬리(최근 10줄) → 최근 흐름 파악
+- `TASKS_DIR/<slug>/log.md` → **마지막 `[다음]` 줄**이 재진입 지점. 꼬리(최근 10줄)로 최근 흐름 파악
+- (레거시 폴백) `[다음]` 줄이 하나도 없고 `context.<machine>.md`가 있으면 그 "▶ 다음"을 읽는다. 새로 만들지는 않는다
 
 **2. recall (선택)**
 
@@ -115,34 +128,37 @@ fail이면 멈추고 사용자에게 보여준다:
 - ...
 ```
 
-### context.\<machine\>.md (덮어쓰기, ~한글 1500자)
+### ~~context.\<machine\>.md~~ (레거시 — 신규 생성 금지)
 
-```markdown
-# context @ <machine> — <slug>
-> 🔄 갱신 <YYYY-MM-DD HH:MM> [<machine>]
+기존 40개 task에만 남아 있는 파일이다. **새로 만들지 않는다**(namu-57). 읽기 폴백으로만
+쓰고, 상태는 전부 `log.md`에 append한다.
 
-## ▶ 다음 (한 줄)
-(재진입 시 여기부터)
-
-## 지금 어디까지
-- (사실만)
-
-## 막힘·주의 (있으면)
-- ...
-
-## 만지는 중인 파일
-- `path` — (왜)
-```
-
-### log.md (append만, 줄마다 machine 도장)
+### log.md (append만, 줄마다 machine 도장 — 유일한 상태 파일)
 
 ```markdown
 # log — <slug>
-(append만. context 꼬이면 이걸로 복원)
+(append만. 이 파일이 이 task의 권위 있는 기록이다)
 
 [시작] YYYY-MM-DD HH:MM:SS <machine> · 작업 생성, 목적·완료조건 확정
 ```
 
-log 줄 형식: `[TAG] YYYY-MM-DD HH:MM:SS <machine> · 내용` (초단위 필수 — 멀티 PC "최신" 판별 신호).
-log 태그 고정 5종: `[시작]` `[결정]` `[분담]` `[막힘]` `[완료]`. 필요하면 추가 허용.
-옛 날짜-only 줄(`[TAG] YYYY-MM-DD <machine> · 내용`)은 그대로 두고 공존.
+**log 줄 형식(고정)**: `[TAG] YYYY-MM-DD HH:MM:SS <machine> · 내용`
+
+- 날짜·시각·machine·`·` 구분자를 **전부** 채운다. 브리핑(`journal()`)이 이 형식으로 파싱한다.
+- 시각을 빼면 그날 `00:00:00`으로 취급돼 같은 날 다른 줄보다 뒤로 밀린다(정렬 품질 저하).
+- machine을 빼거나 `·` 앞에 여러 낱말을 두면 기기 필터에서 누락된다.
+- `내용` 안에 `·`를 써도 된다(첫 `·` 앞이 짧은 낱말일 때만 machine으로 읽는다).
+
+**log 태그**
+
+| 태그 | 언제 |
+|------|------|
+| `[시작]` | task 생성 / 재개 |
+| `[결정]` | 방향·설계 확정 |
+| `[분담]` | 워커 위임 |
+| `[막힘]` | 블로커 |
+| `[단계]` | 중간 마일스톤 완료 (⚠ 여기에 `[완료]`를 쓰지 말 것) |
+| `[다음]` | **세션을 끊기 전 필수** — 다음 세션의 시작 지점 |
+| `[완료]` `[중단]` | task **전체**의 진짜 종료 |
+
+필요하면 태그 추가 허용. 옛 날짜-only 줄(`[TAG] YYYY-MM-DD <machine> · 내용`)은 그대로 두고 공존.

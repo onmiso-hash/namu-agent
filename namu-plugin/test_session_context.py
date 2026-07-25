@@ -135,7 +135,7 @@ def test_find_active_ignores_namu_home_uses_project_dir(monkeypatch, tmp_path):
     assert result.name == "project-task"
 
 def test_build_markdown_has_task_and_learnings(tmp_path):
-    """진행 중 task + 교훈 → '📌 진행 중'과 '💡' 둘 다 포함."""
+    """열린 task + 교훈 → '최근 활동'·'열린 task'·'💡' 전부 포함(namu-57 새 형식)."""
     tasks_root = _cfg.tasks_dir_for(tmp_path)
     _make_task(
         tasks_root, "my-task", "hp", "헬퍼 통합 구현",
@@ -151,12 +151,76 @@ def test_build_markdown_has_task_and_learnings(tmp_path):
     md = _sc.build_context_markdown(conn, "hp", tmp_path)
     conn.close()
     assert md is not None
-    assert "📌 진행 중" in md
-    assert "다음 할 일" in md
+    assert "🕘 최근 활동" in md
+    assert "방향 확정" in md            # journal이 log 줄을 시간순으로 세운다
+    assert "### 📂 열린 task 1개" in md
+    assert "다음: 헬퍼 통합 구현" in md  # context 폴백으로 '다음'을 읽는다
     assert "💡" in md
 
+
+def test_build_markdown_lists_all_open_tasks(tmp_path):
+    """열린 task가 여럿이면 1개로 단정하지 않고 전부 세운다(namu-57 증상 A)."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(tasks_root, "task-a", "hp", "A 다음",
+               log_lines=["[시작] 2026-06-28 09:00:00 hp · A 시작"])
+    _make_task(tasks_root, "task-b", "hp", "B 다음",
+               log_lines=["[시작] 2026-06-29 09:00:00 hp · B 시작"])
+    _make_task(tasks_root, "task-c", "hp", "(완료)",
+               log_lines=["[완료] 2026-06-30 09:00:00 hp · C 종료"])
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "### 📂 열린 task 2개" in md
+    open_section = md.split("### 📂 열린 task")[1]
+    assert "task-a" in open_section and "task-b" in open_section
+    assert "task-c" not in open_section   # 닫힌 task는 '열린 task' 목록에서 빠진다
+    assert "▸ **task-b**" in md           # 맨 위 = 가장 최근 활동
+    assert "단정이 아닙니다" in md         # ▸를 단정으로 읽지 말라는 안내
+    # 다만 '최근 활동'은 task 경계를 넘는 시간순 뷰라 닫힌 task의 줄도 포함한다
+    # ("어제 뭐 했지"에 답하려면 끝낸 일도 보여야 한다)
+    assert "**task-c** [완료]" in md.split("### 📂 열린 task")[0]
+
+
+def test_build_markdown_says_when_next_is_missing(tmp_path):
+    """'다음' 기록이 없으면 조용한 빈칸이 아니라 그렇다고 말한다(namu-57 ②)."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    task_dir = tasks_root / "no-next-task"
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.md").write_text("# no-next-task — 테스트\n", encoding="utf-8")
+    (task_dir / "log.md").write_text(
+        "# log\n[시작] 2026-06-28 09:00:00 hp · 착수만 함\n", encoding="utf-8"
+    )  # context.*.md 없음 = '다음' 출처가 하나도 없음
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "다음: (기록 없음)" in md
+    assert '⚠ "다음" 기록이 없는 task 1개' in md
+
+
+def test_build_markdown_next_tag_in_log_wins_over_context(tmp_path):
+    """새 권위는 log의 마지막 [다음] 태그 — context.*.md는 읽기 폴백일 뿐(namu-57 1-4)."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "tagged-task", "hp", "낡은 context 다음",
+        log_lines=[
+            "[시작] 2026-06-28 09:00:00 hp · 시작",
+            "[다음] 2026-06-28 18:00:00 hp · 라우팅 유닛부터 이어서",
+        ],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "다음: 라우팅 유닛부터 이어서" in md
+    assert "낡은 context 다음" not in md
+
+
 def test_build_markdown_no_task_learnings_only(tmp_path):
-    """활성 task 없고 교훈 있음 → '💡 최근 교훈'만, '📌 진행 중' 없음."""
+    """활성 task 없고 교훈 있음 → '💡 최근 교훈'만, task 섹션 없음."""
     conn = _setup_mem_db([
         ("FAKE0001", "2026-01-01T00:00:00+00:00", "이전작업", "other",
          "success", "이유0", "hp", "human", "[]"),
@@ -166,7 +230,7 @@ def test_build_markdown_no_task_learnings_only(tmp_path):
     md = _sc.build_context_markdown(conn, "hp", tmp_path)
     conn.close()
     assert md is not None
-    assert "📌 진행 중" not in md
+    assert "열린 task" not in md
     assert "💡 최근 교훈" in md
 
 def test_build_markdown_empty_returns_welcome(tmp_path):

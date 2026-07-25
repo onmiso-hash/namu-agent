@@ -9,12 +9,15 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from task_resolve import _extract_next_section, _extract_task_title, _line_tag
+from task_resolve import _extract_task_title, _line_tag
 from task_resolve import find_active_task as _resolve_task
 from task_resolve import find_latest_closed_task as _find_latest_closed_task
 from task_resolve import (
     check_project_marker_conflict,
+    find_open_tasks,
     has_legacy_tasks,
+    journal,
+    next_note,
     record_project_marker,
 )
 
@@ -29,20 +32,6 @@ def _same_resolved_path(a: str | Path, b: str | Path) -> bool:
         return Path(a).resolve() == Path(b).resolve()
     except OSError:
         return False
-
-
-def _extract_log_tail(log_path: Path, n: int = 5) -> str:
-    """log.md 마지막 n개 비어있지 않은 줄(헤더 제외)."""
-    try:
-        lines = [
-            ln.strip()
-            for ln in log_path.read_text(encoding="utf-8").splitlines()
-            if ln.strip() and not ln.startswith("# ")
-        ]
-        tail = lines[-n:]
-        return "\n  ".join(tail)
-    except OSError:
-        return ""
 
 
 _CARRYOVER_RE = re.compile(r"이월:\s*(.+)")
@@ -173,6 +162,93 @@ def find_active_task(project_dir: str | Path) -> Path | None:
     return tasks_dir / result[0]
 
 
+# 브리핑에 세우는 최근 활동 줄 수 / 열린 task 줄 수. 나머지는 "… (N개 더)"로 접는다
+# (CLI 한 화면을 넘기면 사용자가 스크롤백으로 되짚지 못한다).
+_JOURNAL_LINES = 8
+_OPEN_TASK_LINES = 5
+
+
+def _short_date(ts: str) -> str:
+    """`2026-07-25 09:00:00` → `07-25`."""
+    return ts[5:10]
+
+
+def _title_without_slug(task_dir: Path) -> str:
+    """task.md 제목에서 폴더명 접두를 걷어낸다.
+
+    실물 task.md의 첫 헤더는 `# namu-57-memory-retrieval — 메모리 "꺼내는 쪽" …`
+    형태라, 브리핑 줄에 폴더명을 이미 굵게 쓴 뒤 제목을 붙이면 같은 slug가 두 번
+    나와 좁은 CLI 폭을 낭비한다.
+    """
+    title = _extract_task_title(task_dir / "task.md")
+    if title.startswith(task_dir.name):
+        title = title[len(task_dir.name):].lstrip(" —-–:")
+    return title or task_dir.name
+
+
+def _one_line(text: str, limit: int = 70) -> str:
+    """여러 줄을 한 줄로 접고 limit자에서 자른다(잘리면 … 표시)."""
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[str], str | None]:
+    """(브리핑 본문 줄들, 맨 위 task 제목) 반환. 열린 task가 없으면 ([], None).
+
+    형식 3원칙(namu-57 1-2):
+      ① "진행 중 1개" 단정 제거 — 열린 task를 전부 세운다(맨 위 ▸는 추천일 뿐)
+      ② "다음" 기록이 없으면 그렇다고 말한다 — 지금까지는 조용한 빈칸이라
+         사용자가 왜 안 나오는지 알 수 없었다
+      ③ 시간순 활동을 맨 위에 — 사용자가 실제로 묻는 "어제 뭐 했지"에 먼저 답한다
+    """
+    open_tasks = find_open_tasks(tasks_dir)
+    if not open_tasks:
+        return ([], None)
+
+    parts: list[str] = []
+
+    entries = journal(project=project_dir, limit=_JOURNAL_LINES)
+    if entries:
+        parts.append("### 🕘 최근 활동 (시간순, task 무관)")
+        for e in entries:
+            machine = f"{e['machine']} · " if e["machine"] else ""
+            tag = f"[{e['tag']}] " if e["tag"] else ""
+            parts.append(
+                f"- `{_short_date(e['ts'])}` {machine}**{e['task_slug']}** {tag}{_one_line(e['text'])}"
+            )
+        parts.append("")
+
+    parts.append(f"### 📂 열린 task {len(open_tasks)}개")
+    missing_next = 0
+    for i, task_dir in enumerate(open_tasks):
+        note = next_note(task_dir)
+        if note is None:
+            missing_next += 1
+        if i >= _OPEN_TASK_LINES:
+            continue
+        marker = "▸ " if i == 0 else ""
+        next_text = _one_line(note) if note else "(기록 없음)"
+        parts.append(
+            f"- {marker}**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}"
+            f"\n  - 다음: {next_text}"
+        )
+    if len(open_tasks) > _OPEN_TASK_LINES:
+        parts.append(f"- … ({len(open_tasks) - _OPEN_TASK_LINES}개 더)")
+    parts.append("")
+    parts.append(
+        "▸는 가장 최근 활동한 task일 뿐 **단정이 아닙니다** — 어느 task를 이어갈지는 사용자에게 확인하세요."
+    )
+    if missing_next:
+        parts.append(
+            f"⚠ \"다음\" 기록이 없는 task {missing_next}개 — 세션 끝에 log.md에 "
+            "`[다음] YYYY-MM-DD HH:MM:SS <machine> · <다음 세션이 시작할 지점>` 한 줄을 "
+            "남기면 다음 세션부터 여기에 표시됩니다."
+        )
+    parts.append("")
+
+    return (parts, _extract_task_title(open_tasks[0] / "task.md"))
+
+
 _WELCOME_MARKDOWN = (
     "## 🌳 NAMU 준비됨\n\n"
     "아직 기록된 작업·교훈이 없습니다 (신규 환경이면 정상입니다).\n\n"
@@ -245,36 +321,15 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
 
     warning = "\n".join(warnings) if warnings else None
 
-    active = find_active_task(project_dir)
+    task_section, top_title = _build_task_section(project_dir, tasks_dir)
     parts: list[str] = ["## 🌳 NAMU — 세션 컨텍스트 자동 로딩\n"]
 
-    if active:
-        title = _extract_task_title(active / "task.md")
+    if task_section:
+        parts.extend(task_section)
 
-        next_items = []
-        try:
-            for ctx_file in active.glob("context.*.md"):
-                # context.hp.md -> hp
-                ctx_machine = ctx_file.name.split(".")[1]
-                body = _extract_next_section(ctx_file.read_text(encoding="utf-8"))
-                if body and body.strip() != "(완료)":
-                    next_items.append(f"({ctx_machine}) {body}")
-        except OSError:
-            pass
-
-        log_snippet = _extract_log_tail(active / "log.md")
-        learnings = db.recall(conn, query=title, limit=3)
-
-        parts.append(f"### 📌 진행 중: {title}")
-        if next_items:
-            parts.append("- **다음 할 일:**")
-            for item in next_items:
-                indented = item.replace("\n", "\n    ")
-                parts.append(f"  - {indented}")
-        if log_snippet:
-            parts.append(f"- **최근 로그:**\n  {log_snippet}")
-        parts.append("")
-
+        # 교훈 검색어는 맨 위(가장 최근 활동) task 제목 — 열린 task 전부로 검색하면
+        # 관련도가 흐려진다.
+        learnings = db.recall(conn, query=top_title, limit=3)
         if learnings:
             parts.append("### 💡 관련 교훈")
             for it in learnings:

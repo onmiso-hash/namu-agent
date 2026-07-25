@@ -7,7 +7,7 @@
 | 폴더 | 역할 |
 |------|------|
 | `namu-plugin/` | 현역 코드 — MCP 메모리 서버(`mcp_server.py`), 코어 로직(`db.py`), 설정(`config.py`) |
-| `tasks/` | (namu-34로 저장 위치 이전 — namu-26 개정) 작업별 상태 기록의 실제 원본은 개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`에 있다(이 repo를 포함해 어떤 프로젝트도 예외 없음). `task.md`(불변 목적) / `context.<machine>.md`(기기별 스냅샷) / `log.md`(append-only 원본) 3파일 구조는 유지하며, git 추적은 이 repo가 아니라 `~/.namu`의 개인 전역 동기화에 편승한다 |
+| `tasks/` | (namu-34로 저장 위치 이전 — namu-26 개정) 작업별 상태 기록의 실제 원본은 개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`에 있다(이 repo를 포함해 어떤 프로젝트도 예외 없음). `task.md`(불변 목적) / `log.md`(append-only 원본) **2파일** 구조이며(namu-57: `context.<machine>.md`는 신규 생성 중단 — 기존 40개는 읽기 폴백으로만 남김), git 추적은 이 repo가 아니라 `~/.namu`의 개인 전역 동기화에 편승한다 |
 | `.claude/` | Claude Code 글루 — 서브에이전트(`agents/`), 로컬 설정(`settings.local.json`). 작업 절차 스킬은 `namu-plugin/skills/namu-task/`로 이전됨(플러그인 동봉) |
 
 이 repo에는 `memory/`·`db/` 폴더가 없다(namu-35로 폐지). 교훈(learnings)·검색 캐시(db)는 이 repo가 어디에 있든 상관없이 항상 개인 풀 `~/.namu/`에 쌓인다 — 아래 "메모리 구조" 참고.
@@ -30,7 +30,7 @@
 
 - **`~/.namu/memory/learnings.yaml`** = 진실의 원천. append-only, `namu_sync_setup`으로 준비한 사용자 개인 원격 repo로 PC 간 공유(선택 기능). 데이터 루트는 `NAMU_DATA_ROOT`(=`Path.home() / ".namu"`) 고정 상수이며, 어떤 프로젝트에서 실행하든(이 개발 repo 포함, 환경변수로도 우회 불가) 항상 이 한 경로다 — namu-35로 "개발 모드/설치 모드" 구분 자체가 폐지됐다.
 - **SQLite(`~/.namu/db/namu.db`)** = learnings.yaml를 인덱싱한 로컬 검색 캐시. gitignore 대상(namu_sync_setup이 자동 추가)이며, git pull 후 yaml↔db 항목 수 불일치를 감지하면 서버 부팅 시 자동 재생성된다.
-- **tasks(개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`, namu-34)** = 작업 상태. `context.<machine>.md`는 재생성 가능한 뷰, `log.md`가 권위 있는 기록. 저장 위치는 학습 기억(`NAMU_DATA_ROOT`)과 별개 산출 기준(프로젝트 폴더명 basename)으로 정해지지만, 물리적으로는 같은 `~/.namu` 계열에 모인다.
+- **tasks(개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`, namu-34)** = 작업 상태. `log.md`가 유일한 권위 기록이며 "다음 할 일"도 마지막 `[다음]` 태그 줄로 여기 남긴다(namu-57). `context.<machine>.md`는 레거시 읽기 폴백. 저장 위치는 학습 기억(`NAMU_DATA_ROOT`)과 별개 산출 기준(프로젝트 폴더명 basename)으로 정해지지만, 물리적으로는 같은 `~/.namu` 계열에 모인다.
 - **ID** = ULID — 시간순 정렬 + 오프라인 다중 PC git 머지 충돌 0.
 
 ### 메모리 2원 분류 (#35, #32 개정)
