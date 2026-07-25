@@ -463,8 +463,27 @@ def test_parse_log_line_full_form():
         "ts": "2026-07-19 17:08:34",
         "tag": "결정",
         "machine": "hp",
+        "via": None,
         "text": "게이트 통과",
     }
+
+
+def test_parse_log_line_via_tail_is_split_off():
+    """본문 끝 `(via <라벨>)` 꼬리표는 via로 분리되고 text에서는 제거된다(namu-50)."""
+    got = _parse_log_line("[결정] 2026-07-25 15:40:00 web · 내용 (via claude)")
+    assert got == {
+        "ts": "2026-07-25 15:40:00",
+        "tag": "결정",
+        "machine": "web",
+        "via": "claude",
+        "text": "내용",
+    }
+
+
+def test_parse_log_line_no_via_tail_is_none():
+    got = _parse_log_line("[결정] 2026-07-19 17:08:34 hp · 게이트 통과")
+    assert got["via"] is None
+    assert got["text"] == "게이트 통과"
 
 
 def test_parse_log_line_missing_time_is_normalized():
@@ -555,6 +574,7 @@ def test_journal_entry_shape(pool):
         "task_slug": "namu-56-scrapbook",
         "tag": "설계",
         "machine": "hp",
+        "via": None,
         "text": "그릇 성격 확정",
     }
 
@@ -598,3 +618,22 @@ def test_journal_empty_pool_returns_empty(fake_home):
 
 def test_list_projects_lists_pool_dirs(pool):
     assert list_projects() == ["namu-agent", "onnamu-project"]
+
+
+def test_journal_via_filter(fake_home):
+    """via 축(namu-50): `(via <라벨>)` 꼬리표로 어느 AI가 남겼는지 걸러진다."""
+    _make_pool_task(
+        fake_home,
+        "namu-agent",
+        "namu-57-web",
+        "# log\n"
+        "[결정] 2026-07-25 15:40:00 web · 웹에서 남김 (via claude)\n"
+        "[결정] 2026-07-25 16:00:00 hp · hp에서 남김\n",
+    )
+
+    claude_rows = journal(via="claude")
+    assert [r["text"] for r in claude_rows] == ["웹에서 남김"]
+    assert claude_rows[0]["machine"] == "web"
+
+    all_rows = journal()
+    assert {r["via"] for r in all_rows} == {"claude", None}

@@ -1,12 +1,14 @@
 import json
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import yaml
 from ulid import ULID
 
 import config as cfg
+import profile as _profile
+import task_resolve
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS learnings (
@@ -202,27 +204,99 @@ def _row_to_dict(row: tuple) -> dict:
     return d
 
 
+def _until_bound(until: str) -> tuple[str, str]:
+    """until 인자를 (비교연산자, 경계값)으로 정규화한다. SQL과 파이썬 필터 양쪽에서 재사용.
+
+    날짜만(길이<=10) 주면 그날을 포함해야 하므로 다음날 날짜 미만(`<`, 다음날)으로
+    확장하고, 시각까지 주면 그 값 이하(`<=`, 그대로)로 비교한다.
+    """
+    value = until.strip()
+    if len(value) <= 10:
+        d = date.fromisoformat(value)
+        return ("<", (d + timedelta(days=1)).isoformat())
+    return ("<=", value)
+
+
+def _until_clause(column: str, until: str) -> tuple[str, str]:
+    """`_until_bound`을 SQL 조건절(`"<column> < ?"` 등)과 파라미터값으로 변환."""
+    op, bound = _until_bound(until)
+    return f"{column} {op} ?", bound
+
+
+def _axis_conds(
+    prefix: str,
+    *,
+    outcome_filter: str | None = None,
+    task_type: str | None = None,
+    machine: str | None = None,
+    via: str | None = None,
+    task: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> tuple[list[str], list]:
+    """machine/via/task/task_type/outcome/since/until 축 필터를 SQL 조건 리스트로 변환.
+
+    prefix는 컬럼 앞에 붙는 테이블 별칭(FTS 조인 시 `"l."`, 아니면 `""`).
+    machine/via/task_type/outcome_filter는 정확 일치, task는 LIKE 부분일치
+    (learnings의 task 컬럼은 "namu-57 1단계 — …" 같은 자유 문장이라 정확 일치로
+    걸면 못 찾는다). since/until은 timestamp(ISO8601 UTC 문자열) 사전순 비교.
+
+    ⚠️ timestamp는 UTC 저장값이다(db.record). tasks 그릇(task_resolve.journal)의
+    log.md 시각은 PC 현지시각이라 그릇마다 기준이 다르다 — KST 등 UTC+9면 날짜
+    경계가 최대 9시간 어긋날 수 있다. 저장 형식을 통일하지 않은 채 필터만 얹은
+    상태이므로 since/until 값을 그릇 간에 그대로 재사용하면 안 된다.
+    """
+    conds: list[str] = []
+    params: list = []
+    if outcome_filter:
+        conds.append(f"{prefix}outcome = ?")
+        params.append(outcome_filter)
+    if task_type:
+        conds.append(f"{prefix}task_type = ?")
+        params.append(task_type)
+    if machine:
+        conds.append(f"{prefix}machine = ?")
+        params.append(machine)
+    if via:
+        conds.append(f"{prefix}via = ?")
+        params.append(via)
+    if task:
+        conds.append(f"{prefix}task LIKE ?")
+        params.append(f"%{task}%")
+    if since:
+        conds.append(f"{prefix}timestamp >= ?")
+        params.append(since)
+    if until:
+        clause, val = _until_clause(f"{prefix}timestamp", until)
+        conds.append(clause)
+        params.append(val)
+    return conds, params
+
+
 def _fts_query(
     conn: sqlite3.Connection,
-    query: str,
+    query: str | None,
     limit: int,
     order: str,
     outcome_filter: str | None = None,
     task_type: str | None = None,
+    machine: str | None = None,
+    via: str | None = None,
+    task: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
 ) -> list[dict]:
-    q = query.strip()
+    q = (query or "").strip()
 
     if len(q) >= 3:
         fts_term = '"' + q.replace('"', '""') + '"'
         order_clause = "ORDER BY bm25(learnings_fts)" if order == "bm25" else "ORDER BY l.id DESC"
-        conds: list[str] = ["learnings_fts MATCH ?"]
-        params: list = [fts_term]
-        if outcome_filter:
-            conds.append("l.outcome = ?")
-            params.append(outcome_filter)
-        if task_type:
-            conds.append("l.task_type = ?")
-            params.append(task_type)
+        extra_conds, extra_params = _axis_conds(
+            "l.", outcome_filter=outcome_filter, task_type=task_type,
+            machine=machine, via=via, task=task, since=since, until=until,
+        )
+        conds = ["learnings_fts MATCH ?"] + extra_conds
+        params = [fts_term] + extra_params
         sql = (
             "SELECT l.id, l.timestamp, l.task, l.task_type, l.outcome,"
             " l.reason, l.machine, l.verified_by, l.tags, l.kind, l.via"
@@ -234,20 +308,25 @@ def _fts_query(
         )
         rows = conn.execute(sql, params + [limit]).fetchall()
     else:
-        like_term = f"%{q}%"
-        conds = ["(task LIKE ? OR reason LIKE ? OR tags LIKE ?)"]
-        params = [like_term, like_term, like_term]
-        if outcome_filter:
-            conds.append("outcome = ?")
-            params.append(outcome_filter)
-        if task_type:
-            conds.append("task_type = ?")
-            params.append(task_type)
+        extra_conds, extra_params = _axis_conds(
+            "", outcome_filter=outcome_filter, task_type=task_type,
+            machine=machine, via=via, task=task, since=since, until=until,
+        )
+        if q:
+            like_term = f"%{q}%"
+            conds = ["(task LIKE ? OR reason LIKE ? OR tags LIKE ?)"] + extra_conds
+            params = [like_term, like_term, like_term] + extra_params
+        else:
+            # 검색어 없음 — 필터만 적용(없으면 무조건 전체), 최신순으로 답한다.
+            # ("어제 hp에서 뭐 했지"처럼 축만으로 묻는 질문에 답하기 위함.)
+            conds = extra_conds
+            params = extra_params
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
         sql = (
             "SELECT id, timestamp, task, task_type, outcome,"
             " reason, machine, verified_by, tags, kind, via"
             " FROM learnings"
-            f" WHERE {' AND '.join(conds)}"
+            f" {where}"
             " ORDER BY id DESC"
             " LIMIT ?"
         )
@@ -286,32 +365,85 @@ def recall(
 
 def search(
     conn: sqlite3.Connection,
-    query: str,
+    query: str | None = None,
     outcome_filter: str | None = None,
     limit: int = 10,
+    *,
+    machine: str | None = None,
+    via: str | None = None,
+    task: str | None = None,
+    task_type: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
 ) -> dict:
-    results = _fts_query(conn, query, limit, order="bm25", outcome_filter=outcome_filter)
+    """learnings를 검색·필터링해 결과와 outcome 추세 요약을 함께 반환한다.
+
+    위치 인자 순서 `(conn, query, outcome_filter, limit)`는 mcp_server.py가 위치
+    인자로 호출하므로 바꾸지 않는다(namu-57 2단계 1단위) — 새 축(machine/via/
+    task/task_type/since/until)은 전부 키워드 전용으로 뒤에 붙인다.
+
+    query는 선택이다. None/빈 문자열이면 텍스트 매칭 없이 필터만 적용해
+    `ORDER BY id DESC`(최신순)로 반환한다 — "어제 hp에서 뭐 했지"처럼 검색어
+    없이 축만으로 묻는 질문에도 답하기 위함이다.
+
+    필터 의미:
+      - machine/via/task_type/outcome_filter: 정확히 일치.
+      - task: task 컬럼 부분일치(LIKE `%값%`) — learnings의 task 컬럼은
+        "namu-57 1단계 — …" 같은 자유 문장이라 `task='namu-57'`로 걸려야 한다.
+      - since/until: timestamp(ISO8601 UTC 문자열) 사전순 비교. since는
+        `timestamp >= ?`. until은 날짜만 주면(길이<=10) 그날을 포함해야 하므로
+        다음날 날짜로 `timestamp < ?`, 시각까지 주면 `timestamp <= ?`.
+        ⚠️ 이 timestamp는 UTC 저장값이다(db.record). tasks 그릇(log.md)의 시각은
+        PC 현지시각이라 그릇마다 기준이 다르다 — KST면 9시간차로 날짜 경계가
+        어긋날 수 있다(저장 형식은 이번엔 고치지 않고 여기 명시만 한다).
+
+    summary(outcome 집계)는 기존 의미를 유지한다 — outcome_filter와 limit은
+    무시하고 query + 나머지 필터(machine/via/task/task_type/since/until)에 걸린
+    전체를 집계하는 추세 요약이다.
+    """
+    results = _fts_query(
+        conn, query, limit, order="bm25",
+        outcome_filter=outcome_filter, task_type=task_type,
+        machine=machine, via=via, task=task, since=since, until=until,
+    )
 
     summary: dict[str, int] = {"success": 0, "failure": 0, "partial": 0}
-    q = query.strip()
+    q = (query or "").strip()
     if len(q) >= 3:
         fts_term = '"' + q.replace('"', '""') + '"'
+        extra_conds, extra_params = _axis_conds(
+            "l.", task_type=task_type, machine=machine, via=via,
+            task=task, since=since, until=until,
+        )
+        conds = ["learnings_fts MATCH ?"] + extra_conds
+        params = [fts_term] + extra_params
         rows = conn.execute(
             "SELECT l.outcome, COUNT(*)"
             " FROM learnings_fts"
             " JOIN learnings l ON l.rowid = learnings_fts.rowid"
-            " WHERE learnings_fts MATCH ?"
+            f" WHERE {' AND '.join(conds)}"
             " GROUP BY l.outcome",
-            [fts_term],
+            params,
         ).fetchall()
     else:
-        like_term = f"%{q}%"
+        extra_conds, extra_params = _axis_conds(
+            "", task_type=task_type, machine=machine, via=via,
+            task=task, since=since, until=until,
+        )
+        if q:
+            like_term = f"%{q}%"
+            conds = ["(task LIKE ? OR reason LIKE ? OR tags LIKE ?)"] + extra_conds
+            params = [like_term, like_term, like_term] + extra_params
+        else:
+            conds = extra_conds
+            params = extra_params
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
         rows = conn.execute(
             "SELECT outcome, COUNT(*)"
             " FROM learnings"
-            " WHERE (task LIKE ? OR reason LIKE ? OR tags LIKE ?)"
+            f" {where}"
             " GROUP BY outcome",
-            [like_term, like_term, like_term],
+            params,
         ).fetchall()
 
     for outcome, count in rows:
@@ -319,3 +451,107 @@ def search(
             summary[outcome] = count
 
     return {"results": results, "summary": summary}
+
+
+_VALID_BOWLS = ("learnings", "tasks", "profile")
+
+
+def search_bowl(
+    conn: sqlite3.Connection,
+    bowl: str = "learnings",
+    query: str | None = None,
+    project: str | None = None,
+    task: str | None = None,
+    machine: str | None = None,
+    via: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    outcome_filter: str | None = None,
+    task_type: str | None = None,
+    limit: int = 10,
+) -> dict:
+    """learnings/tasks/profile 3그릇을 같은 축 집합(query/project/task/machine/via/
+    since/until/…)으로 조회하는 단일 분기 진입점(namu-57 2단계 1단위).
+
+    - `learnings` → `search()` 그대로 위임. 반환 `{"bowl","results","count","summary"}`.
+    - `tasks` → `task_resolve.journal(...)`을 그대로 재사용한다(SQLite 인덱싱하지
+      않는다 — log.md가 권위이고 프로젝트당 파일 수십 개라 인덱스 유지 비용이
+      이득보다 크다). query가 있으면 text/tag/task_slug 부분일치(대소문자 무시)로
+      거른 **뒤에** limit을 적용한다(순서 중요 — 먼저 자르면 걸러질 결과가
+      사라진다). 반환 `{"bowl","results","count"}`.
+    - `profile` → `profile.active()`(supersede된 항목 제외) 로드 후 파이썬 필터:
+      query는 subject/statement/source/tags 부분일치, machine/via는 정확 일치,
+      since/until은 timestamp 비교, timestamp 내림차순 정렬 후 limit. 반환
+      `{"bowl","results","count"}`.
+
+    `project`는 tasks 전용 축이다 — learnings/profile에 project를 주면 조용히
+    무시하지 않고 ValueError로 명시 거절한다(조용히 무시하면 웹 AI가 필터가
+    걸린 줄 알고 잘못된 결론을 낸다).
+    """
+    if bowl not in _VALID_BOWLS:
+        raise ValueError(f"bowl은 {list(_VALID_BOWLS)} 중 하나여야 합니다: {bowl!r}")
+
+    if bowl != "tasks" and project is not None:
+        raise ValueError(
+            f"project는 tasks 전용 축입니다 (bowl={bowl!r}에는 쓸 수 없습니다)"
+        )
+
+    if bowl == "learnings":
+        result = search(
+            conn, query, outcome_filter, limit,
+            machine=machine, via=via, task=task, task_type=task_type,
+            since=since, until=until,
+        )
+        return {
+            "bowl": bowl,
+            "results": result["results"],
+            "count": len(result["results"]),
+            "summary": result["summary"],
+        }
+
+    if bowl == "tasks":
+        entries = task_resolve.journal(
+            project=project, since=since, until=until,
+            machine=machine, task=task, via=via, limit=None,
+        )
+        if query:
+            q = query.lower()
+            entries = [
+                e for e in entries
+                if q in (e.get("text") or "").lower()
+                or q in (e.get("tag") or "").lower()
+                or q in (e.get("task_slug") or "").lower()
+            ]
+        if limit is not None:
+            entries = entries[:limit]
+        return {"bowl": bowl, "results": entries, "count": len(entries)}
+
+    # bowl == "profile"
+    docs = _profile.active()
+    if machine is not None:
+        docs = [d for d in docs if d.get("machine") == machine]
+    if via is not None:
+        docs = [d for d in docs if d.get("via") == via]
+    if since is not None:
+        docs = [d for d in docs if (d.get("timestamp") or "") >= since]
+    if until is not None:
+        op, bound = _until_bound(until)
+        if op == "<":
+            docs = [d for d in docs if (d.get("timestamp") or "") < bound]
+        else:
+            docs = [d for d in docs if (d.get("timestamp") or "") <= bound]
+    if query:
+        q = query.lower()
+
+        def _matches(d: dict) -> bool:
+            fields = [d.get("subject"), d.get("statement"), d.get("source")]
+            tags = d.get("tags") or []
+            haystack = " ".join(str(f) for f in fields if f) + " " + " ".join(str(t) for t in tags)
+            return q in haystack.lower()
+
+        docs = [d for d in docs if _matches(d)]
+
+    docs = sorted(docs, key=lambda d: d.get("timestamp") or "", reverse=True)
+    if limit is not None:
+        docs = docs[:limit]
+    return {"bowl": bowl, "results": docs, "count": len(docs)}

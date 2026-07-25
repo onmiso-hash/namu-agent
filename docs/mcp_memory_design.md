@@ -15,10 +15,16 @@
 
 ## 🛠️ 노출할 도구 3개 (MVP)
 
-> **두 그릇, 도구는 여전히 3개 (#49, 2026-07-18):** 메모리는 learnings.yaml(교훈/대화기록)과
-> profile.yaml(사실·선호) 두 그릇으로 나뉘지만, 웹 3-도구 제약(claude.ai 커넥터)상 도구 개수는
-> 늘리지 않는다 — `namu_record`가 `kind` 파라미터로 두 그릇에 라우팅하고, `namu_recall`이 두
-> 그릇을 한 dict로 합쳐 반환한다. 상세는 아래 "🧠 두 그릇 구조" 절 참고.
+> **세 그릇, 도구는 여전히 3개 (#49 두 그릇 → namu-57 2단계에서 세 그릇으로 확장,
+> 2026-07-25):** 메모리는 learnings.yaml(교훈/대화기록)·profile.yaml(사실·선호)·
+> tasks(작업 로그, `~/.namu/tasks/<project>/*/log.md`) 세 그릇으로 나뉘지만, 도구 개수는
+> 3개에서 늘리지 않는다 — `namu_record`가 `bowl`(또는 하위호환용 `kind`) 파라미터로 세
+> 그릇에 라우팅하고, `namu_search`가 `bowl` 파라미터로 세 그릇을 같은 축 집합
+> (project/task/machine/via/since/until)으로 조회한다. **이건 claude.ai 커넥터의 플랫폼
+> 제약이 아니라 스코프 결정이었다** — 요약이 옮겨 적히며 "웹 3-도구 제약"으로 둔갑했던
+> 표현을 여기서 바로잡는다(namu-57 실측 확인, 상세는 `docs/remote_mcp_design.md` §8).
+> 상세는 아래 "🧠 두 그릇 구조" 절도 참고(명칭은 #49 시절 그대로 두 그릇으로 남아있으나
+> 세 번째 그릇 tasks는 SQLite 캐시가 없는 log.md 자체가 원본이라 성격이 또 다르다).
 
 > **recall vs search 역할 분리 (2026-06-24 확정):** 둘 다 query를 받지만 목적이 다르다.
 > - **recall = 작업 시작 전 "맥락 로딩"** → 뭐라도 돌려줌(관련 부족하면 최신순 폴백)
@@ -34,36 +40,41 @@
 | 출력 | **두 그릇 dict** — `{"profile": [...활성 fact 전부, limit 없음...], "learnings": [...검색결과: 시각, 작업유형, 결과, **판단 이유**, kind, 태그...]}` (#49, 2026-07-18 변경 — 과거엔 learnings 리스트만 반환) |
 | 동작 | `profile`은 항상 `profile.active()`로 전체 반환(작아서 필터·limit 없음). `learnings`는 query 있으면 FTS 관련도순 → 결과 부족하면 최신순 폴백, query 없으면 `ORDER BY id DESC` 최신 N개(kind=lesson/note 모두 포함) |
 
-### 2. `namu_record` — 결과 + 이유 기록, `kind`로 두 그릇 라우팅 (자가학습 핵심)
-작업이 끝나면 결과뿐 아니라 **판단 이유**까지 append-only로 저장. `kind`(lesson/fact/note, 기본
-`lesson`)에 따라 learnings.yaml 또는 profile.yaml 중 어느 그릇에 쓸지가 갈린다(#49, 2026-07-18).
+### 2. `namu_record` — 결과+이유 기록, `bowl`(또는 `kind`)로 세 그릇 라우팅 (자가학습 핵심)
+작업이 끝나면 결과뿐 아니라 **판단 이유**까지, 또는 프로젝트 작업 로그 한 줄을
+append-only로 저장한다. `bowl`(learnings/tasks/profile, 생략 시 `kind`에서 유도)에 따라
+쓸 그릇이 갈린다(#49 두 그릇 → namu-57 2단계에서 tasks 추가, 2026-07-25).
 
 | 항목 | 내용 |
 |------|------|
-| 공통 입력 | `kind`(str, 기본 `lesson`): `lesson`\|`fact`\|`note` — 그릇 선택 + 검증 규칙 결정 / `tags`(list, 선택) / `verified_by`(str) |
-| `lesson`/`note` 전용 입력 | `task`(str) / `outcome`(str, 선택): success/failure/partial — **lesson은 필수, note는 생략 가능** / `reason`(str, **필수**, lesson·note 공통) / `task_type`(str) |
-| `fact` 전용 입력 | `subject`(str, free-form 권장값 user/environment/preference) / `statement`(str) / `source`(str, **필수** — reason에 대응, "왜 이걸 믿나/어떻게 알았나") / `supersedes`(str, 선택 — 정정 대상 옛 fact id) |
-| 출력 | 기록된 항목 ID(ULID) |
-| 동작 | `kind=lesson`\|`note` → **learnings.yaml에 먼저 append** → SQLite INSERT(트리거가 FTS 채움, 기존 경로). `kind=fact` → **profile.yaml에 append**(profile.record_fact, SQLite 캐시 없음) |
-| 자동 채움 | `id`(ULID) / `timestamp`(UTC) / `machine`(.env) 은 두 그릇 공통으로 서버가 생성, 호출자는 안 넘김 |
-| ⚠️ 원칙 | lesson·note: `reason` 빈 값이면 `ValueError`. fact: `source` 빈 값이면 `ValueError`. 이유/근거 없는 데이터 → 엉뚱한 패턴 도출 위험 |
+| 공통 입력 | `bowl`(str, 선택): `learnings`\|`tasks`\|`profile` — 생략하면 `kind`에서 유도(fact→profile, lesson/note→learnings, 기존 호출 100% 하위호환). 명시한 `bowl`이 `kind`와 모순되면(예: `bowl='learnings'`+`kind='fact'`) 즉시 `ValueError` |
+| `learnings` 전용 입력 (`kind=lesson`\|`note`, 기본 `lesson`) | `task`(str) / `outcome`(str, 선택): success/failure/partial — lesson은 필수, note는 생략 가능 / `reason`(str, **필수**) / `task_type`(str) / `tags`(list, 선택) |
+| `profile` 전용 입력 (`kind=fact`) | `subject`(str, free-form 권장값 user/environment/preference) / `statement`(str) / `source`(str, **필수** — "왜 이걸 믿나/어떻게 알았나") / `supersedes`(str, 선택 — 정정 대상 옛 fact id) |
+| `tasks` 전용 입력 (namu-57 2단계 신규) | `project`(str): 프로젝트 폴더명 — stdio는 생략 시 "현재 프로젝트", 웹은 **필수**(cwd 개념이 없음, `'*'`는 기록에 못 씀) / `task`(str): task 슬러그(폴더명 완전일치 우선, 없으면 `namu-57`처럼 접두일치 — 후보 0개/2개+면 열린 task 목록·후보를 곁들여 `ValueError`, **새 폴더를 만들지 않음**) / `text`(str, **필수**, 개행은 공백으로 접힘) / `tag`(str, 기본 `기록`, `]`·개행 금지) |
+| 출력 | 기록된 항목 ID(ULID) — tasks는 ID가 없으므로 **실제로 append된 log.md 한 줄**(문자열) |
+| 동작 | learnings → **learnings.yaml에 먼저 append** → SQLite INSERT(트리거가 FTS 채움, 기존 경로). profile → **profile.yaml에 append**(profile.record_fact, SQLite 관여 없음). tasks → 해당 task의 `log.md`에 `[tag] YYYY-MM-DD HH:MM:SS <machine> · text` 한 줄 append(`via`가 있으면 끝에 ` (via <라벨>)`) — git `merge=union`이라 여러 곳에서 동시 append해도 충돌이 0이다 |
+| 자동 채움 | learnings/profile: `id`(ULID)/`timestamp`(UTC)/`machine`. tasks: 실제 현지시각(`datetime.now()`)·`machine` — 지어 쓰면 멀티 PC 간 선후가 뒤집힌다 |
+| ⚠️ 원칙 | learnings: `reason` 빈 값이면 `ValueError`. profile: `source` 빈 값이면 `ValueError`. tasks: `text` 빈 값, `]`·개행이 든 `tag`면 `ValueError`. 이유/근거 없는 데이터 → 엉뚱한 패턴 도출 위험. **`tasks`의 `[완료]`/`[중단]` 태그는 task 전체 종료 신호다** — 중간 진행 보고에 쓰면 브리핑의 열린 task 목록에서 사라진다(실제 사고 2건, 오용 금지는 경고일 뿐 코드로 강제하지 않음) |
 
-**저장 트리거 정책 — kind별 3단 (#49):**
+**저장 트리거 정책 — kind/bowl별 (#49 + namu-57 2단계 tasks 추가):**
 
-| kind | 저장 트리거 | 강제 방식 |
+| kind/bowl | 저장 트리거 | 강제 방식 |
 |------|-------------|-----------|
 | `lesson` | AI가 일반화할 교훈이라 스스로 판단해 호출 (현행 유지) | 코드 강제 없음 — AI 자율 판단 |
 | `fact` | AI가 "이거 기억해둘까요?"라고 **제안 → 사용자 동의** 후 저장 | **소프트 정책, 코드로 강제되지 않음** — `record_fact`엔 "물어봤는지"를 판별할 단서가 없어 `source` 필수(ValueError)처럼 하드하게 막을 수 없다. 권장 동작일 뿐 강제가 아니라는 한계를 정직하게 인지할 것 |
 | `note` | 사용자가 명시적으로 "이 대화 기억해줘"라고 요청할 때만 | 코드 강제 없음. 원문 그대로가 아니라 **"결론+근거+핵심 인용"으로 정제한 기록**을 남긴다 |
+| `tasks`(bowl) | 진행 중 언제든 자유 append(작업 로그이므로 lesson처럼 "일반화 가치" 판단 불필요) | 코드 강제 없음 — 단 `[완료]`/`[중단]` 태그 오용(진짜 종료가 아닌데 붙임)은 경고만 하고 막지 않는다 |
 
-### 3. `namu_search` — 패턴 검색 (판단 중 분석적 조회)
-누적된 기록에서 패턴/유사 사례를 찾는다 (자가발전 기반). "정확한 것만 + 요약"이 핵심.
+### 3. `namu_search` — 축 필터 조회 (판단 중 분석적 조회, namu-57 2단계로 3그릇 확장)
+learnings/tasks/profile 세 그릇을 같은 축 집합으로 정밀 조회한다. "정확한 것만(+
+learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`과는 반대 성격.
 
 | 항목 | 내용 |
 |------|------|
-| 입력 | `query`(str): 검색어 / `outcome_filter`(str, 선택): 성공/실패만 / `limit`(int) |
-| 출력 | 매칭 항목 + **경향 요약**(`{success: N, failure: M, partial: K}`) |
-| 동작 | query 3자+ → FTS5 MATCH + bm25 정렬 / 2자 이하 → `LIKE` 폴백. 매칭 없으면 빈 결과(폴백 없음) |
+| 입력 | `bowl`(str, 기본 `learnings`): `learnings`\|`tasks`\|`profile` / `query`(str, **선택** — 생략하면 축만으로 필터링, 예: "어제 hp에서 뭐 했지"=`bowl='tasks', machine='hp', since=...`) / `project`(str, **tasks 전용**): 프로젝트 폴더명 — 생략 시 stdio는 "현재 프로젝트", 웹은 "전체 프로젝트 합침"(cwd 개념이 없음), `'*'`는 양쪽 모두 명시적 전체 조회 / `task`(str): learnings는 부분일치, tasks는 슬러그 완전/접두일치 / `machine`/`via`(str, 정확 일치) / `since`/`until`(str, 날짜 또는 날짜+시각, until은 날짜만 주면 그날 포함) / `outcome_filter`(str, learnings 전용) / `limit`(int, 기본 10) |
+| 출력 | `{"bowl", "results": [...], "count": N}` — learnings만 `"summary": {success: N, failure: M, partial: K}` 추가 |
+| 동작 | learnings: query 3자+ → FTS5 MATCH+bm25 / 2자 이하 `LIKE` 폴백, 매칭 없으면 빈 결과(폴백 없음). tasks: `task_resolve.journal()`로 여러 프로젝트/task의 `log.md`를 시간순 병합(SQLite 인덱싱 없음 — log.md가 권위), query는 text/tag/task_slug 부분일치를 limit 적용 **전**에 거른다. profile: `profile.active()`(supersede 제외) 로드 후 파이썬 필터 |
+| ⚠️ | tasks의 `timestamp`는 PC 현지시각, learnings는 UTC — 그릇 간 `since`/`until` 값을 그대로 재사용하면 시간대만큼 어긋날 수 있다(저장 형식 통일은 이번 범위 밖) |
 
 ---
 
@@ -238,7 +249,7 @@ CHECK는 생략했다.
 | `namu_record` (`kind=lesson`/`note`) | `learnings`에 INSERT (트리거가 FTS 채움) + learnings.yaml에 append |
 | `namu_record` (`kind=fact`) | `profile.record_fact` → profile.yaml에 append (SQLite 관여 없음) |
 | `namu_recall` | learnings: `SELECT … ORDER BY id DESC LIMIT ?` (+ task_type 필터, ULID 정렬로 최신순 공짜) / profile: `profile.active()`가 yaml 통째 로딩 후 supersedes 필터링 — 두 결과를 `{"profile":…, "learnings":…}`로 합쳐 반환 |
-| `namu_search` | `learnings_fts MATCH ?` → `learnings` 조인, `ORDER BY bm25()`. 2글자 이하 `LIKE` 폴백. `GROUP BY outcome COUNT(*)`로 성공/실패 경향 요약 (learnings 전용, profile은 search 대상 아님 — 애초에 검색이 필요 없을 만큼 작다는 게 그릇 분리 전제) |
+| `namu_search` | `learnings_fts MATCH ?` → `learnings` 조인, `ORDER BY bm25()`. 2글자 이하 `LIKE` 폴백. `GROUP BY outcome COUNT(*)`로 성공/실패 경향 요약 (이 행은 #49 시점 스냅샷 — **→ namu-57 2단계에서 개정:** `db.search_bowl()`이 신설돼 `namu_search`가 `bowl` 파라미터로 tasks/profile도 조회할 수 있게 됐다. "profile은 search 대상 아님"이라는 원래 전제는 무효. 상세는 위 "🛠️ 노출할 도구 3개" 절 참고) |
 
 **db.py conn 처리 두 패턴 (의도된 분리 — 통일하지 말 것):**
 - **읽기 계열(`recall`, `search`)**: `conn`을 인자로 받음 → `:memory:` 주입으로 단위 테스트 용이 (검증 스크립트가 이 패턴 활용)

@@ -279,21 +279,42 @@ def _split_machine(rest: str) -> tuple[str | None, str]:
     return (None, rest.strip())
 
 
+# 본문 끝의 `(via <라벨>)` 꼬리표 — 2단위에서 웹이 log에 남길 형식(namu-50):
+# `[결정] 2026-07-25 15:40:00 web · 내용 (via claude)`. 라벨은 machine과 같은
+# 폭의 짧은 낱말 패턴을 쓰되 웹 클라이언트명(예: chatgpt-web)까지 감안해 40자로 둔다.
+_VIA_RE = re.compile(r"\(via\s+([A-Za-z0-9._-]{1,40})\)\s*$")
+
+
+def _split_via(text: str) -> tuple[str | None, str]:
+    """본문 끝의 `(via <라벨>)` 꼬리표를 분리해 (via, 나머지 text)로 반환.
+
+    꼬리표가 없으면 (None, text 그대로)."""
+    match = _VIA_RE.search(text)
+    if not match:
+        return (None, text)
+    return (match.group(1), text[: match.start()].rstrip())
+
+
 def _parse_log_line(line: str) -> dict[str, str | None] | None:
-    """log.md 한 줄 → {ts, tag, machine, text}. 날짜가 없는 줄이면 None.
+    """log.md 한 줄 → {ts, tag, machine, via, text}. 날짜가 없는 줄이면 None.
 
     ts는 항상 `YYYY-MM-DD HH:MM:SS`로 정규화한다(시각 누락은 00:00:00) — 문자열
     사전순 비교가 곧 시간순이 되어 정렬·범위 필터가 파싱 없이 성립한다.
+
+    via는 본문 끝의 `(via <라벨>)` 꼬리표에서 뽑는다(namu-50, 어느 AI/클라이언트가
+    남겼는지 구분하는 축). 꼬리표가 없으면 None이고, text에서는 꼬리표가 제거된다.
     """
     match = _LOG_LINE_RE.match(line.strip())
     if not match:
         return None
     time_str = match.group("time") or "00:00:00"
     machine, text = _split_machine(match.group("rest") or "")
+    via, text = _split_via(text)
     return {
         "ts": f"{match.group('date')} {time_str}",
         "tag": match.group("tag"),
         "machine": machine,
+        "via": via,
         "text": text,
     }
 
@@ -321,11 +342,15 @@ def journal(
     until: str | None = None,
     machine: str | None = None,
     task: str | None = None,
+    via: str | None = None,
     limit: int | None = None,
 ) -> list[dict[str, str | None]]:
     """모든 log.md의 날짜 붙은 줄을 합쳐 시간순(최신 우선) 통합 뷰로 반환한다.
 
-    반환 항목: `{ts, project, task_slug, tag, machine, text}`.
+    반환 항목: `{ts, project, task_slug, tag, machine, via, text}`.
+
+    via는 본문 끝 `(via <라벨>)` 꼬리표에서 뽑은 출처 라벨(namu-50, 어느 AI가
+    남겼는지 구분하는 축)이다. via를 주면 그 라벨과 정확히 일치하는 줄만 남긴다.
 
     파일은 손대지 않고 **읽을 때 합친다**(log.md가 권위, 원칙 #2). task 경계를 넘어
     시간순으로 세우므로 "어제 무슨 일이 있었나"가 추측 없이 답된다.
@@ -372,6 +397,8 @@ def journal(
                     continue
                 if machine is not None and parsed["machine"] != machine:
                     continue
+                if via is not None and parsed["via"] != via:
+                    continue
                 entries.append(
                     {
                         "ts": ts,
@@ -379,6 +406,7 @@ def journal(
                         "task_slug": task_slug,
                         "tag": parsed["tag"],
                         "machine": parsed["machine"],
+                        "via": parsed["via"],
                         "text": parsed["text"],
                     }
                 )

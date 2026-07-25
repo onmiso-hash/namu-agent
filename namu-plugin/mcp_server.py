@@ -7,15 +7,17 @@ import re
 import sqlite3
 import time
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 
 import config as cfg
 import memory_sync
 import profile
+import task_resolve
 from mcp.server.fastmcp import Context, FastMCP
 from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
-from db import search as _search
+from db import search_bowl as _search_bowl
 
 mcp = FastMCP("namu-memory")
 
@@ -82,6 +84,169 @@ def _resolve_via(ctx: Context | None) -> str | None:
     return client
 
 
+def _is_web_request(ctx: Context | None) -> bool:
+    """stateless HTTP(웹) 요청인지 판별. request가 도달하면 웹, None이면 stdio/
+    직접호출/테스트다 — `_resolve_via`가 쓰는 것과 같은 판정 기준을 재사용한다
+    (namu-57 2단계 2단위: project 기본값을 stdio/웹으로 분기하는 데 쓴다)."""
+    if ctx is None:
+        return False
+    req = getattr(getattr(ctx, "request_context", None), "request", None)
+    return req is not None
+
+
+def _default_search_project(ctx: Context | None) -> str | None:
+    """namu_search(bowl='tasks')에서 project 생략 시 기본값(namu-57 2단계 2단위).
+
+    stdio(로컬 CC/agy)는 "지금 이 프로젝트"를 묻는 게 자연스러우므로 cwd 폴더명을
+    쓴다. 웹은 cwd 개념이 없으므로 None을 그대로 유지해 전체 프로젝트를 합친다
+    (task_resolve.journal의 기존 동작).
+    """
+    if _is_web_request(ctx):
+        return None
+    return cfg.tasks_dir_for().name
+
+
+def _resolve_record_project(project: str | None, ctx: Context | None) -> str:
+    """namu_record(bowl='tasks')용 project 정규화. 기록은 반드시 프로젝트 하나에
+    쓰므로(namu-57 2단계 2단위) '*'(전체)는 허용하지 않는다 — 조회(namu_search)와
+    다른 점.
+    """
+    if project == "*":
+        raise ValueError(
+            "project='*'는 기록에 쓸 수 없습니다 — 기록은 프로젝트 하나를 명시해야 합니다"
+        )
+    if project is not None:
+        return project
+    if _is_web_request(ctx):
+        raise ValueError(
+            "웹에서 tasks 기록은 project를 명시해야 합니다(cwd 개념이 없습니다). "
+            "예: project='namu-agent'"
+        )
+    return cfg.tasks_dir_for().name
+
+
+def _resolve_task_slug(project: str, task: str | None) -> str:
+    """task 인자를 폴더명(슬러그)으로 정규화한다. 폴더명 완전일치 우선, 없으면
+    `namu-57`처럼 앞부분만 준 접두 일치로 찾는다(task_resolve._task_matches와
+    같은 규칙). 없는 슬러그로 폴더를 새로 만들지 않는다 — task.md(목적) 없이
+    log만 생기면 유령 task가 된다.
+    """
+    if not task or not task.strip():
+        raise ValueError("task(슬러그)는 필수입니다")
+    task = task.strip()
+
+    tasks_root = task_resolve.tasks_root_for(project)
+    try:
+        candidates = sorted(d.name for d in tasks_root.iterdir() if d.is_dir())
+    except OSError:
+        candidates = []
+
+    exact = [c for c in candidates if c == task]
+    if exact:
+        return exact[0]
+
+    prefix = [c for c in candidates if c.startswith(f"{task}-")]
+    if len(prefix) == 1:
+        return prefix[0]
+
+    open_slugs = [d.name for d in task_resolve.find_open_tasks(tasks_root)]
+    hint = f" (열린 task: {', '.join(open_slugs)})" if open_slugs else " (열린 task 없음)"
+    if not prefix:
+        raise ValueError(
+            f"프로젝트 {project!r}에서 task {task!r}를 찾을 수 없습니다{hint}"
+        )
+    raise ValueError(
+        f"task {task!r}가 여러 후보와 일치합니다: {', '.join(prefix)}{hint} — 더 구체적으로 지정하세요"
+    )
+
+
+def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str]:
+    """tag/text 입력 정리: strip, 빈 값 거절, tag에 ']'·개행 금지, text 개행은
+    공백으로 접어 한 줄로 만든다(log.md는 줄 단위 파일이라 여러 줄이 들어가면
+    파싱이 깨진다). tag 생략(None) 시 기본값 '기록'.
+    """
+    tag = "기록" if tag is None else tag.strip()
+    text = (text or "").strip()
+    if not tag:
+        raise ValueError("tag는 빈 값일 수 없습니다")
+    if "]" in tag or "\n" in tag or "\r" in tag:
+        raise ValueError("tag에는 ']'나 개행을 쓸 수 없습니다")
+    if not text:
+        raise ValueError("text는 필수입니다(빈 값 불가)")
+    text = " ".join(text.split())
+    return tag, text
+
+
+def _append_task_log_line(task_dir: Path, line: str) -> None:
+    """log.md에 한 줄 append(union merge로 여러 곳에서 동시 append해도 충돌 0).
+    파일이 개행으로 끝나지 않으면 먼저 개행을 넣어 줄 경계를 지킨다.
+    """
+    log_path = task_dir / "log.md"
+    needs_leading_nl = False
+    if log_path.exists():
+        with log_path.open("rb") as f:
+            f.seek(0, 2)
+            if f.tell() > 0:
+                f.seek(-1, 2)
+                needs_leading_nl = f.read(1) != b"\n"
+    with log_path.open("a", encoding="utf-8") as f:
+        if needs_leading_nl:
+            f.write("\n")
+        f.write(line + "\n")
+
+
+def _record_task_entry(
+    project: str | None,
+    task: str | None,
+    text: str | None,
+    tag: str | None,
+    via: str | None,
+    ctx: Context | None,
+) -> str:
+    """bowl='tasks' 경로: log.md에 한 줄 append하고 그 줄을 반환한다."""
+    resolved_project = _resolve_record_project(project, ctx)
+    slug = _resolve_task_slug(resolved_project, task)
+    tag, text = _validate_task_tag_text(tag, text)
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # 실제 시계(현지시각) — 지어 쓰면 PC 간 선후가 뒤집힌다
+    machine = cfg.NAMU_MACHINE
+    line = f"[{tag}] {ts} {machine} · {text}"
+    if via:
+        line += f" (via {via})"
+
+    task_dir = task_resolve.tasks_root_for(resolved_project) / slug
+    _append_task_log_line(task_dir, line)
+    return line
+
+
+_KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
+_VALID_RECORD_BOWLS = ("learnings", "tasks", "profile")
+
+
+def _resolve_record_bowl(bowl: str | None, kind: str) -> str:
+    """bowl 인자 해석(namu-57 2단계 2단위). bowl=None이면 기존 kind에서 유도한다
+    (fact→profile, lesson/note→learnings) — 기존 호출은 100% 그대로 동작한다.
+    bowl을 명시했는데 kind와 모순되면(예: bowl='learnings'+kind='fact') 즉시
+    ValueError로 드러낸다. bowl='tasks'는 kind와 무관하다(kind는 tasks 경로에서
+    쓰지 않는다).
+    """
+    if bowl is None:
+        inferred = _KIND_TO_BOWL.get(kind)
+        if inferred is None:
+            raise ValueError("kind는 'lesson'/'note'/'fact' 중 하나여야 합니다")
+        return inferred
+    if bowl not in _VALID_RECORD_BOWLS:
+        raise ValueError(f"bowl은 {list(_VALID_RECORD_BOWLS)} 중 하나여야 합니다: {bowl!r}")
+    if bowl == "tasks":
+        return bowl
+    inferred = _KIND_TO_BOWL.get(kind)
+    if inferred is not None and inferred != bowl:
+        raise ValueError(
+            f"bowl={bowl!r}과 kind={kind!r}가 모순됩니다(kind={kind!r}는 {inferred!r} 그릇입니다)"
+        )
+    return bowl
+
+
 def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
     if tags is None or isinstance(tags, list):
         return tags
@@ -132,27 +297,64 @@ def namu_recall(
 
 @mcp.tool()
 def namu_search(
-    query: str,
+    query: str | None = None,
+    bowl: str = "learnings",
+    project: str | None = None,
+    task: str | None = None,
+    machine: str | None = None,
+    via: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
     outcome_filter: str | None = None,
     limit: int = 10,
     ctx: Context | None = None,
 ):
-    """Search accumulated learnings for PATTERNS (analytical lookup during judgment).
-    Use when you need precise matches to analyze success/failure trends, e.g.
-    'have approaches like this failed before?'. Exact matches only — returns empty
-    if nothing matches (NO recency fallback). Always attaches a trend summary
-    counting outcomes across ALL matches. For general context loading use namu_recall.
+    """Search one of THREE memory bowls with precise axis filters (analytical
+    lookup during judgment — for fuzzy context warming use namu_recall instead).
 
-    Args:
-      query: search terms
-      outcome_filter: 'success'/'failure'/'partial' to narrow returned rows (optional)
-      limit: max returned rows (default 10)
-    Returns: {"results": [...dicts...], "summary": {"success": N, "failure": M, "partial": K}}
+    Bowls (`bowl`):
+      - 'learnings' (default): task outcomes/reasons/notes. Adds a trend
+        summary {success/failure/partial counts}.
+      - 'tasks': project work-log lines (log.md, merged across machines).
+        `project` picks a project by folder name (e.g. 'namu-agent'); omit
+        it to default to "here" on stdio or "all projects merged" on the
+        web (no cwd there). `project='*'` forces "all projects" explicitly
+        on either side.
+      - 'profile': facts/preferences.
+
+    `query` is optional everywhere — omit it to filter by axes alone (e.g.
+    "what did I do yesterday on hp" = bowl='tasks', machine='hp',
+    since='2026-07-24'). Other axes: task (substring), machine/via (exact),
+    since/until (date or datetime, inclusive).
+
+    Examples:
+      namu_search(bowl='tasks', machine='hp', since='2026-07-24')
+      namu_search(query='timeout', bowl='learnings', outcome_filter='failure')
+      namu_search(bowl='tasks', project='namu-agent', task='namu-57')
+
+    Returns: {"bowl", "results": [...], "count": N[, "summary": {...} (learnings only)]}
     """
     _resolve_via(ctx)
     _ensure_db()
+    if bowl == "tasks":
+        if project == "*":
+            project = None
+        elif project is None:
+            project = _default_search_project(ctx)
     with closing(get_conn()) as conn:
-        return _search(conn, query, outcome_filter, limit)
+        return _search_bowl(
+            conn,
+            bowl=bowl,
+            query=query,
+            project=project,
+            task=task,
+            machine=machine,
+            via=via,
+            since=since,
+            until=until,
+            outcome_filter=outcome_filter,
+            limit=limit,
+        )
 
 
 @mcp.tool()
@@ -168,54 +370,47 @@ def namu_record(
     statement: str | None = None,
     source: str | None = None,
     supersedes: str | None = None,
+    bowl: str | None = None,
+    project: str | None = None,
+    text: str | None = None,
+    tag: str | None = None,
     ctx: Context | None = None,
 ):
-    """Record memory into one of two bowls (append-only self-learning).
-    Which bowl depends on `kind`:
-      - kind='lesson' (default): a task outcome AND the reasoning behind it,
-        into learnings.yaml. Call after finishing a task when there's a
-        generalizable pattern worth keeping. 'reason' is MANDATORY (empty
-        rejected with ValueError). 'outcome' is required too
-        ('success'/'failure'/'partial'). Storage trigger: AI's own judgment
-        that the outcome/reason is worth remembering — call directly, no need
-        to ask first.
-      - kind='note': a conversation snippet worth keeping, also into
-        learnings.yaml (kind differentiates it from 'lesson'; no success/
-        failure concept so 'outcome' may be omitted). 'reason' still
-        MANDATORY. Storage trigger: only when the user explicitly asks to
-        remember this conversation (e.g. "remember this").
-      - kind='fact': a fact or preference (user/environment/preference-ish
-        subject), into the separate profile.yaml bowl (no SQLite cache,
-        loaded whole every time). Use subject/statement/source/supersedes
-        instead of task/outcome/reason. 'source' is MANDATORY — WHY/how you
-        know this is true (empty rejected with ValueError). To correct a
-        prior fact, don't edit it — record a new one with `supersedes` set
-        to the old entry's id (profile.yaml is append-only; the old entry is
-        superseded, not deleted). Storage trigger (soft policy only, NOT
-        enforced by code): AI should propose ("should I remember this?") and
-        get the user's agreement before calling with kind='fact'.
+    """Append-only record into one of THREE memory bowls. Pick `bowl`
+    explicitly, or omit it and it's inferred from `kind` (100% backward
+    compatible — existing lesson/note/fact calls need no change). Explicit
+    `bowl` that contradicts `kind` (e.g. bowl='learnings'+kind='fact')
+    raises ValueError immediately.
 
-    Writes the yaml first (source of truth), then the SQLite cache for
-    lesson/note (fact has no cache). id/timestamp/machine are filled in
-    automatically by the server.
+    bowl='learnings' (kind='lesson'|'note', default): a task outcome+reason
+      (lesson) or a conversation snippet (note) → learnings.yaml. Required:
+      task, reason (non-empty). lesson also requires outcome
+      ('success'/'failure'/'partial'); note's outcome is optional. Trigger:
+      lesson = your own judgment there's a generalizable pattern; note =
+      only when the user explicitly asks to remember the conversation.
 
-    Args:
-      task: what was done (lesson/note only)
-      outcome: 'success' | 'failure' | 'partial' (lesson: required; note: optional)
-      reason: WHY it succeeded/failed, or why this note matters (lesson/note,
-        required, non-empty)
-      task_type: code/doc/analysis/other (default 'other'; lesson/note only)
-      verified_by: 'human'/'ai'/'unverified' (default 'ai' = AI-judged)
-      tags: list of string tags (optional)
-      kind: 'lesson' (default) | 'note' | 'fact' — selects the bowl and
-        validation rules, see above
-      subject: what/who this fact is about, free-form (fact only, e.g.
-        user/environment/preference)
-      statement: the fact/preference itself (fact only)
-      source: WHY/how you know this is true (fact only, required, non-empty)
-      supersedes: id of the prior fact entry this one corrects (fact only,
-        optional)
-    Returns: the new entry's ULID (str)
+    bowl='profile' (kind='fact'): a fact/preference → profile.yaml (no
+      SQLite cache). Required: subject, statement, source (non-empty — WHY
+      you know this). `supersedes`=<old id> corrects a prior fact
+      (append-only, never edited in place). Soft policy: propose to the
+      user first ("should I remember this?").
+
+    bowl='tasks' (namu-57 2단계, new): one project work-log line →
+      that task's log.md (git merge=union — safe to append from anywhere,
+      including the web). Required: project (folder name, e.g.
+      'namu-agent'; on stdio omit for "current project", on the web it's
+      MANDATORY — no cwd there), task (slug or unique prefix like
+      'namu-57'; must already exist, this never creates a task folder —
+      0/2+ matches raise ValueError listing open tasks/candidates), text
+      (the note, newlines collapsed to spaces). tag defaults to '기록'
+      (must not contain ']' or a newline). Line format:
+      `[tag] YYYY-MM-DD HH:MM:SS <machine> · text`.
+      WARNING: tags '[완료]'/'[중단]' mean the WHOLE TASK is closing and
+      drop it from open-task briefings — never use them for a mid-task
+      progress note (this caused real incidents twice).
+
+    id/timestamp/machine are filled in by the server for every bowl.
+    Returns: ULID str (learnings/profile) or the appended log line (tasks).
     """
     # namu-38: samsung 라이브 실측에서 record 직후 git 단계까지 12분 공백이
     # 관측됐다 — ensure_db(캐시 재생성)/record(yaml+sqlite)/sync(git push) 세 구간
@@ -225,19 +420,30 @@ def namu_record(
     t0 = time.perf_counter()
     _ensure_db()
     t1 = time.perf_counter()
-    if kind in ("lesson", "note"):
+
+    resolved_bowl = _resolve_record_bowl(bowl, kind)
+
+    if resolved_bowl == "tasks":
+        result = _record_task_entry(project, task, text, tag, via, ctx)
+        t2 = time.perf_counter()
+        memory_sync.sync_push(f"task: {task} ({cfg.NAMU_MACHINE})")
+        t3 = time.perf_counter()
+        memory_sync._append_sync_log(
+            f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
+        )
+        return result
+
+    if resolved_bowl == "learnings":
         entry_id = record(
             task, outcome, reason, task_type, verified_by, _normalize_tags(tags), kind=kind,
             via=via,
         )
-    elif kind == "fact":
+    else:  # profile
         vb = verified_by if verified_by in ("human", "ai", "unverified") else "human"
         entry_id = profile.record_fact(
             subject, statement, source, supersedes=supersedes,
             verified_by=vb, tags=_normalize_tags(tags), via=via,
         )
-    else:
-        raise ValueError("kind는 'lesson'/'note'/'fact' 중 하나여야 합니다")
     t2 = time.perf_counter()
     # 설치형(~/.namu) 자동 동기화 활성 시에만 실제 push가 일어난다(sync_enabled 하드가드).
     # 반환값이 False여도(비활성/실패) record 자체의 성공 결과에는 영향을 주지 않는다.
