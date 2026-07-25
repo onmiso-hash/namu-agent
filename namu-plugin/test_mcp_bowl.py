@@ -361,7 +361,12 @@ def test_namu_record_bowl_tasks_via_roundtrip(fake_home):
 
 
 def test_namu_recall_existing_two_keys_unchanged(fake_home):
-    """profile/learnings 키의 형태·내용이 project 인자 추가 전과 동일해야 한다(하위 호환)."""
+    """profile/learnings 키의 형태·내용이 project 인자 추가 전과 동일해야 한다(하위 호환).
+
+    키 집합 자체는 그릇이 늘면 함께 는다 — namu-56에서 'memo'가 추가됐다. 여기서
+    지키는 것은 "기존 키가 사라지거나 모양이 바뀌지 않는다"이지 "키가 영원히 3개"가
+    아니다.
+    """
     result = _run_probe(
         fake_home,
         "mcp_server.namu_record(task='t1', outcome='success', reason='r1')\n"
@@ -369,7 +374,7 @@ def test_namu_recall_existing_two_keys_unchanged(fake_home):
         "print('RESULT', sorted(r.keys()), r['learnings'][0]['task'], isinstance(r['profile'], list))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "RESULT ['learnings', 'profile', 'tasks'] t1 True" in result.stdout
+    assert "RESULT ['learnings', 'memo', 'profile', 'tasks'] t1 True" in result.stdout
 
 
 def test_namu_recall_lists_open_tasks_with_full_next(fake_home):

@@ -43,10 +43,11 @@ def _read_module_level_tuple_constant(module_path: Path, name: str) -> tuple:
 # BOWLS 레지스트리 자체 (① 스펙 확인)
 # ---------------------------------------------------------------------------
 
-def test_bowls_contains_exactly_three_bowls_in_declared_order():
+def test_bowls_contains_exactly_four_bowls_in_declared_order():
     # 순서 보증: memory_sync._gitattributes_union_lines()가 기존 3줄(learnings+tasks)이
-    # 앞서 나오게 의존하는 순서라 여기서도 못 박아 회귀를 잡는다.
-    assert [bowl.name for bowl in cfg.BOWLS] == ["learnings", "tasks", "profile"]
+    # 앞서 나오게 의존하는 순서라 여기서도 못 박아 회귀를 잡는다. memo(namu-56)는
+    # 반드시 끝에 붙는다 — 앞에 끼우면 기존 설치본의 .gitattributes가 통째로 재작성된다.
+    assert [bowl.name for bowl in cfg.BOWLS] == ["learnings", "tasks", "profile", "memo"]
 
 
 def test_bowls_field_values_match_spec():
@@ -55,15 +56,24 @@ def test_bowls_field_values_match_spec():
     assert by_name["learnings"].git_patterns == ("memory/learnings.yaml",)
     assert by_name["tasks"].git_patterns == ("tasks/**/log.md", "tasks/*/.project")
     assert by_name["profile"].git_patterns == ("memory/profile.yaml",)
+    assert by_name["memo"].git_patterns == ("memory/memo.yaml",)
+
+    for name in ("learnings", "tasks", "profile"):
+        assert by_name[name].mutable is False
+        assert by_name[name].merge == "union"
 
     for bowl in cfg.BOWLS:
-        assert bowl.mutable is False
-        assert bowl.merge == "union"
         assert bowl.web_exposed is True
+
+    # memo(namu-56)는 유일한 mutable 그릇이고, 그래서 줄 단위 union이 아니라
+    # 파일 단위다 — union을 걸면 한쪽에서 뗀 메모가 병합 때 되살아난다.
+    assert by_name["memo"].mutable is True
+    assert by_name["memo"].merge == "file"
 
     assert by_name["learnings"].cached is True
     assert by_name["tasks"].cached is False
     assert by_name["profile"].cached is False
+    assert by_name["memo"].cached is False
 
 
 def test_bowl_is_frozen():

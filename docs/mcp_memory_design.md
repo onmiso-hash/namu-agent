@@ -13,10 +13,15 @@
 
 ---
 
-## 🛠️ 노출할 도구 3개 (MVP)
+## 🛠️ 노출할 도구 4개
 
-> **세 그릇, 도구는 여전히 3개 (#49 두 그릇 → namu-57 2단계에서 세 그릇으로 확장,
-> 2026-07-25):** 메모리는 learnings.yaml(교훈/대화기록)·profile.yaml(사실·선호)·
+> **네 그릇 (#49 두 그릇 → namu-57 2단계 세 그릇 → namu-56 memo 추가, 2026-07-25):**
+> 도구는 3개에서 4개가 됐다 — 늘어난 하나(`namu_memo_remove`)는 **그릇이 늘어서가
+> 아니라 동사가 늘어서**다. memo는 유일하게 지워지는 그릇이고, '떼기'는 기록
+> (`namu_record`)의 인자로 태우면 이름과 실제 쓰임이 어긋난다 — 그 어긋남이
+> learnings.yaml 오염의 발생 기전이었다(namu-57 2단계 결정과 같은 근거).
+>
+> **원래 문장:** 메모리는 learnings.yaml(교훈/대화기록)·profile.yaml(사실·선호)·
 > tasks(작업 로그, `~/.namu/tasks/<project>/*/log.md`) 세 그릇으로 나뉘지만, 도구 개수는
 > 3개에서 늘리지 않는다 — `namu_record`가 `bowl`(또는 하위호환용 `kind`) 파라미터로 세
 > 그릇에 라우팅하고, `namu_search`가 `bowl` 파라미터로 세 그릇을 같은 축 집합
@@ -49,6 +54,7 @@ append-only로 저장한다. `bowl`(learnings/tasks/profile, 생략 시 `kind`�
 | 항목 | 내용 |
 |------|------|
 | 공통 입력 | `bowl`(str, 선택): `learnings`\|`tasks`\|`profile` — 생략하면 `kind`에서 유도(fact→profile, lesson/note→learnings, 기존 호출 100% 하위호환). 명시한 `bowl`이 `kind`와 모순되면(예: `bowl='learnings'`+`kind='fact'`) 즉시 `ValueError` |
+| `memo` 전용 입력 (namu-56) | `text`(str, **필수**) / `tags`(list, 선택). `kind`는 무시된다(tasks와 동일 — 스틱노트는 lesson/note/fact 어디에도 속하지 않는다). 반환은 ULID |
 | `learnings` 전용 입력 (`kind=lesson`\|`note`, 기본 `lesson`) | `task`(str) / `outcome`(str, 선택): success/failure/partial — lesson은 필수, note는 생략 가능 / `reason`(str, **필수**) / `task_type`(str) / `tags`(list, 선택) |
 | `profile` 전용 입력 (`kind=fact`) | `subject`(str, free-form 권장값 user/environment/preference) / `statement`(str) / `source`(str, **필수** — "왜 이걸 믿나/어떻게 알았나") / `supersedes`(str, 선택 — 정정 대상 옛 fact id) |
 | `tasks` 전용 입력 | `project`(str): 프로젝트 폴더명 — stdio는 생략 시 "현재 프로젝트", 웹은 **필수**(cwd 개념이 없음, `'*'`는 기록에 못 씀) / `task`(str): task 슬러그(폴더명 완전일치 우선, 없으면 `namu-57`처럼 접두일치 — 후보 0개/2개+면 열린 task 목록·후보를 곁들여 `ValueError`(0개 케이스는 `create=True` 안내 문구도 곁들임), `create=False`(기본) 상태에선 **새 폴더를 만들지 않음** |
@@ -76,7 +82,46 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 | 입력 | `bowl`(str, 기본 `learnings`): `learnings`\|`tasks`\|`profile` / `query`(str, **선택** — 생략하면 축만으로 필터링, 예: "어제 hp에서 뭐 했지"=`bowl='tasks', machine='hp', since=...`) / `project`(str, **tasks 전용**): 프로젝트 폴더명 — 생략 시 stdio는 "현재 프로젝트", 웹은 "전체 프로젝트 합침"(cwd 개념이 없음), `'*'`는 양쪽 모두 명시적 전체 조회 / `task`(str): learnings는 부분일치, tasks는 슬러그 완전/접두일치 / `machine`/`via`(str, 정확 일치) / `since`/`until`(str, 날짜 또는 날짜+시각, until은 날짜만 주면 그날 포함) / `outcome_filter`(str, learnings 전용) / `limit`(int, 기본 10) |
 | 출력 | `{"bowl", "results": [...], "count": N}` — learnings만 `"summary": {success: N, failure: M, partial: K}` 추가 |
 | 동작 | learnings: query 3자+ → FTS5 MATCH+bm25 / 2자 이하 `LIKE` 폴백, 매칭 없으면 빈 결과(폴백 없음). tasks: `task_resolve.journal()`로 여러 프로젝트/task의 `log.md`를 시간순 병합(SQLite 인덱싱 없음 — log.md가 권위), query는 text/tag/task_slug 부분일치를 limit 적용 **전**에 거른다. profile: `profile.active()`(supersede 제외) 로드 후 파이썬 필터 |
-| ⚠️ | tasks의 `timestamp`는 PC 현지시각, learnings는 UTC — 그릇 간 `since`/`until` 값을 그대로 재사용하면 시간대만큼 어긋날 수 있다(저장 형식 통일은 이번 범위 밖) |
+| ⚠️ | tasks·memo의 `timestamp`는 기준 시간대(`NAMU_TZ`, 기본 Asia/Seoul) 벽시계, learnings·profile은 UTC ISO다 — 그릇 간 `since`/`until` 값을 그대로 재사용하면 9시간 어긋난다. (namu-57 5단계 전에는 tasks가 **호스트마다 다른** 현지시각이라 같은 그릇 안에서도 비교가 깨졌다 — 그건 해소됐고, 그릇 간 형식 통일은 여전히 범위 밖) |
+
+### 4. `namu_memo_remove` — 스틱노트 떼기 (namu-56, 유일한 삭제 도구)
+
+붙여둔 메모 한 장을 **지운다**. NAMU에서 무언가를 실제로 삭제하는 유일한 경로다.
+
+| 항목 | 내용 |
+|------|------|
+| 입력 | `id`(str, 필수) — 앞부분만 줘도 된다(26자 ULID를 사람이 옮겨 적는 건 비현실적). 접두가 여러 장에 걸리면 **아무것도 지우지 않고** 후보를 들어 거절한다 |
+| 출력 | 뗀 메모의 본문과 id를 담은 확인 문자열 |
+| 동작 | `memo.yaml`에서 항목을 제거하고 파일 전체를 원자적으로 다시 쓴다(tombstone 없음, 복구 불가) |
+| 왜 별도 도구인가 | 떼기는 기록과 **다른 동사**다. `namu_record(remove=...)`처럼 인자로 태우면 이름과 쓰임이 어긋나는데, 그 어긋남이 정확히 learnings.yaml이 오염된 기전이었다 |
+| 표시용 id | 브리핑은 유일성이 보장되는 최단 접두를 계산해 보여준다(`memo.short_ids`) — ULID 앞 10자는 생성 시각이라 같은 밀리초에 붙인 메모끼리 앞 8자가 겹치고, 고정 길이로 자르면 **화면의 값을 복사해도 떼기가 거절된다**(실측에서 발견) |
+
+---
+
+## 📌 memo 그릇 (namu-56, 2026-07-25)
+
+일회성·일상 메모("영화 8시 20분")를 담는 세 번째… 가 아니라 **네 번째** 그릇이자,
+성질이 나머지와 정반대인 유일한 그릇이다.
+
+| | **memo.yaml** | 나머지 3그릇 |
+|---|---|---|
+| 수명 | 떼면 사라진다(mutable, tombstone 없음) | append-only, 지우지 않는다 |
+| 검색 인덱스 | SQLite에 넣지 않는다 | learnings만 FTS 인덱싱 |
+| git 병합 | `merge="file"` — union 라인을 만들지 **않는다** | `merge=union` |
+| 노출 | `namu_recall` 반환의 `memo` 키 + 로컬 세션 브리핑 맨 앞 | 각 그릇별 |
+
+- **왜 만들었나**: 사용자가 웹 채팅에서 "이거 기억해둬"라고 맡기는 일회성 정보가 갈 곳이
+  없어 `learnings.yaml`(교훈 지식베이스)로 밀려들어왔다. 지식베이스 오염 0이 이 그릇의
+  존재 이유이므로, 검색 인덱스에 섞는 순간 목적을 배반한다.
+- **왜 union 병합을 안 거나**: union은 삭제를 표현하지 못한다. 줄 단위 병합을 걸면 한쪽
+  PC에서 뗀 메모가 다른 PC의 파일에 남아 있다가 병합 때 **되살아난다**. `Bowl.mutable`
+  게이트가 union 라인 파생에서 이 그릇을 자동으로 제외한다(namu-57 3단계에서 예약해 둔 자리).
+- **유효기간은 넣지 않았다**(2026-07-25 사용자 결정): 자동 삭제는 "내가 안 지웠는데
+  없어졌다"가 되기 쉽다. 뗄 시점은 사람이 정한다.
+- **스키마**: `id`(ULID) / `timestamp`(기준 시간대 ISO) / `text` / `machine` / `tags` / `via`.
+  저장 형식은 YAML 리스트 **한 문서**다 — mutable 그릇은 어차피 매번 전체를 다시 쓰므로
+  통째 읽고 통째 쓰는 형식이 가장 단순하고, 쓰는 도중 중단돼도 임시 파일 교체(os.replace)로
+  원본이 깨지지 않는다.
 
 ---
 

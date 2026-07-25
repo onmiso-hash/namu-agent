@@ -10,6 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 import config as cfg
+import memo
 import memory_sync
 import profile
 import task_resolve
@@ -318,7 +319,7 @@ def _create_task_entry(
 
 
 _KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
-_VALID_RECORD_BOWLS = ("learnings", "tasks", "profile")
+_VALID_RECORD_BOWLS = ("learnings", "tasks", "profile", "memo")
 
 
 def _resolve_record_bowl(bowl: str | None, kind: str) -> str:
@@ -335,7 +336,10 @@ def _resolve_record_bowl(bowl: str | None, kind: str) -> str:
         return inferred
     if bowl not in _VALID_RECORD_BOWLS:
         raise ValueError(f"bowl은 {list(_VALID_RECORD_BOWLS)} 중 하나여야 합니다: {bowl!r}")
-    if bowl == "tasks":
+    if bowl in ("tasks", "memo"):
+        # kind와 무관한 그릇들 — tasks는 로그 한 줄, memo는 스틱노트 한 장이라
+        # lesson/note/fact 어디에도 속하지 않는다. kind 기본값('lesson')이 넘어와도
+        # 모순으로 보지 않는다(호출자가 kind를 줄 이유가 없는 경로다).
         return bowl
     inferred = _KIND_TO_BOWL.get(kind)
     if inferred is not None and inferred != bowl:
@@ -392,8 +396,13 @@ def namu_recall(
         "current project" on stdio (has a cwd), "all projects merged" on the
         web (no cwd there). project='*' forces "all projects" explicitly on
         either side.
-    Returns: three-bowl dict —
-      {"profile": [...active facts/preferences, all of them, no limit...],
+    Returns: four-bowl dict —
+      {"memo": [...every sticky note currently up, oldest first: {"id",
+       "timestamp", "text", "machine", "tags", "via"}. Surface these to the
+       user when they are relevant — memos are things they asked you to hold
+       on to, and on the web this field is the only way they resurface. Take
+       one down with namu_memo_remove once it has served its purpose...],
+       "profile": [...active facts/preferences, all of them, no limit...],
        "learnings": [...lesson/note dicts: timestamp, task, outcome, reason,
        kind, tags, ...],
        "tasks": [...every OPEN task, most-recent-activity first: {"project",
@@ -407,6 +416,9 @@ def namu_recall(
     projects = [resolved_project] if resolved_project is not None else None
     with closing(get_conn()) as conn:
         return {
+            # memo가 맨 앞이다 — 스틱노트는 "지금 눈에 띄어야" 의미가 있고,
+            # 웹에는 세션 훅이 없어 recall 반환이 유일한 노출 경로다(namu-56).
+            "memo": memo.load_all(),
             "profile": profile.active(),
             "learnings": _recall(conn, query, task_type, limit),
             "tasks": task_resolve.open_tasks_briefing(projects),
@@ -548,8 +560,19 @@ def namu_record(
       legacy file is no longer created), appends a `[시작]` line, and
       returns a human-readable string with the created path and that line.
 
+    bowl='memo' (namu-56, new): one sticky note → memo.yaml. Required: text.
+      Optional: tags. This is the ONLY mutable bowl — a memo is meant to be
+      taken down (namu_memo_remove), and when it is, it disappears from the
+      file with no tombstone. Use it for one-off, disposable things the user
+      asks you to hold on to (a showtime, a phone number, "remind me to call
+      the shop"). It is NOT indexed for search alongside lessons — that
+      separation is the whole point of this bowl, so never route disposable
+      notes into 'learnings' just because they feel memory-ish. Memos come
+      back automatically in namu_recall's `memo` field, so the user does not
+      have to ask for them.
+
     id/timestamp/machine are filled in by the server for every bowl.
-    Returns: ULID str (learnings/profile) or the appended log line / task
+    Returns: ULID str (learnings/profile/memo) or the appended log line / task
     creation summary (tasks).
     """
     # namu-38: samsung 라이브 실측에서 record 직후 git 단계까지 12분 공백이
@@ -576,6 +599,16 @@ def namu_record(
         )
         return result
 
+    if resolved_bowl == "memo":
+        entry_id = memo.add(text, tags=_normalize_tags(tags), via=via)
+        t2 = time.perf_counter()
+        memory_sync.sync_push(f"memo: {(text or '')[:40]} ({cfg.NAMU_MACHINE})")
+        t3 = time.perf_counter()
+        memory_sync._append_sync_log(
+            f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
+        )
+        return entry_id
+
     if resolved_bowl == "learnings":
         entry_id = record(
             task, outcome, reason, task_type, verified_by, _normalize_tags(tags), kind=kind,
@@ -597,6 +630,30 @@ def namu_record(
         f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
     )
     return entry_id
+
+
+@mcp.tool()
+def namu_memo_remove(id: str, ctx: Context | None = None) -> str:
+    """Take down one sticky note (namu-56). This DELETES it — memo is the only
+    mutable bowl, so the entry is removed from memo.yaml with no tombstone and
+    cannot be recovered.
+
+    Args:
+      id: the memo's id. A leading prefix is enough (nobody retypes 26 ULID
+        chars) — but if the prefix matches several memos, nothing is deleted
+        and the candidates are listed instead. Deletion is irreversible here,
+        so an ambiguous request does nothing rather than guessing.
+
+    Why this is its own tool rather than an argument on namu_record: taking a
+    note down is a different verb from recording, and past damage in this
+    system came exactly from arguments whose name disagreed with what they did
+    (that is how learnings.yaml got polluted). Returns a short confirmation
+    with the removed text.
+    """
+    _resolve_via(ctx)
+    removed = memo.remove(id)
+    memory_sync.sync_push(f"memo remove: {str(removed.get('text', ''))[:40]} ({cfg.NAMU_MACHINE})")
+    return f"메모를 뗐습니다: {removed.get('text', '')} (id={removed.get('id')})"
 
 
 @mcp.tool()

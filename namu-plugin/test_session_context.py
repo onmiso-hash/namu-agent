@@ -747,6 +747,65 @@ def test_build_markdown_no_legacy_warning_when_absent(tmp_path):
     assert "구 위치" not in md
 
 
+def _use_temp_memo(monkeypatch, tmp_path) -> Path:
+    """memo 파일 경로를 tmp로 격리한다(실제 ~/.namu/memory/memo.yaml 보호)."""
+    memo_path = tmp_path / "memory" / "memo.yaml"
+    monkeypatch.setattr(_cfg, "MEMO_YAML_PATH", memo_path)
+    return memo_path
+
+
+def test_build_markdown_shows_memo_section(tmp_path, monkeypatch):
+    """붙여둔 메모는 세션 브리핑 맨 앞에 뜬다(namu-56) — 사용자가 맡긴 것이라
+    task/교훈보다 먼저 눈에 띄어야 한다."""
+    import memo
+
+    memo_path = _use_temp_memo(monkeypatch, tmp_path)
+    memo.add("영화 8시 20분 롯데시네마", paths=_cfg.data_paths_for())
+    assert memo_path.exists()
+
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "my-task", "hp", "진행 중",
+        log_lines=["[시작] 2026-06-28 09:00:00 hp · 시작"],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "📌 붙여둔 메모 1장" in md
+    assert "영화 8시 20분 롯데시네마" in md
+    assert "namu_memo_remove" in md
+    # task 섹션보다 앞에 온다 — 맡긴 것이 먼저 눈에 띄어야 한다
+    assert md.index("📌") < md.index("📂")
+
+
+def test_build_markdown_has_no_memo_section_when_empty(tmp_path, monkeypatch):
+    """메모가 0장이면 섹션 자체가 없다 — 빈 제목만 남기면 브리핑이 지저분해진다."""
+    _use_temp_memo(monkeypatch, tmp_path)
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "📌" not in md
+
+
+def test_build_markdown_keeps_memo_even_on_welcome_path(tmp_path, monkeypatch):
+    """task도 교훈도 0건이라 환영 안내만 나가는 신규 설치 상황에서도 메모는 살린다."""
+    import memo
+
+    _use_temp_memo(monkeypatch, tmp_path)
+    memo.add("맡겨둔 것", paths=_cfg.data_paths_for())
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "맡겨둔 것" in md
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

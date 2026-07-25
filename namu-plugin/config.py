@@ -64,6 +64,13 @@ LEARNINGS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "learnings.yaml"
 # 함께 두되 파일은 분리한다(성격이 다른 지식: 사실 vs 교훈/대화기록).
 PROFILE_YAML_PATH = NAMU_DATA_ROOT / "memory" / "profile.yaml"
 
+# 메모(스틱노트) — namu-56. 앞의 두 그릇과 결정적으로 다른 점은 **append-only가
+# 아니라는 것**이다: 떼면 파일에서 그 항목이 사라진다(tombstone 없음). 이력이 남아야
+# 하는 기억(learnings/profile/tasks)과 쓰고 버리는 기억을 규칙으로 가른 결과이며,
+# 그래서 SQLite 인덱싱도 하지 않는다 — 지식베이스(learnings) 오염 0이 이 그릇의
+# 존재 이유다("영화 시간표"를 저장할 데가 없어 learnings에 밀려들어오던 문제).
+MEMO_YAML_PATH = NAMU_DATA_ROOT / "memory" / "memo.yaml"
+
 # DB
 NAMU_DB_PATH = NAMU_DATA_ROOT / "db" / "namu.db"
 
@@ -80,6 +87,9 @@ class DataPaths:
     learnings_yaml: Path
     profile_yaml: Path
     db_path: Path
+    # namu-56 memo 그릇. 기본값을 둬서 기존 호출부(3개 인자)가 그대로 동작한다 —
+    # None이면 모듈 상수(MEMO_YAML_PATH)를 쓴다는 뜻이고, 해석은 memo.py가 한다.
+    memo_yaml: Path | None = None
 
 
 def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
@@ -98,12 +108,14 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
             learnings_yaml=LEARNINGS_YAML_PATH,
             profile_yaml=PROFILE_YAML_PATH,
             db_path=NAMU_DB_PATH,
+            memo_yaml=MEMO_YAML_PATH,
         )
     root = Path(root)
     return DataPaths(
         learnings_yaml=root / "memory" / "learnings.yaml",
         profile_yaml=root / "memory" / "profile.yaml",
         db_path=root / "db" / "namu.db",
+        memo_yaml=root / "memory" / "memo.yaml",
     )
 
 
@@ -166,6 +178,19 @@ BOWLS: tuple[Bowl, ...] = (
         git_patterns=("memory/profile.yaml",),
         mutable=False,
         merge="union",
+        cached=False,
+        web_exposed=True,
+    ),
+    # memo(namu-56) — 유일한 mutable 그릇. merge="union"이 아니라 "file"인 이유가
+    # 핵심이다: 줄 단위 union 병합을 걸면 한쪽 PC에서 뗀 메모가 다른 PC의 파일에
+    # 남아 있다가 병합 때 **되살아난다**(union은 삭제를 표현할 수 없다). mutable
+    # 게이트가 union 라인 파생에서 이 그릇을 자동으로 빼주므로 memory_sync는
+    # 손댈 필요가 없다 — 3단계에서 이 자리를 예약해 둔 그대로다.
+    Bowl(
+        name="memo",
+        git_patterns=("memory/memo.yaml",),
+        mutable=True,
+        merge="file",
         cached=False,
         web_exposed=True,
     ),

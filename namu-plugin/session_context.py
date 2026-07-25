@@ -275,6 +275,33 @@ _WELCOME_MARKDOWN = (
 )
 
 
+def _build_memo_section() -> list[str]:
+    """붙어 있는 스틱노트 섹션(namu-56). 한 장도 없으면 빈 목록(섹션 자체 없음).
+
+    task/교훈보다 **앞에** 놓는다 — 메모는 사용자가 "이거 좀 갖고 있어"라고 맡긴
+    것이라 세션 시작 시 눈에 띄어야 제 역할을 한다. 파일이 깨져 있어도 브리핑
+    전체를 죽이지 않는다(memo.load_all이 빈 목록으로 흡수).
+
+    id는 앞부분만 보여준다(26자를 그대로 실으면 본문이 묻힌다). 자르는 길이는
+    memo.short_ids가 목록을 보고 정한다 — 고정 8자로 자르면 같은 밀리초에 붙인
+    메모끼리 앞자리가 겹쳐, 화면의 값을 복사해도 떼기가 거절되는 일이 생긴다.
+    """
+    import memo
+
+    memos = memo.load_all()
+    if not memos:
+        return []
+
+    shorts = memo.short_ids(memos)
+    lines = [f"### 📌 붙여둔 메모 {len(memos)}장"]
+    for m in memos:
+        stamp = str(m.get("timestamp") or "")[:16].replace("T", " ")
+        short_id = shorts.get(str(m.get("id") or ""), "")
+        lines.append(f"- {m.get('text', '')}  ({stamp} {m.get('machine', '')} · id `{short_id}`)")
+    lines.append("※ 다 쓴 메모는 `namu_memo_remove`로 떼세요(떼면 파일에서 사라집니다).\n")
+    return lines
+
+
 def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str | None:
     """세션 컨텍스트 마크다운 조립.
 
@@ -340,6 +367,8 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
 
     task_section, top_title = _build_task_section(project_dir, tasks_dir)
     parts: list[str] = ["## 🌳 NAMU — 세션 컨텍스트 자동 로딩\n"]
+    memo_section = _build_memo_section()
+    parts.extend(memo_section)
 
     if task_section:
         parts.extend(task_section)
@@ -358,9 +387,12 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
         carryover = _extract_carryover(closed_task / "log.md") if closed_task else None
 
         if not learnings and not carryover:
+            # 보여줄 게 환영 안내뿐인 상황이라도 붙여둔 메모는 반드시 살린다 —
+            # 사용자가 맡긴 것이 "아직 아무 기록도 없다"는 이유로 사라지면 안 된다.
+            memo_block = ("\n".join(memo_section) + "\n") if memo_section else ""
             if warning:
-                return warning + "\n" + _WELCOME_MARKDOWN
-            return _WELCOME_MARKDOWN
+                return warning + "\n" + memo_block + _WELCOME_MARKDOWN
+            return memo_block + _WELCOME_MARKDOWN
 
         if learnings:
             parts.append("### 💡 최근 교훈")

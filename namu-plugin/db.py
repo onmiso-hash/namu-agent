@@ -7,6 +7,7 @@ import yaml
 from ulid import ULID
 
 import config as cfg
+import memo as _memo
 import profile as _profile
 import task_resolve
 
@@ -453,7 +454,7 @@ def search(
     return {"results": results, "summary": summary}
 
 
-_VALID_BOWLS = ("learnings", "tasks", "profile")
+_VALID_BOWLS = ("learnings", "tasks", "profile", "memo")
 
 
 def search_bowl(
@@ -525,6 +526,36 @@ def search_bowl(
         if limit is not None:
             entries = entries[:limit]
         return {"bowl": bowl, "results": entries, "count": len(entries)}
+
+    if bowl == "memo":
+        # 붙어 있는 메모 조회(namu-56). SQLite를 타지 않는 것은 profile과 같지만
+        # 이유가 다르다 — profile은 작아서 통째 로딩이 싸기 때문이고, memo는
+        # **learnings 검색 인덱스에 섞이면 안 되는 것**이 그릇의 존재 이유이기
+        # 때문이다. 붙인 순서(오래된 것 먼저)가 스틱노트의 자연스러운 순서라
+        # 다른 그릇과 달리 시간 역순으로 뒤집지 않는다.
+        memos = _memo.load_all()
+        if machine is not None:
+            memos = [m for m in memos if m.get("machine") == machine]
+        if via is not None:
+            memos = [m for m in memos if m.get("via") == via]
+        if since is not None:
+            memos = [m for m in memos if (m.get("timestamp") or "") >= since]
+        if until is not None:
+            op, bound = _until_bound(until)
+            if op == "<":
+                memos = [m for m in memos if (m.get("timestamp") or "") < bound]
+            else:
+                memos = [m for m in memos if (m.get("timestamp") or "") <= bound]
+        if query:
+            q = query.lower()
+            memos = [
+                m for m in memos
+                if q in (m.get("text") or "").lower()
+                or any(q in str(t).lower() for t in (m.get("tags") or []))
+            ]
+        if limit is not None:
+            memos = memos[:limit]
+        return {"bowl": bowl, "results": memos, "count": len(memos)}
 
     # bowl == "profile"
     docs = _profile.active()
