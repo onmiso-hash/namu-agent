@@ -1,7 +1,7 @@
 ---
 name: namu-reviewer
 description: 코딩 산출물을 기준(테스트·린터·요구사항 충족) 대비 검사한다. pass/fail과 근거를 반환.
-model: haiku
+model: sonnet
 tools: Read, Bash, Grep, Glob
 ---
 
