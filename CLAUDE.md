@@ -16,8 +16,8 @@
 
 - `namu-plugin/mcp_server.py` — FastMCP 메모리 서버. 도구 `namu_record`/`namu_recall`/`namu_search`/`namu_sync_setup` 노출, stdio 전송
 - `namu-plugin/db.py` — `~/.namu/memory/learnings.yaml` ↔ SQLite 코어. 읽기 계열(recall/search)은 conn을 인자로 받고, 쓰기 계열(record/init_db/rebuild)은 함수 내부에서 conn을 열고 닫는다 (의도된 분리, 통일 금지)
-- `namu-plugin/config.py` — 경로·`NAMU_MACHINE`(기기 식별) 일원화. 데이터 루트는 `NAMU_DATA_ROOT = Path.home() / ".namu"` **고정 상수**다(namu-35: 이 repo에서 실행하든 설치형이든 구분 없음, 환경변수로 바꿀 수 없음 — 상세는 아래 "메모리 구조" 참고). `load_dotenv`도 여기서 호출(`NAMU_MACHINE` 등 잔여 환경변수용)
-- `namu-plugin/memory_sync.py` — `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작
+- `namu-plugin/config.py` — 경로·`NAMU_MACHINE`(기기 식별)·**그릇 레지스트리(`BOWLS`)** 일원화. 데이터 루트는 `NAMU_DATA_ROOT = Path.home() / ".namu"` **고정 상수**다(namu-35: 이 repo에서 실행하든 설치형이든 구분 없음, 환경변수로 바꿀 수 없음 — 상세는 아래 "메모리 구조" 참고). `load_dotenv`도 여기서 호출(`NAMU_MACHINE` 등 잔여 환경변수용)
+- `namu-plugin/memory_sync.py` — `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작. `.gitattributes`의 `merge=union` 라인은 하드코딩하지 않고 `config.BOWLS`에서 파생한다(namu-57 — 아래 "그릇 레지스트리" 참고)
 
 ## 설계 문서
 
@@ -32,6 +32,14 @@
 - **SQLite(`~/.namu/db/namu.db`)** = learnings.yaml를 인덱싱한 로컬 검색 캐시. gitignore 대상(namu_sync_setup이 자동 추가)이며, git pull 후 yaml↔db 항목 수 불일치를 감지하면 서버 부팅 시 자동 재생성된다.
 - **tasks(개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`, namu-34)** = 작업 상태. `log.md`가 유일한 권위 기록이며 "다음 할 일"도 마지막 `[다음]` 태그 줄로 여기 남긴다(namu-57). `context.<machine>.md`는 레거시 읽기 폴백. 저장 위치는 학습 기억(`NAMU_DATA_ROOT`)과 별개 산출 기준(프로젝트 폴더명 basename)으로 정해지지만, 물리적으로는 같은 `~/.namu` 계열에 모인다.
 - **ID** = ULID — 시간순 정렬 + 오프라인 다중 PC git 머지 충돌 0.
+
+### 그릇 레지스트리 (namu-57 3단계)
+
+그릇(learnings / profile / tasks)의 성질은 `config.py`의 `BOWLS`에 한 번만 선언한다 — `Bowl(name, git_patterns, mutable, merge, cached, web_exposed)`. `git_patterns`는 `~/.namu` 기준 상대 패턴이며 경로 상수(`LEARNINGS_YAML_PATH` 등)를 참조하지 않는다(`.gitattributes`가 상대 패턴만 받고, 경로 상수는 테스트가 monkeypatch하는 대상이기 때문).
+
+**새 그릇을 추가할 때는 `BOWLS`에 등록하는 것이 병합 정책 결정을 겸한다** — `memory_sync`가 `merge == "union" and not mutable`인 그릇의 패턴에서 `.gitattributes` union 라인을 파생하므로, 손으로 라인을 따라 붙이는 절차가 없다. 이 구조로 바꾼 계기는 namu-49로 profile 그릇을 만들 때 하드코딩 목록을 아무도 갱신하지 않아 `profile.yaml`이 병합 보호 없이 방치됐던 실제 버그다(오프라인 양쪽 PC에서 사실을 추가하면 CONFLICT — 실측 재현됨). `mutable=True`인 그릇은 union에서 제외된다: 파일 전체가 수시로 바뀌는 그릇에 줄 단위 병합을 걸면 삭제한 항목이 되살아난다.
+
+`BOWLS`의 이름 집합은 `db._VALID_BOWLS`·`mcp_server._VALID_RECORD_BOWLS`와 일치해야 하며, 어긋나면 `test_bowls.py`가 실패한다.
 
 ### 메모리 2원 분류 (#35, #32 개정)
 
