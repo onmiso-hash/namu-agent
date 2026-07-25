@@ -106,6 +106,71 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
     )
 
 
+@dataclass(frozen=True)
+class Bowl:
+    """~/.namu에 쌓이는 "그릇"(append-only 파일군) 하나를 기술하는 레지스트리 항목
+    (namu-57 3단계). git 병합 정책(.gitattributes union 라인)을 손으로 따라 적지 않고
+    여기서 파생시키기 위한 단일 진실원이다 — memory_sync.py의
+    `_GITATTRIBUTES_UNION_LINES` 하드코딩 3줄이 profile 그릇 추가를 누락해 실제 git
+    충돌 위험을 만든 사고가 계기.
+
+    git_patterns: `~/.namu` 기준 **상대** 경로 패턴(git이 `.gitattributes`에서 읽는
+    형식)이다. 절대경로 상수(LEARNINGS_YAML_PATH 등)를 참조하지 않고 문자열로 직접
+    적는다 — 이유 둘. (a) `.gitattributes` 자체가 저장소 상대 패턴만 받아들인다.
+    (b) LEARNINGS_YAML_PATH 등은 테스트가 monkeypatch로 갈아끼우는 대상이라, 레지스트리가
+    그걸 참조하면 "경로를 바꿔도 레지스트리 값은 그대로"라는 테스트 격리가 깨진다.
+    레지스트리는 경로 상수와 완전히 독립적으로 유지한다.
+
+    mutable/cached/web_exposed는 이번 3단계(union 라인 파생)에서 직접 쓰이지 않는
+    필드도 있다 — 장식이 아니라 다음 단계(namu-56, 4단계) 예약이다. 4단계에서
+    `mutable=True, merge="file"`인 memo 그릇이 추가되는데, memory_sync.py의 union 라인
+    파생 함수가 `merge=="union" and not mutable`로 필터링하므로 "mutable이면 파일
+    전체가 계속 바뀌는 그릇이라 줄 단위 union 병합 라인을 만들지 않는다"는 규칙이
+    이 필드 하나로 실제 동작한다(지금은 3그릇 모두 mutable=False라 필터가 전부 통과할
+    뿐, 게이트 로직 자체는 이미 살아있다).
+    """
+
+    name: str
+    git_patterns: tuple[str, ...]
+    mutable: bool
+    merge: str  # "union"(줄 단위 병합) | "file"(파일 단위 — 병합 전략 불필요)
+    cached: bool  # SQLite(NAMU_DB_PATH)에 인덱싱되는가
+    web_exposed: bool  # 웹 MCP 도구(namu_record 등)로 노출되는가
+
+
+# 그릇 레지스트리. 순서는 learnings → tasks → profile을 유지한다 — 기존
+# `.gitattributes`(namu-34 ③-c 때 만들어진 3줄: learnings 1 + tasks 2)를 가진 설치본이
+# 이 순서대로 파생되는 union 라인과 그대로 일치해, 새로 추가되는 줄이 profile 1줄뿐이
+# 되게 하기 위함(불필요한 파일 변경 최소화). memo 그릇(namu-56, 4단계) 등 새 그릇은
+# 이 끝에 추가한다 — 순서를 바꾸면 기존 설치본의 .gitattributes가 통째로 재작성된다.
+BOWLS: tuple[Bowl, ...] = (
+    Bowl(
+        name="learnings",
+        git_patterns=("memory/learnings.yaml",),
+        mutable=False,
+        merge="union",
+        cached=True,
+        web_exposed=True,
+    ),
+    Bowl(
+        name="tasks",
+        git_patterns=("tasks/**/log.md", "tasks/*/.project"),
+        mutable=False,
+        merge="union",
+        cached=False,
+        web_exposed=True,
+    ),
+    Bowl(
+        name="profile",
+        git_patterns=("memory/profile.yaml",),
+        mutable=False,
+        merge="union",
+        cached=False,
+        web_exposed=True,
+    ),
+)
+
+
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
 # 해석 규칙:
 #   1. NAMU_MACHINE 환경변수가 있고 공백 제거 후 비지 않으면 그 값(strip만, 대소문자 유지)

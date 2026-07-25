@@ -252,14 +252,35 @@ def _push_steps(home, message, required_paths, optional_paths, _timed) -> bool:
         return False
 
 
-_GITATTRIBUTES_UNION_LINES = [
-    "memory/learnings.yaml merge=union",
-    # namu-34 ③-c: tasks가 개인 풀(~/.namu/tasks/<프로젝트키>/)로 통합되며 log.md
-    # (append-only 사건 기록)와 .project(machine=경로 매핑, 역시 append-only)도
-    # 양쪽 PC가 오프라인 중 각자 추가한 줄이 서로를 지우지 않게 union 병합이 필요하다.
-    "tasks/**/log.md merge=union",
-    "tasks/*/.project merge=union",
-]
+def _gitattributes_union_lines() -> list[str]:
+    """config.BOWLS 레지스트리에서 `.gitattributes` union 병합 라인을 파생한다
+    (namu-57 3단계 — 예전엔 여기 하드코딩 3줄 리스트였다. profile 그릇이 빠져 있어서
+    hp/samsung이 오프라인 중 각자 memory/profile.yaml에 사실을 추가하면 진짜 git
+    충돌이 나는 실제 버그였다. 그릇을 추가할 때마다 이 파일도 손으로 고쳐야 했던
+    구조 자체가 원인이라, BOWLS 하나에서 파생시켜 빠질 수 없게 만든다).
+
+    규칙: `merge == "union"`이고 `mutable == False`인 그릇의 `git_patterns` 각각을
+    `"{pattern} merge=union"` 한 줄로 만든다. mutable 그릇(namu-56 4단계에서 들어올
+    memo 등)은 파일 전체가 수시로 바뀌는 성격이라 줄 단위 union 병합이 오히려 내용을
+    깨뜨리므로 제외한다 — Bowl.mutable 필드가 여기서 실제로 게이트 역할을 한다.
+
+    BOWLS 순회 순서(learnings→tasks→profile)를 그대로 따른다 — 기존 설치본의
+    .gitattributes에 이미 있는 학습/tasks 3줄이 앞서 나오고, 새로 추가되는 profile
+    1줄만 뒤에 붙어 불필요한 파일 변경을 최소화한다(config.BOWLS 순서 주석 참고).
+
+    cfg는 함수 안에서 import한다 — 이 파일의 다른 함수들과 동일한 관례(모듈 상단에서
+    import하면 config 속성을 monkeypatch로 격리하는 테스트와 어긋날 여지가 생기고,
+    config.py가 memory_sync.py를 import하지 않아 순환 위험은 없지만 관례를 굳이
+    깨지 않는다).
+    """
+    import config as cfg
+
+    lines: list[str] = []
+    for bowl in cfg.BOWLS:
+        if bowl.merge == "union" and not bowl.mutable:
+            for pattern in bowl.git_patterns:
+                lines.append(f"{pattern} merge=union")
+    return lines
 
 
 def ensure_gitattributes_union(home: Path) -> list[str]:
@@ -275,7 +296,7 @@ def ensure_gitattributes_union(home: Path) -> list[str]:
     try:
         existing = gitattributes.read_text(encoding="utf-8") if gitattributes.exists() else ""
         existing_lines = existing.splitlines()
-        missing = [ln for ln in _GITATTRIBUTES_UNION_LINES if ln not in existing_lines]
+        missing = [ln for ln in _gitattributes_union_lines() if ln not in existing_lines]
         if missing:
             with gitattributes.open("a", encoding="utf-8") as f:
                 if existing and not existing.endswith("\n"):
@@ -291,14 +312,24 @@ def ensure_gitattributes_union(home: Path) -> list[str]:
 
 
 def sync_push(message: str) -> bool:
-    """memory/(+실재하면 tasks/, namu-34 ③-a)를 add→(변경 있으면) commit→push.
-    namu_record 성공 직후 호출. 실제 git 시퀀스는 `_push()` 참조."""
+    """memory/(+실재하면 tasks/, namu-34 ③-a / .gitattributes, namu-57 3단계 ④)를
+    add→(변경 있으면) commit→push. namu_record 성공 직후 호출. 실제 git 시퀀스는
+    `_push()` 참조.
+
+    .gitattributes를 optional로 추가한 이유(namu-57 3단계 ④): 서버 부팅 시
+    ensure_gitattributes_union()이 이 파일에 새 union 라인을 append해도, 지금까지는
+    sync_push의 add 대상에 `.gitattributes`가 아예 없어서 그 변경이 영영 커밋되지
+    않았다(워킹트리가 계속 더러운 채로 남고, 새로 clone하는 쪽은 옛 내용만 받는 구멍).
+    required가 아니라 optional인 이유: 아직 `.gitattributes`가 없는 신규 환경(첫 부팅
+    전)에서 `git add`가 대상 부재로 실패하면 안 되기 때문 — `_add_targets()`가
+    `Path(home)/rel` 존재 여부로 걸러주므로 파일에도 디렉터리와 동일하게 그대로
+    동작한다."""
     import config as cfg
 
     if not sync_enabled():
         return False
 
-    return _push(str(cfg.NAMU_DATA_ROOT), message, ["memory/"], ["tasks/"])
+    return _push(str(cfg.NAMU_DATA_ROOT), message, ["memory/"], ["tasks/", ".gitattributes"])
 
 
 def tasks_pool_git_ready(home: "Path | str") -> bool:
@@ -316,14 +347,17 @@ def tasks_pool_git_ready(home: "Path | str") -> bool:
 
 
 def push_tasks_pool(home: "Path | str", message: str) -> bool:
-    """`~/.namu`(개인 풀) 대상 tasks/(+실재하면 memory/) push(namu-34 ③-b, CLI 전용).
+    """`~/.namu`(개인 풀) 대상 tasks/(+실재하면 memory/, .gitattributes) push
+    (namu-34 ③-b, CLI 전용).
 
     `tasks_pool_git_ready(home)`가 False면(신규 sync 미개통 등) 조용히 no-op으로
     False를 반환한다 — 호출자(namu_tasks_push.py)는 이를 정상 종료(exit 0)로 취급한다.
-    """
+
+    .gitattributes를 optional로 추가한 이유는 sync_push()와 동일(namu-57 3단계 ④ —
+    서버 부팅 시 append된 union 라인이 이 경로로도 커밋 누락되지 않게 함)."""
     if not tasks_pool_git_ready(home):
         return False
-    return _push(str(home), message, [], ["tasks/", "memory/"])
+    return _push(str(home), message, [], ["tasks/", "memory/", ".gitattributes"])
 
 
 def sync_setup(remote_url: str) -> str:

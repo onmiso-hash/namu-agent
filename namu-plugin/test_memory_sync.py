@@ -259,6 +259,101 @@ def test_sync_push_add_scope_unaffected_when_tasks_dir_absent(monkeypatch, tmp_p
 
 
 # ---------------------------------------------------------------------------
+# .gitattributes가 sync_push/push_tasks_pool로 실제 커밋되는지(namu-57 3단계 ④)
+#
+# 배경: ensure_gitattributes_union()이 부팅 시 .gitattributes에 새 union 라인을
+# append해도, 지금까지 sync_push/push_tasks_pool의 add 대상 목록엔 .gitattributes가
+# 아예 없어서 그 변경이 영영 커밋되지 않았다(워킹트리가 계속 더러운 채로 남고, 새로
+# clone하는 쪽은 옛 내용만 받는 구멍) — optional 목록에 추가해 이 구멍을 메운다.
+# ---------------------------------------------------------------------------
+
+def test_sync_push_commits_gitattributes_when_present(monkeypatch, tmp_path):
+    """.gitattributes가 실재하면(서버 부팅 시 ensure_gitattributes_union이 만든 것)
+    memory/·tasks/와 함께 add 대상에 포함돼 커밋·push된다."""
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / "README.md").write_text("x", encoding="utf-8")
+    _commit_all(home, "init")
+    subprocess.run(
+        ["git", "-C", str(home), "remote", "add", "origin", str(bare)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(home), "push", "-q", "-u", "origin", "main"],
+        check=True, capture_output=True,
+    )
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+
+    (home / "memory").mkdir()
+    (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
+    ms.ensure_gitattributes_union(home)  # 부팅 시 훅과 동일하게 .gitattributes 생성
+
+    assert ms.sync_push("learn: with gitattributes") is True
+
+    show = subprocess.run(
+        ["git", "-C", str(home), "show", "--stat", "--name-only", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    assert ".gitattributes" in show.stdout
+
+
+def test_sync_push_add_scope_unaffected_when_gitattributes_absent(monkeypatch, tmp_path):
+    """.gitattributes가 아직 없는(신규 환경) 상태에서도 add 자체가 실패하면 안 된다
+    (tasks/ 부재와 동일한 optional 취급 확인)."""
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+
+    (home / "memory").mkdir()
+    (home / "memory" / "learnings.yaml").write_text("---\nid: FAKE0001\n", encoding="utf-8")
+
+    ms.sync_push("learn: no gitattributes")
+    log_path = home / "db" / "sync.log"
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "PUSH FAIL add" not in log
+
+
+def test_push_tasks_pool_commits_gitattributes_when_present(tmp_path):
+    """push_tasks_pool도 sync_push와 동일하게 .gitattributes를 optional 대상에 포함한다."""
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+
+    home = tmp_path / "home"
+    _init_git_repo(home)
+    (home / "README.md").write_text("x", encoding="utf-8")
+    _commit_all(home, "init")
+    subprocess.run(
+        ["git", "-C", str(home), "remote", "add", "origin", str(bare)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(home), "push", "-q", "-u", "origin", "main"],
+        check=True, capture_output=True,
+    )
+
+    (home / "tasks" / "proj-a").mkdir(parents=True)
+    (home / "tasks" / "proj-a" / "log.md").write_text("# log\n[시작] ...\n", encoding="utf-8")
+    ms.ensure_gitattributes_union(home)
+
+    assert ms.push_tasks_pool(home, "tasks: with gitattributes") is True
+
+    show = subprocess.run(
+        ["git", "-C", str(home), "show", "--stat", "--name-only", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    assert ".gitattributes" in show.stdout
+
+
+# ---------------------------------------------------------------------------
 # .gitattributes union ensure 멱등성(namu-34 ③-c)
 # ---------------------------------------------------------------------------
 
@@ -272,7 +367,57 @@ def test_ensure_gitattributes_union_appends_all_lines(tmp_path):
     assert "memory/learnings.yaml merge=union" in content
     assert "tasks/**/log.md merge=union" in content
     assert "tasks/*/.project merge=union" in content
+    # namu-57 3단계: profile 그릇(memory/profile.yaml, append-only)이 BOWLS 레지스트리에
+    # 있는데도 예전 하드코딩 리스트엔 빠져 있던 실제 버그 — 이제 자동 포함돼야 한다.
+    assert "memory/profile.yaml merge=union" in content
     assert any("추가" in n for n in notes)
+
+
+# ---------------------------------------------------------------------------
+# .gitattributes union 라인 파생(namu-57 3단계 ②) — config.BOWLS에서 파생되는지
+# ---------------------------------------------------------------------------
+
+def test_gitattributes_union_lines_derive_from_bowls_registry(monkeypatch, tmp_path):
+    """BOWLS를 가짜 그릇 3개(union+mutable=False, union+mutable=True, file 타입)로
+    바꿔치기하면, mutable=False·merge="union"인 그릇만 라인이 생기는지 확인한다 —
+    "mutable이면 union 라인을 만들지 않는다"는 4단계(memo 그릇) 예약 규칙이 지금도
+    실제로 동작하는지 미리 검증."""
+    fake_bowls = (
+        cfg.Bowl(
+            name="fake_a",
+            git_patterns=("memory/fake_a.yaml",),
+            mutable=False,
+            merge="union",
+            cached=False,
+            web_exposed=True,
+        ),
+        cfg.Bowl(
+            name="fake_b_mutable",
+            git_patterns=("memory/fake_b.yaml",),
+            mutable=True,  # union 대상에서 제외돼야 한다
+            merge="union",
+            cached=False,
+            web_exposed=True,
+        ),
+        cfg.Bowl(
+            name="fake_c_file",
+            git_patterns=("memory/fake_c.yaml",),
+            mutable=False,
+            merge="file",  # merge != "union"이라 제외돼야 한다
+            cached=False,
+            web_exposed=True,
+        ),
+    )
+    monkeypatch.setattr(cfg, "BOWLS", fake_bowls)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    ms.ensure_gitattributes_union(home)
+
+    content = (home / ".gitattributes").read_text(encoding="utf-8")
+    assert "memory/fake_a.yaml merge=union" in content
+    assert "memory/fake_b.yaml" not in content
+    assert "memory/fake_c.yaml" not in content
 
 
 def test_ensure_gitattributes_union_idempotent_on_second_call(tmp_path):
