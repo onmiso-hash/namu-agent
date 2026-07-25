@@ -1,13 +1,12 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0"]
+# dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
 # ///
 import json
 import re
 import sqlite3
 import time
 from contextlib import closing
-from datetime import datetime
 from pathlib import Path
 
 import config as cfg
@@ -221,7 +220,10 @@ def _record_task_entry(
     slug = _resolve_task_slug(resolved_project, task)
     tag, text = _validate_task_tag_text(tag, text)
 
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # 실제 시계(현지시각) — 지어 쓰면 PC 간 선후가 뒤집힌다
+    # 실제 시계 — 지어 쓰면 PC 간 선후가 뒤집힌다. 단 "현지시각 그대로"도 안 된다:
+    # 시간대가 다른 호스트(웹 컨테이너=UTC)가 끼면 같은 파일 안에서 시각 비교가 깨진다.
+    # 그래서 기준 시간대로 통일한 시계를 쓴다(cfg.now, namu-57 5단계).
+    ts = cfg.now().strftime("%Y-%m-%d %H:%M:%S")
     machine = cfg.NAMU_MACHINE
     line = f"[{tag}] {ts} {machine} · {text}"
     if via:
@@ -283,7 +285,7 @@ def _create_task_entry(
 
     display_title = (title or slug).strip() or slug
     machine = cfg.NAMU_MACHINE
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = cfg.now().strftime("%Y-%m-%d")
 
     if done_when:
         done_when_lines = "\n".join(f"- [ ] {item}" for item in done_when)
@@ -306,7 +308,7 @@ def _create_task_entry(
     (task_dir / "task.md").write_text(task_md, encoding="utf-8")
     (task_dir / "log.md").write_text(log_md, encoding="utf-8")
 
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = cfg.now().strftime("%Y-%m-%d %H:%M:%S")
     start_line = f"[시작] {ts} {machine} · 작업 생성, 목적·완료조건 확정"
     if via:
         start_line += f" (via {via})"

@@ -1,6 +1,7 @@
 import os
 import platform
 from dataclasses import dataclass
+from datetime import datetime, tzinfo
 from pathlib import Path
 
 from dotenv import load_dotenv, find_dotenv
@@ -186,6 +187,47 @@ def _resolve_machine(env_value: str | None) -> str:
 
 
 NAMU_MACHINE: str = _resolve_machine(os.getenv("NAMU_MACHINE"))
+
+
+# 기록 시각의 기준 시간대 (namu-57 5단계)
+#
+# tasks 로그(log.md)의 시각은 시간대 표기 없는 벽시계 문자열(`2026-07-25 18:31:51`)이라,
+# 각 호스트가 제 현지시각을 적으면 **같은 파일 안에서 시각끼리 비교가 불가능해진다**.
+# 실제로 웹 커넥터(미니PC 도커 컨테이너, TZ=UTC)가 기록을 시작하자 그 줄만 9시간 과거로
+# 적혀, 브리핑의 "최근 활동" 정렬에서 최신 기록이 묻히고 task의 `last_ts`가 거꾸로 갔다
+# (namu-57 웹 실측에서 실측 재현). 기존 로그 40여 개는 전부 한국시각으로 적혀 있으므로,
+# 모든 호스트가 같은 기준 시간대로 적게 하면 옛 기록과 새 기록이 그대로 비교 가능해진다.
+#
+# 학습/사실 그릇(db.py)은 처음부터 UTC aware ISO(`+00:00`)라 이 문제가 없다 — 여기서
+# 고치는 대상은 "사람이 읽는 벽시계 문자열"을 쓰는 tasks 로그뿐이다.
+NAMU_TZ: str = (os.getenv("NAMU_TZ") or "").strip() or "Asia/Seoul"
+
+
+def _resolve_tzinfo(name: str) -> tzinfo | None:
+    """`name`(IANA 시간대)을 tzinfo로. 실패하면 None(=호스트 현지시각 폴백).
+
+    zoneinfo는 OS의 tz 데이터베이스를 쓰므로 Windows나 slim 컨테이너에서는
+    없을 수 있다(그래서 `tzdata`를 의존성에 넣었다). 그럼에도 못 찾는 환경이면
+    **기록 자체를 실패시키지 않고** 종전처럼 현지시각으로 적는다 — 시각이 어긋나는
+    것보다 기록이 유실되는 쪽이 훨씬 나쁘고, 폴백해도 결과는 고치기 전과 같다.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(name)
+    except Exception:
+        return None
+
+
+def now() -> datetime:
+    """기록용 현재 시각. 기준 시간대(NAMU_TZ)로 맞춘 aware datetime.
+
+    시간대 이름은 NAMU_MACHINE과 같이 모듈 로드 시점 상수(NAMU_TZ)지만, tzinfo 해석은
+    호출 시점에 한다 — 테스트가 `monkeypatch.setattr(cfg, "NAMU_TZ", ...)`로 갈아끼울
+    수 있고, tz 데이터가 없는 환경에서 import 자체가 실패하지도 않는다.
+    """
+    tz = _resolve_tzinfo(NAMU_TZ)
+    return datetime.now(tz) if tz is not None else datetime.now()
 
 # 작업 기록(tasks) — 메모리(NAMU_DATA_ROOT)와 저장소를 분리한다.
 # tasks는 여전히 "프로젝트 귀속" 데이터지만, 저장 위치는 개인 풀

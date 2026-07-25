@@ -52,17 +52,24 @@ def _parse_log_ts(line: str) -> tuple[str, str] | None:
 
 
 def _latest_log_ts(log_path: Path) -> tuple[str, str] | None:
-    """log.md에서 가장 마지막으로 파싱 성공한 타임스탬프 반환."""
+    """log.md에서 가장 **늦은** 타임스탬프 반환(파일의 마지막 줄이 아니다).
+
+    예전에는 뒤에서부터 첫 파싱 성공 줄을 썼다. 파일 순서 == 시간 순서라는 가정인데,
+    두 가지로 깨진다. ① 시간대가 다른 호스트가 기록하면 나중 줄의 시각이 더 이르게
+    적힌다(namu-57 5단계에서 cfg.now로 통일해 원인은 없앴지만, 그 전에 적힌 줄은
+    append-only라 영영 남는다) ② union merge는 두 PC의 줄을 각자 덩어리째 이어붙이므로
+    병합 결과의 줄 순서가 전역 시간순이 아니다.
+
+    `last_ts`는 브리핑에서 task 정렬(가장 최근 활동 순)에 쓰이므로, 한 줄만 이르게
+    찍혀도 진행 중인 task가 목록 아래로 내려간다. max로 고르면 두 경우 모두 안전하다.
+    """
     try:
         lines = log_path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
-    
-    for line in reversed(lines):
-        ts = _parse_log_ts(line)
-        if ts is not None:
-            return ts
-    return None
+
+    stamps = [ts for line in lines if (ts := _parse_log_ts(line)) is not None]
+    return max(stamps) if stamps else None
 
 
 _TAG_RE = re.compile(r"^\[(.*?)\]")
