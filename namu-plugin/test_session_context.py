@@ -183,6 +183,177 @@ def test_build_markdown_lists_all_open_tasks(tmp_path):
     assert "**task-c** [완료]" in md.split("### 📂 열린 task")[0]
 
 
+# ---------------------------------------------------------------------------
+# 다른 방(cross-room) 브리핑 합산 (namu-63) — 현재 프로젝트 폴더 밖 개인 풀의
+# 다른 프로젝트에도 열린 task가 있으면 놓치지 않고 알린다.
+# ---------------------------------------------------------------------------
+
+
+def _make_other_room_task(
+    project_name: str,
+    slug: str,
+    next_body: str,
+    log_lines: list[str] | None = None,
+) -> Path:
+    """`project_name`(basename만 키로 쓰는 임의 이름)이 별도 개인 풀 프로젝트가
+    되도록 task를 만든다 — `_cfg.tasks_dir_for`는 basename만 보므로 실존 폴더가
+    아니어도 이름 문자열로 다른 "방"을 흉내낼 수 있다."""
+    tasks_root = _cfg.tasks_dir_for(project_name)
+    return _make_task(tasks_root, slug, "hp", next_body, log_lines=log_lines)
+
+
+def test_build_markdown_shows_other_room_counts_and_names(tmp_path):
+    """이 방 2개 + 다른 방 1개 → 헤더에 두 개수가 다 나오고, 다른 방 블록에
+    그 폴더명과 slug가 나온다."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(tasks_root, "task-a", "hp", "A 다음",
+               log_lines=["[시작] 2026-06-28 09:00:00 hp · A 시작"])
+    _make_task(tasks_root, "task-b", "hp", "B 다음",
+               log_lines=["[시작] 2026-06-29 09:00:00 hp · B 시작"])
+    _make_other_room_task(
+        "onnamu-project", "deploy-1", "다른 방 다음",
+        log_lines=["[시작] 2026-07-01 09:00:00 hp · 다른 방 시작"],
+    )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "### 📂 열린 task — 이 방 2개 · 다른 방 1개" in md
+    assert "onnamu-project" in md
+    assert "deploy-1" in md
+    # 이 방 task는 여전히 다 나온다(namu-57 ① 유지)
+    assert "task-a" in md and "task-b" in md
+    # 실물 task.md 관행(`# <slug> — 설명`)대로면 slug가 제목 접두로도 남아 있어,
+    # 접두를 걷어내지 않고 그대로 붙이면 같은 줄에 slug가 두 번 찍힌다(검수 지적,
+    # `_strip_slug_prefix` 누락 회귀 방지). 단순 포함 검사(`in md`)로는 이 결함을
+    # 못 잡으므로 해당 줄 안에서의 등장 횟수를 직접 센다.
+    other_line = next(line for line in md.splitlines() if "onnamu-project" in line)
+    assert other_line.count("deploy-1") == 1
+
+
+def test_build_markdown_this_room_empty_other_room_present_section_survives(tmp_path):
+    """이 방 0개 + 다른 방 1개 → 섹션이 사라지지 않는다(완료조건 6번, namu-63)."""
+    _make_other_room_task(
+        "onnamu-project", "deploy-1", "다른 방 다음",
+        log_lines=["[시작] 2026-07-01 09:00:00 hp · 다른 방 시작"],
+    )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "열린 task" in md
+    assert "onnamu-project" in md
+    assert "deploy-1" in md
+    # 이 방에 열린 게 없다는 안내가 함께 있어야 한다
+    assert "이 방" in md and "열린 작업이 없습니다" in md
+    # 환영 안내(신규 설치 문구)로 잘못 빠지면 안 된다
+    assert "/namu-task" not in md
+
+
+def test_build_markdown_other_rooms_fold_when_many(tmp_path):
+    """다른 방이 4개 이상이면 '… (N개 더)'로 접힌다."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(tasks_root, "my-task", "hp", "여기 다음",
+               log_lines=["[시작] 2026-06-28 09:00:00 hp · 시작"])
+    for i in range(4):
+        _make_other_room_task(
+            f"other-room-{i}", f"task-{i}", f"다음 {i}",
+            log_lines=[f"[시작] 2026-07-0{i+1} 09:00:00 hp · 시작 {i}"],
+        )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "### 📂 열린 task — 이 방 1개 · 다른 방 4개" in md
+    assert "… (1개 더)" in md  # _OTHER_ROOM_LINES=3 노출, 1개는 접힘
+
+
+def test_build_markdown_no_other_rooms_unchanged(tmp_path):
+    """다른 방이 0개면 헤더 문구(`### 📂 열린 task N개`)와 ▸ 전문 규칙은 그대로이고
+    다른 방 블록도 없다(회귀 방지).
+
+    검수 지적으로 "이 방" 항목의 날짜 표기를 다른 방 유무와 무관하게 항상 붙이도록
+    통일했다(namu-63 재검토) — 그래서 "기존 출력과 완전히 동일"이 아니라 "헤더
+    문구·▸ 전문 규칙 유지 + 다른 방 블록 부재"로 검사 범위를 좁혔다."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(tasks_root, "my-task", "hp", "여기 다음",
+               log_lines=["[시작] 2026-06-28 09:00:00 hp · 시작"])
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "### 📂 열린 task 1개" in md  # "이 방 N개 · 다른 방 M개" 합산 헤더로 안 바뀜
+    assert "다른 방" not in md and "**이 방**" not in md  # 다른 방 블록 자체가 없음
+    assert "다음: 여기 다음" in md  # ▸ 전문 규칙(namu-57 1-2) 유지
+
+
+def test_build_markdown_cross_room_block_actually_rendered_in_final_string(tmp_path):
+    """build_context_markdown 레벨 — 이 방 0개 + 다른 방 있음일 때 다른 방 블록이
+    실제 브리핑 문자열에 실린다(만들었다≠쓰인다 방지)."""
+    # tasks_dir_for는 basename만 본다 — tmp_path와 다른 basename을 가진 실제
+    # 폴더로 "다른 방"을 재현해 "가짜 함수만 검증"하는 공허한 테스트를 피한다.
+    real_other_room = tmp_path / "real-other-project"
+    real_other_room.mkdir()
+    other_tasks_root = _cfg.tasks_dir_for(real_other_room)
+    _make_task(
+        other_tasks_root, "namu-99-deploy", "hp", "실측 재현",
+        log_lines=["[시작] 2026-07-05 09:00:00 hp · 실제 파일로 재현"],
+    )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "real-other-project" in md
+    assert "namu-99-deploy" in md
+    assert "열린 작업이 없습니다" in md
+    # `_make_task`가 만드는 실물 관행 제목(`# namu-99-deploy — 테스트 작업`)이
+    # slug로 시작하므로, 접두를 걷어내지 않으면 이 줄에 slug가 두 번 찍힌다
+    # (검수 지적 회귀 방지 — 단순 포함 검사로는 못 잡는다).
+    other_line = next(line for line in md.splitlines() if "real-other-project" in line)
+    assert other_line.count("namu-99-deploy") == 1
+
+
+def test_build_markdown_carryover_survives_alongside_other_room_block(tmp_path):
+    """이 방은 전부 닫혔고(이월 마커 있음) + 다른 방에 열린 task가 있으면, 이월
+    안내와 다른 방 블록이 **둘 다** 살아남는다(namu-63 — `if top_title:` 분기
+    전환의 실제 이유. `if task_section:`로 되돌리면 다른 방 블록이 있다는 이유로
+    이월 분기 전체를 건너뛰어 회귀한다)."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root,
+        "namu-26-single-source",
+        "hp",
+        "(완료)",
+        log_lines=_NAMU26_LOG_FIXTURE.strip("\n").splitlines()[3:],
+    )
+    _make_other_room_task(
+        "onnamu-project", "deploy-1", "다른 방 다음",
+        log_lines=["[시작] 2026-07-01 09:00:00 hp · 다른 방 시작"],
+    )
+
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+
+    assert md is not None
+    assert "⏭ 다음 작업 후보" in md
+    assert "agy 라이브 재설치 실측" in md
+    assert "onnamu-project" in md and "deploy-1" in md
+    assert "열린 작업이 없습니다" in md
+    other_line = next(line for line in md.splitlines() if "onnamu-project" in line)
+    assert other_line.count("deploy-1") == 1
+
+
 def test_build_markdown_says_when_next_is_missing(tmp_path):
     """'다음' 기록이 없으면 조용한 빈칸이 아니라 그렇다고 말한다(namu-57 ②)."""
     tasks_root = _cfg.tasks_dir_for(tmp_path)

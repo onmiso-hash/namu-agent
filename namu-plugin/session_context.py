@@ -9,7 +9,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from task_resolve import _extract_task_title, _line_tag
+from task_resolve import _extract_task_title, _latest_log_ts, _line_tag
 from task_resolve import find_active_task as _resolve_task
 from task_resolve import find_latest_closed_task as _find_latest_closed_task
 from task_resolve import (
@@ -18,6 +18,7 @@ from task_resolve import (
     has_legacy_tasks,
     journal,
     next_note,
+    open_tasks_briefing,
     record_project_marker,
 )
 
@@ -166,6 +167,10 @@ def find_active_task(project_dir: str | Path) -> Path | None:
 # (CLI 한 화면을 넘기면 사용자가 스크롤백으로 되짚지 못한다).
 _JOURNAL_LINES = 8
 _OPEN_TASK_LINES = 5
+# 다른 방(프로젝트) 열린 task 줄 수 (namu-63) — 이 방 목록보다 짧게 접는다. 다른
+# 방은 "여기 뭔가 열려 있다"는 신호만 주면 되고, 상세는 그 폴더에서 세션을 열어야
+# 재진입 지점(다음:)이 의미가 있다.
+_OTHER_ROOM_LINES = 3
 
 
 def _short_date(ts: str) -> str:
@@ -173,17 +178,21 @@ def _short_date(ts: str) -> str:
     return ts[5:10]
 
 
-def _title_without_slug(task_dir: Path) -> str:
-    """task.md 제목에서 폴더명 접두를 걷어낸다.
+def _strip_slug_prefix(title: str, slug: str) -> str:
+    """task 제목에서 폴더명(slug) 접두를 걷어낸다.
 
     실물 task.md의 첫 헤더는 `# namu-57-memory-retrieval — 메모리 "꺼내는 쪽" …`
-    형태라, 브리핑 줄에 폴더명을 이미 굵게 쓴 뒤 제목을 붙이면 같은 slug가 두 번
+    형태라, 브리핑 줄에 slug를 이미 굵게 쓴 뒤 제목을 붙이면 같은 slug가 두 번
     나와 좁은 CLI 폭을 낭비한다.
     """
-    title = _extract_task_title(task_dir / "task.md")
-    if title.startswith(task_dir.name):
-        title = title[len(task_dir.name):].lstrip(" —-–:")
-    return title or task_dir.name
+    if title.startswith(slug):
+        title = title[len(slug):].lstrip(" —-–:")
+    return title or slug
+
+
+def _title_without_slug(task_dir: Path) -> str:
+    """task.md 제목에서 폴더명 접두를 걷어낸다(task_dir 기반 래퍼, `_strip_slug_prefix` 참고)."""
+    return _strip_slug_prefix(_extract_task_title(task_dir / "task.md"), task_dir.name)
 
 
 def _one_line(text: str, limit: int = 70) -> str:
@@ -202,33 +211,40 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[str], str | None]:
-    """(브리핑 본문 줄들, 맨 위 task 제목) 반환. 열린 task가 없으면 ([], None).
+def _build_other_room_lines(other_rows: list[dict[str, str | None]]) -> list[str]:
+    """"다른 방"(다른 프로젝트 폴더) 열린 task 목록 줄들(namu-63).
 
-    형식 3원칙(namu-57 1-2):
-      ① "진행 중 1개" 단정 제거 — 열린 task를 전부 세운다(맨 위 ▸는 추천일 뿐)
-      ② "다음" 기록이 없으면 그렇다고 말한다 — 지금까지는 조용한 빈칸이라
-         사용자가 왜 안 나오는지 알 수 없었다
-      ③ 시간순 활동을 맨 위에 — 사용자가 실제로 묻는 "어제 뭐 했지"에 먼저 답한다
+    각 행은 `open_tasks_briefing()`이 준 `{project, slug, title, last_ts, next}` 그대로
+    쓴다 — 다른 방은 제목만 보여주고 `다음:`은 붙이지 않는다(재진입은 그 폴더에서
+    세션을 열어야 의미가 있다). 제목은 반드시 `_strip_slug_prefix`를 거친다 —
+    실물 task.md 제목 관행(`# <slug> — 설명`)이 slug로 시작해, 이미 굵게 쓴
+    slug 뒤에 원문 제목을 그대로 붙이면 "**task-b** — task-b — 다른 방 작업"처럼
+    같은 이름이 줄 안에서 두 번 찍힌다(검수 지적, namu-63 재검토).
     """
-    open_tasks = find_open_tasks(tasks_dir)
-    if not open_tasks:
-        return ([], None)
+    lines = [f"**다른 방 {len(other_rows)}개**"]
+    for row in other_rows[:_OTHER_ROOM_LINES]:
+        date = _short_date(row["last_ts"]) if row["last_ts"] else "?"
+        slug = row["slug"] or ""
+        title = _one_line(_strip_slug_prefix(row["title"] or slug, slug), 40)
+        lines.append(f"- `{row['project']}` **{slug}** — {title}  `{date}`")
+    if len(other_rows) > _OTHER_ROOM_LINES:
+        lines.append(f"- … ({len(other_rows) - _OTHER_ROOM_LINES}개 더)")
+    return lines
 
-    parts: list[str] = []
 
-    entries = journal(project=project_dir, limit=_JOURNAL_LINES)
-    if entries:
-        parts.append("### 🕘 최근 활동 (시간순, task 무관)")
-        for e in entries:
-            machine = f"{e['machine']} · " if e["machine"] else ""
-            tag = f"[{e['tag']}] " if e["tag"] else ""
-            parts.append(
-                f"- `{_short_date(e['ts'])}` {machine}**{e['task_slug']}** {tag}{_one_line(e['text'])}"
-            )
-        parts.append("")
+def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
+    """"이 방" 열린 task 목록 줄들 + "다음" 기록이 없는 task 개수 반환.
 
-    parts.append(f"### 📂 열린 task {len(open_tasks)}개")
+    다른 방 유무와 무관하게 항상 같은 형식을 쓴다(검수 지적 — 날짜 표기가
+    상황에 따라 붙었다 안 붙었다 하면 같은 섹션이 형식만 달라져 혼란스럽다).
+    이 방/다른 방 분기(namu-63)에서 이 렌더 로직이 두 벌로 복사돼 있던 것도
+    이 헬퍼 하나로 합쳤다 — 한쪽만 고치는 드리프트를 막기 위함.
+
+    ▸(맨 위)만 `다음:`을 전문으로 싣는다(namu-57 1-2 보완, `_flat` 참고) — 그
+    한 줄이 재진입 지점이라 잘리면 안 된다. 한도는 `_OPEN_TASK_LINES`, 초과분은
+    "… (N개 더)"로 접는다.
+    """
+    lines: list[str] = []
     missing_next = 0
     for i, task_dir in enumerate(open_tasks):
         note = next_note(task_dir)
@@ -238,32 +254,117 @@ def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[
             continue
         marker = "▸ " if i == 0 else ""
         if note:
-            # 맨 위(▸)만 전문 — 재진입 지점이라 잘리면 안 된다(_flat 주석 참고).
             next_text = _flat(note) if i == 0 else _one_line(note)
         else:
             next_text = "(기록 없음)"
-        parts.append(
+        ts = _latest_log_ts(task_dir / "log.md")
+        date = _short_date(f"{ts[0]} {ts[1]}") if ts else "?"
+        lines.append(
             f"- {marker}**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}"
+            f"  `{date}`"
             f"\n  - 다음: {next_text}"
         )
     if len(open_tasks) > _OPEN_TASK_LINES:
-        parts.append(f"- … ({len(open_tasks) - _OPEN_TASK_LINES}개 더)")
-    parts.append("")
-    parts.append(
+        lines.append(f"- … ({len(open_tasks) - _OPEN_TASK_LINES}개 더)")
+    return lines, missing_next
+
+
+def _open_task_explain_lines(missing_next: int) -> list[str]:
+    """▸ 설명 문단 + "다음" 기록 없는 task 경고. 이 방에 열린 task가 있을 때만 붙인다."""
+    lines = [
         "▸는 가장 최근 활동한 task일 뿐 **단정이 아닙니다** — 나머지도 전부 열려 있습니다. "
         "다만 사용자가 대상을 지목하지 않고 \"이어서 하자\"고만 하면 **되묻지 말고 ▸의 "
         "`다음:`부터 착수하세요** — 이어갈 지점은 이미 log의 마지막 `[다음]` 줄에 적혀 "
         "있으니 사용자에게 다시 물을 이유가 없습니다. 다른 task를 원하면 사용자가 이름을 댑니다."
-    )
+    ]
     if missing_next:
-        parts.append(
+        lines.append(
             f"⚠ \"다음\" 기록이 없는 task {missing_next}개 — 세션 끝에 log.md에 "
             "`[다음] YYYY-MM-DD HH:MM:SS <machine> · <다음 세션이 시작할 지점>` 한 줄을 "
             "남기면 다음 세션부터 여기에 표시됩니다."
         )
+    return lines
+
+
+def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[str], str | None]:
+    """(브리핑 본문 줄들, 맨 위 task 제목) 반환.
+
+    형식 3원칙(namu-57 1-2):
+      ① "진행 중 1개" 단정 제거 — 열린 task를 전부 세운다(맨 위 ▸는 추천일 뿐)
+      ② "다음" 기록이 없으면 그렇다고 말한다 — 지금까지는 조용한 빈칸이라
+         사용자가 왜 안 나오는지 알 수 없었다
+      ③ 시간순 활동을 맨 위에 — 사용자가 실제로 묻는 "어제 뭐 했지"에 먼저 답한다
+
+    다른 방(cross-room, namu-63): 이 방(현재 프로젝트) 밖에도 열린 task가 있으면
+    "다른 방" 블록을 덧붙인다 — `open_tasks_briefing(projects=None)`(개인 풀 전체
+    순회, namu-57 2단계에 이미 있던 함수)로 조회하고 이 방을 뺀 나머지만 쓴다.
+    새 순회 로직은 짜지 않는다.
+
+    이 방·다른 방이 전부 0개면 ([], None). 이 방은 0개인데 다른 방에만 있으면
+    task_section은 다른 방 블록만 담아 반환하고 top_title은 여전히 None이다
+    (호출자 build_context_markdown이 top_title 유무로 "관련 교훈 검색 대상 task가
+    있는지"를 판단하므로 — 다른 방 task는 "지금 이 세션에서 이어갈 대상"이
+    아니다).
+    """
+    open_tasks = find_open_tasks(tasks_dir)
+    project_name = tasks_dir.name
+    other_rows = [r for r in open_tasks_briefing() if r["project"] != project_name]
+
+    if not open_tasks and not other_rows:
+        return ([], None)
+
+    parts: list[str] = []
+
+    if open_tasks:
+        entries = journal(project=project_dir, limit=_JOURNAL_LINES)
+        if entries:
+            parts.append("### 🕘 최근 활동 (시간순, task 무관)")
+            for e in entries:
+                machine = f"{e['machine']} · " if e["machine"] else ""
+                tag = f"[{e['tag']}] " if e["tag"] else ""
+                parts.append(
+                    f"- `{_short_date(e['ts'])}` {machine}**{e['task_slug']}** {tag}{_one_line(e['text'])}"
+                )
+            parts.append("")
+
+    this_room_lines, missing_next = _build_this_room_lines(open_tasks)
+
+    if not other_rows:
+        # 다른 방이 하나도 없으면 기존 출력 그대로(namu-63 확정 형식 — 회귀 방지).
+        # 헤더 문구·▸ 전문 규칙은 유지하되, "이 방" 항목 형식(날짜 포함)은
+        # 다른 방 유무와 무관하게 항상 동일하다(검수 지적 — 날짜 표기 통일).
+        parts.append(f"### 📂 열린 task {len(open_tasks)}개")
+        parts.extend(this_room_lines)
+        parts.append("")
+        parts.extend(_open_task_explain_lines(missing_next))
+        parts.append("")
+        return (parts, _extract_task_title(open_tasks[0] / "task.md"))
+
+    # 다른 방이 있는 경우(namu-63 확정 형식): "이 방 N개 · 다른 방 M개" 헤더로 합산.
+    parts.append(
+        f"### 📂 열린 task — 이 방 {len(open_tasks)}개 · 다른 방 {len(other_rows)}개"
+    )
     parts.append("")
 
-    return (parts, _extract_task_title(open_tasks[0] / "task.md"))
+    if open_tasks:
+        parts.append(f"**이 방** ({project_name})")
+        parts.extend(this_room_lines)
+    else:
+        parts.append(
+            f"⚠ 이 방({project_name})에는 열린 작업이 없습니다 — "
+            "이어가려면 그 폴더에서 세션을 여세요."
+        )
+    parts.append("")
+
+    parts.extend(_build_other_room_lines(other_rows))
+    parts.append("")
+
+    if open_tasks:
+        parts.extend(_open_task_explain_lines(missing_next))
+        parts.append("")
+        return (parts, _extract_task_title(open_tasks[0] / "task.md"))
+
+    return (parts, None)
 
 
 _WELCOME_MARKDOWN = (
@@ -373,6 +474,12 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
     if task_section:
         parts.extend(task_section)
 
+    # top_title 기준(namu-63) — task_section이 아니다. 이 방(현재 프로젝트)에
+    # 열린 task가 하나도 없으면 다른 방 task가 있어도 top_title은 None이고(다른
+    # 방 task는 "지금 이어갈 대상"이 아니다), 이월·환영 분기가 그대로 살아남으며
+    # 다른 방 블록(task_section)도 함께 실린다(완료조건 6번 — 섹션이 통째로
+    # 사라지던 결함 수정).
+    if top_title:
         # 교훈 검색어는 맨 위(가장 최근 활동) task 제목 — 열린 task 전부로 검색하면
         # 관련도가 흐려진다.
         learnings = db.recall(conn, query=top_title, limit=3)
@@ -386,7 +493,7 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
         closed_task = _find_latest_closed_task(tasks_dir)
         carryover = _extract_carryover(closed_task / "log.md") if closed_task else None
 
-        if not learnings and not carryover:
+        if not learnings and not carryover and not task_section:
             # 보여줄 게 환영 안내뿐인 상황이라도 붙여둔 메모는 반드시 살린다 —
             # 사용자가 맡긴 것이 "아직 아무 기록도 없다"는 이유로 사라지면 안 된다.
             memo_block = ("\n".join(memo_section) + "\n") if memo_section else ""
