@@ -18,6 +18,7 @@
 - `namu-plugin/db.py` — `~/.namu/memory/learnings.yaml` ↔ SQLite 코어. 읽기 계열(recall/search)은 conn을 인자로 받고, 쓰기 계열(record/init_db/rebuild)은 함수 내부에서 conn을 열고 닫는다 (의도된 분리, 통일 금지)
 - `namu-plugin/config.py` — 경로·`NAMU_MACHINE`(기기 식별)·**그릇 레지스트리(`BOWLS`)** 일원화. 데이터 루트는 `NAMU_DATA_ROOT = Path.home() / ".namu"` **고정 상수**다(namu-35: 이 repo에서 실행하든 설치형이든 구분 없음, 환경변수로 바꿀 수 없음 — 상세는 아래 "메모리 구조" 참고). `load_dotenv`도 여기서 호출(`NAMU_MACHINE` 등 잔여 환경변수용). **기록 시각은 반드시 `cfg.now()`로 찍는다**(namu-57 5단계) — `datetime.now()`를 직접 쓰면 시간대가 다른 호스트(웹 컨테이너=UTC)의 기록이 같은 log.md 안에서 비교 불가능해진다. 기준 시간대는 `NAMU_TZ`(기본 `Asia/Seoul`)
 - `namu-plugin/memo.py` — memo 그릇(스틱노트, namu-56). **유일한 mutable 저장소**로, 떼면 파일에서 사라진다(tombstone 없음). SQLite 인덱싱 안 함 — 지식베이스(learnings) 오염 0이 이 그릇의 존재 이유다. 붙이기는 `namu_record(bowl='memo', text=...)`, 떼기는 전용 도구 `namu_memo_remove(id)`(기록과 다른 동사라 인자로 태우지 않는다)
+- `namu-plugin/hooks/` — 훅 3종. `session_recall.py`(SessionStart, 세션 브리핑 주입) / `closing_guard.py`(Stop, namu-62 ① — "마무리해"인데 이번 세션에 `[다음]` 줄이 없으면 한 번 block) / `prompt_reminder.py`(UserPromptSubmit, namu-62 ② — `profile.yaml`에서 `상시` 태그(`cfg.PROFILE_ALWAYS_TAG`) 붙은 사실만 매 입력에 재주입). **셋 다 기록하지 않는다** — 알리고 막을 뿐이며, 판단과 `namu_record` 호출은 AI 몫이다(아래 "교훈 저장 규칙"의 훅 자동화 금지와 충돌하지 않는 이유). 등록은 `hooks/hooks.json`(Claude Code 전용 — agy는 대응 이벤트 없음)
 - `namu-plugin/memory_sync.py` — `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작. `.gitattributes`의 `merge=union` 라인은 하드코딩하지 않고 `config.BOWLS`에서 파생한다(namu-57 — 아래 "그릇 레지스트리" 참고)
 
 ## 설계 문서

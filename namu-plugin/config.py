@@ -64,6 +64,12 @@ LEARNINGS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "learnings.yaml"
 # 함께 두되 파일은 분리한다(성격이 다른 지식: 사실 vs 교훈/대화기록).
 PROFILE_YAML_PATH = NAMU_DATA_ROOT / "memory" / "profile.yaml"
 
+# 이 태그가 붙은 profile 사실은 세션 시작 1회가 아니라 **사용자 입력마다** 다시
+# 올라온다(namu-62 ②, hooks/prompt_reminder.py). 규칙을 몰라서가 아니라 답을 쓰기
+# 직전에 대조하지 않아 어긴 사고가 실제로 있었기 때문에, 필요한 시점에 화면 안에
+# 있게 하는 장치다. profile 전체를 올리지 않는 이유는 무거우면 안 읽히기 때문.
+PROFILE_ALWAYS_TAG = "상시"
+
 # 메모(스틱노트) — namu-56. 앞의 두 그릇과 결정적으로 다른 점은 **append-only가
 # 아니라는 것**이다: 떼면 파일에서 그 항목이 사라진다(tombstone 없음). 이력이 남아야
 # 하는 기억(learnings/profile/tasks)과 쓰고 버리는 기억을 규칙으로 가른 결과이며,
@@ -244,6 +250,16 @@ def _resolve_tzinfo(name: str) -> tzinfo | None:
         return None
 
 
+def local_tz() -> tzinfo | None:
+    """기준 시간대(NAMU_TZ)의 tzinfo. tz 데이터가 없으면 None(=현지시각 폴백).
+
+    기록하는 쪽(now)뿐 아니라 **읽는 쪽**도 같은 해석 경로를 써야 한다 — 예를 들어
+    훅이 다른 시간대(UTC)로 적힌 값을 log.md의 벽시계 문자열과 비교하려면 먼저 이
+    시간대로 옮겨야 한다(namu-57 5단계와 같은 함정).
+    """
+    return _resolve_tzinfo(NAMU_TZ)
+
+
 def now() -> datetime:
     """기록용 현재 시각. 기준 시간대(NAMU_TZ)로 맞춘 aware datetime.
 
@@ -251,7 +267,7 @@ def now() -> datetime:
     호출 시점에 한다 — 테스트가 `monkeypatch.setattr(cfg, "NAMU_TZ", ...)`로 갈아끼울
     수 있고, tz 데이터가 없는 환경에서 import 자체가 실패하지도 않는다.
     """
-    tz = _resolve_tzinfo(NAMU_TZ)
+    tz = local_tz()
     return datetime.now(tz) if tz is not None else datetime.now()
 
 # 작업 기록(tasks) — 메모리(NAMU_DATA_ROOT)와 저장소를 분리한다.
