@@ -31,11 +31,19 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 `context.<machine>.md`는 만들지 않는다(namu-57 — 위 "상태는 log.md 한 곳에" 참조).
 
-**2. log `[시작]` 줄 append**
+**2. log `[시작]` 줄 append + 곧바로 `[다음]` 줄까지**
 
 ```
 [시작] YYYY-MM-DD HH:MM:SS <machine> · 작업 생성, 목적·완료조건 확정
+[다음] YYYY-MM-DD HH:MM:SS <machine> · 이 task를 실제로 착수할 때 어디서부터 시작하는지
 ```
+
+**생성 시점에 `[다음]`까지 남긴다**(namu-62 ③) — 만들어만 두고 나중에 착수하는 task가
+많은데, `[다음]`이 없으면 브리핑에 `다음: (기록 없음)`으로 떠서 정작 착수할 세션이
+출발점을 모른다. 도구로 만들 때는 생성 호출 한 번에 같이 넘긴다:
+`namu_record(bowl='tasks', project=..., task=<slug>, create=True, purpose=..., tag='다음', text=<착수 지점>)`.
+(namu-62 전에는 이 `tag`/`text`가 조용히 버려졌다 — 지금은 반영되고, 생략하면 반환문이
+누락을 경고한다.)
 
 2파일 생성·append 직후 `namu_tasks_push.py`(위 "tasks 저장 후 push" 참조) 호출.
 

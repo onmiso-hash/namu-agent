@@ -260,12 +260,19 @@ def _create_task_entry(
     title: str | None,
     purpose: str | None,
     done_when: list[str] | None,
+    text: str | None,
+    tag: str | None,
     via: str | None,
     ctx: Context | None,
 ) -> str:
     """bowl='tasks', create=True 경로: 새 task 폴더(task.md+log.md)를 만들고
     `[시작]` 줄을 append한다. `context.<machine>.md`는 만들지 않는다(namu-57 신규
     생성 중단). SKILL.md '파일 템플릿' 절의 형식을 그대로 따른다.
+
+    namu-62 ③: text(+tag)를 함께 주면 `[시작]` 다음 줄로 그것까지 append한다.
+    예전에는 이 두 인자를 **조용히 버려서** 생성 직후 `[다음]`이 빈 task가
+    남았고(실측 2건), 브리핑이 "다음: (기록 없음)"으로 떠 다음 세션이 이어갈
+    지점을 잃었다. text를 생략하면 반환문에 경고를 붙여 누락이 눈에 보이게 한다.
     """
     resolved_project = _resolve_record_project(project, ctx)
     slug = _validate_new_task_slug(task)
@@ -275,6 +282,18 @@ def _create_task_entry(
         raise ValueError(
             "create=True일 때 purpose는 필수입니다(목적 없는 task는 나중에 아무도 못 읽습니다)"
         )
+
+    # 폴더를 만들기 전에 검증한다 — 뒤에서 터지면 목적만 적힌 껍데기 task가 남는다.
+    if (text or "").strip():
+        follow_tag, follow_text = _validate_task_tag_text(tag, text)
+    else:
+        if (tag or "").strip():
+            raise ValueError(
+                f"tag={tag!r}만 주고 text가 비었습니다 — 남길 내용이 없으면 줄을 쓸 수 "
+                "없습니다. tag와 text를 함께 주세요(예: tag='다음', text='다음 세션이 "
+                "시작할 지점')"
+            )
+        follow_tag = follow_text = None
 
     task_dir = task_resolve.tasks_root_for(resolved_project) / slug
     if task_dir.exists():
@@ -315,7 +334,24 @@ def _create_task_entry(
         start_line += f" (via {via})"
     _append_task_log_line(task_dir, start_line)
 
-    return f"task 생성됨: {task_dir}\n{start_line}"
+    summary = f"task 생성됨: {task_dir}\n{start_line}"
+
+    if follow_text:
+        follow_line = f"[{follow_tag}] {ts} {machine} · {follow_text}"
+        if via:
+            follow_line += f" (via {via})"
+        _append_task_log_line(task_dir, follow_line)
+        summary += f"\n{follow_line}"
+    else:
+        summary += (
+            "\n⚠ 이어갈 지점([다음] 줄)이 비어 있습니다 — 브리핑에 "
+            '"다음: (기록 없음)"으로 뜨고, 다음 세션은 어디서 시작할지 모릅니다. '
+            f"지금 바로 namu_record(bowl='tasks', project={resolved_project!r}, "
+            f"task={slug!r}, tag='다음', text='<다음 세션이 시작할 지점>')을 한 번 더 "
+            "호출하세요(생성 호출에 tag/text를 함께 주면 한 번에 들어갑니다)."
+        )
+
+    return summary
 
 
 _KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
@@ -559,6 +595,11 @@ def namu_record(
       following the SKILL.md templates (no context.<machine>.md — that
       legacy file is no longer created), appends a `[시작]` line, and
       returns a human-readable string with the created path and that line.
+      ALSO PASS text (+tag, e.g. tag='다음') in the SAME call to record the
+      re-entry point as a second log line — a task created without it shows
+      "다음: (기록 없음)" in the briefing and the next session has no idea
+      where to resume, so the return string warns you when you omit it
+      (namu-62 ③; before that fix text/tag were silently dropped here).
 
     bowl='memo' (namu-56, new): one sticky note → memo.yaml. Required: text.
       Optional: tags. This is the ONLY mutable bowl — a memo is meant to be
@@ -588,7 +629,9 @@ def namu_record(
 
     if resolved_bowl == "tasks":
         if create:
-            result = _create_task_entry(project, task, title, purpose, done_when, via, ctx)
+            result = _create_task_entry(
+                project, task, title, purpose, done_when, text, tag, via, ctx
+            )
         else:
             result = _record_task_entry(project, task, text, tag, via, ctx)
         t2 = time.perf_counter()

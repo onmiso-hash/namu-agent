@@ -558,6 +558,81 @@ def test_namu_record_create_path_traversal_slug_rejected(fake_home):
     assert not (fake_home / ".namu" / "tasks" / "evil").exists()
 
 
+def test_namu_record_create_with_text_appends_next_line(fake_home):
+    """namu-62 ③: create=True에 넘긴 tag/text가 버려지지 않고 두 번째 줄로 들어간다.
+    예전에는 조용히 사라져 `[다음]`이 빈 task가 남았다(실측 2건).
+    """
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
+        " create=True, purpose='한 번에 다음 지점까지', tag='다음',"
+        " text='①user_repo.py 읽기\\n②범위 합의')\n"
+        "print('RESULT', repr(line))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+    log_md = (fake_home / ".namu" / "tasks" / "proj-new" / "namu-99" / "log.md").read_text(
+        encoding="utf-8"
+    )
+    lines = [ln for ln in log_md.splitlines() if ln.startswith("[")]
+    assert lines[-2].startswith("[시작] ")
+    assert lines[-1].startswith("[다음] ")
+    # 개행은 한 줄로 접힌다(log.md는 줄 단위 파일)
+    assert lines[-1].endswith(" · ①user_repo.py 읽기 ②범위 합의")
+    # 반환문에도 두 줄이 다 보이고, 경고는 붙지 않는다
+    assert "[다음]" in result.stdout
+    assert "이어갈 지점" not in result.stdout
+
+
+def test_namu_record_create_without_text_warns_about_missing_next(fake_home):
+    """text 없이 만들면 생성은 되지만 반환문이 [다음] 누락을 경고한다(namu-62 ③)."""
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-98',"
+        " create=True, purpose='경고 확인용')\n"
+        "print('RESULT', repr(line))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+    log_md = (fake_home / ".namu" / "tasks" / "proj-new" / "namu-98" / "log.md").read_text(
+        encoding="utf-8"
+    )
+    log_lines = [ln for ln in log_md.splitlines() if ln.startswith("[")]
+    assert len(log_lines) == 1 and log_lines[0].startswith("[시작] ")
+    assert "이어갈 지점" in result.stdout
+    # 반환문에 "한 번 더 호출" 안내가 들어 있어야 한다(repr 출력이라 따옴표는 escape됨)
+    assert "namu_record" in result.stdout and "한 번 더" in result.stdout
+
+
+def test_namu_record_create_tag_without_text_raises_before_folder(fake_home):
+    """tag만 주고 text가 비면 거절하고, 껍데기 폴더도 남기지 않는다(namu-62 ③)."""
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-97',"
+        " create=True, purpose='p', tag='다음')\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    assert not (fake_home / ".namu" / "tasks" / "proj-new" / "namu-97").exists()
+
+
+def test_namu_record_create_with_text_shows_next_in_recall(fake_home):
+    """생성 한 번으로 브리핑의 '다음'까지 채워진다 — 이 결함의 실제 피해 지점."""
+    result = _run_probe(
+        fake_home,
+        "mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-101', create=True,"
+        " purpose='왕복 확인용', tag='다음', text='③ 결함 수정부터')\n"
+        "r = mcp_server.namu_recall(project='proj-x')\n"
+        "print('RESULT', r['tasks'][0]['next'])\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "③ 결함 수정부터" in result.stdout
+
+
 def test_namu_record_create_then_recall_roundtrip(fake_home):
     """create=True로 만든 task가 곧바로 namu_recall의 열린 task 목록에 나온다."""
     result = _run_probe(
