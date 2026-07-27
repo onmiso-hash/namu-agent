@@ -428,6 +428,129 @@ def test_build_markdown_top_task_next_is_not_truncated(tmp_path):
     assert "…" in md                            # 잘린 흔적이 실제로 있다
 
 
+def test_split_sentences_preserves_all_characters():
+    """글자 보존 불변식(namu-64) — 여러 문장짜리 '다음' 글을 쪼갠 뒤 공백 하나로
+    다시 이으면 원문(공백 정규화 후)과 정확히 같다. namu-63이 남긴 "전문 보증이
+    기존 테스트에 우연히 얹혀 있다"는 우려를 이 테스트로 명시화해 닫는다.
+    """
+    long_next = (
+        "3단계 착수 — config.py에 그릇 레지스트리 신설. 그 다음 memory_sync.py의 "
+        "ensure_gitattributes_union()을 레지스트리 파생으로 교체한다! 정말 될까? "
+        "임시 clone 2개로 오프라인 양쪽 append 충돌 여부를 실측하고 결과를 보고한다."
+    )
+    sentences = _sc._split_sentences(long_next)
+    assert len(sentences) >= 2  # 실제로 여러 조각으로 쪼개졌다
+    rejoined = " ".join(sentences)
+    assert rejoined == " ".join(long_next.split())
+
+
+def test_build_markdown_top_task_next_splits_into_multiple_lines(tmp_path):
+    """▸(맨 위) task의 '다음:'이 여러 문장이면 하위 목록 여러 줄로 쪼개져 렌더된다
+    (namu-64) — 줄바꿈 없는 한 덩어리 문단이 읽기 불편하다는 사용자 지적 대응.
+    """
+    long_next = (
+        "3단계 착수. config.py에 그릇 레지스트리 신설 후 v0.1.39 태그를 단다. "
+        "그 다음 memory_sync.ensure_gitattributes_union()을 레지스트리 파생으로 "
+        "교체하고 임시 clone 2개로 오프라인 양쪽 append 충돌 여부를 실측한다."
+    )
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "top-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-06-28 09:00:00 hp · 시작",
+            f"[다음] 2026-06-29 18:00:00 hp · {long_next}",
+        ],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    # 원문이 여러 개의 "- " 하위 목록 줄로 쪼개져 실린다 — 한 덩어리가 아니다.
+    assert "  - 다음: 3단계 착수." in md
+    assert "  - config.py에 그릇 레지스트리 신설 후 v0.1.39 태그를 단다." in md
+    assert (
+        "  - 그 다음 memory_sync.ensure_gitattributes_union()을 레지스트리 파생으로 "
+        "교체하고 임시 clone 2개로 오프라인 양쪽 append 충돌 여부를 실측한다." in md
+    )
+    # 원문 전체가 통째 한 줄로는 더 이상 나타나지 않는다(쪼개졌으므로).
+    assert f"다음: {long_next}" not in md
+    # 버전 문자열은 쪼개지지 않고 온전히 붙어 있다.
+    assert "v0.1.39" in md
+
+
+def test_split_sentences_does_not_split_version_string():
+    """`v0.1.39`, `0.1.26` 같은 버전 문자열은 문장 경계로 오인해 쪼개지지 않는다."""
+    text = "이번 배포는 v0.1.39 확인. 다음 릴리즈는 0.1.40이다."
+    sentences = _sc._split_sentences(text)
+    joined = " ".join(sentences)
+    assert "v0.1.39" in joined
+    assert "0.1.40" in joined
+    # 어느 조각도 버전 문자열을 반으로 자르지 않는다.
+    for frag in ["v0.1.39", "0.1.40"]:
+        assert any(frag in s for s in sentences)
+
+
+def test_split_sentences_digit_adjacent_period_not_a_boundary():
+    """마침표 앞뒤가 모두 숫자면(소수점/버전 표기) 문장 경계로 보지 않는다."""
+    text = "지금 배포된 건 0.1.39. 0.1.40으로 올릴 예정이다. 확인 끝."
+    sentences = _sc._split_sentences(text)
+    # "0.1.39."와 "0.1.40으로..."가 한 문장으로 묶여야 한다(둘 다 숫자 인접 마침표).
+    assert any("0.1.39. 0.1.40으로" in s for s in sentences)
+    assert " ".join(sentences) == " ".join(text.split())
+
+
+def test_build_markdown_second_task_still_one_line(tmp_path):
+    """2번째 이하 task의 '다음:'은 여전히 한 줄 요약(_one_line)이다 — 새 문장
+    분할은 ▸(맨 위)에만 적용된다(namu-64 범위 제한, 나머지는 회귀 금지)."""
+    long_next = (
+        "여러 문장짜리 다음 항목입니다. 이건 두 번째로 아주 길게 늘려 쓴 문장입니다. "
+        "이건 세 번째 문장이고 70자를 넘기기 위해 조금 더 길게 적어봅니다."
+    )
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "top-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-06-29 09:00:00 hp · 시작",
+            "[다음] 2026-06-29 18:00:00 hp · 맨 위 다음",
+        ],
+    )
+    _make_task(
+        tasks_root, "second-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-06-01 09:00:00 hp · 시작",
+            f"[다음] 2026-06-02 18:00:00 hp · {long_next}",
+        ],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    # 2번째 task는 한 줄 요약(_one_line, 70자 제한)으로 잘려 실린다 — 원문 전체가
+    # 그대로 실리지 않는다.
+    assert long_next not in md
+    assert "…" in md
+
+
+def test_build_markdown_top_task_uses_heading_emphasis(tmp_path):
+    """▸ 항목이 제목 서식(###)으로 강조돼 나머지 task 줄과 구분된다(namu-64 B)."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "top-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-06-29 09:00:00 hp · 시작",
+            "[다음] 2026-06-29 18:00:00 hp · 이어서 착수",
+        ],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "#### ▸ **top-task**" in md
+    # 여전히 목록 서식(- ...)으로 나머지 task와 구분되는 마커가 아니라
+    # 제목 줄 자체가 강조 서식이다 — 일반 "- ▸ ..." 목록 줄로는 남지 않는다.
+    assert "- ▸ **top-task**" not in md
+
+
 def test_build_markdown_no_task_learnings_only(tmp_path):
     """활성 task 없고 교훈 있음 → '💡 최근 교훈'만, task 섹션 없음."""
     conn = _setup_mem_db([

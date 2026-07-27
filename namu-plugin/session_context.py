@@ -184,9 +184,17 @@ def _strip_slug_prefix(title: str, slug: str) -> str:
     실물 task.md의 첫 헤더는 `# namu-57-memory-retrieval — 메모리 "꺼내는 쪽" …`
     형태라, 브리핑 줄에 slug를 이미 굵게 쓴 뒤 제목을 붙이면 같은 slug가 두 번
     나와 좁은 CLI 폭을 낭비한다.
+
+    접두는 **반복해서** 걷어낸다(namu-64) — task 생성 시 title에 이미 slug를 넣어
+    넘기면 저장 쪽이 slug를 한 번 더 앞에 붙여 `# <slug> — <slug> — 설명` 형태가
+    되고(namu-63·64 실물이 그렇다), 한 번만 걷어내면 브리핑 줄에 이름이 그대로
+    두 번 찍힌다. 기록은 append-only라 원본을 고칠 수 없으므로 읽는 쪽에서 흡수한다.
     """
-    if title.startswith(slug):
-        title = title[len(slug):].lstrip(" —-–:")
+    while title.startswith(slug):
+        stripped = title[len(slug):].lstrip(" —-–:")
+        if not stripped:
+            break
+        title = stripped
     return title or slug
 
 
@@ -201,14 +209,64 @@ def _one_line(text: str, limit: int = 70) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
-def _flat(text: str) -> str:
-    """자르지 않고 한 줄로만 접는다 — 맨 위 task의 `다음:` 전용(namu-57 1-2 보완).
+# 문장 경계: 마침표/물음표/느낌표 + 공백. `_split_sentences`가 이 뒤에서 숫자
+# 사이(버전 문자열 등)인지 한 번 더 확인해 걸러낸다(정규식만으로는 "0.1.26"처럼
+# 공백이 아예 없는 경우까지만 자동으로 안전하고, "9. 0.1.40으로" 같이 숫자 뒤
+# 공백 다음이 다시 숫자인 경우는 별도 판정이 필요하다).
+_SENTENCE_END_RE = re.compile(r"[.!?]\s+")
 
-    나머지 줄은 좁은 CLI 폭 때문에 잘라야 하지만, 맨 위 task의 "다음"만은 전문을
-    싣는다. 이 한 줄이 곧 재진입 지점이라 잘리면 세션이 log.md를 한 번 더 읽어야
-    착수할 수 있고, 그러면 "이어서 하자" 한마디로 이어지지 않는다(사용자 지적).
+
+def _split_sentences(text: str) -> list[str]:
+    """마침표·물음표·느낌표 + 공백을 기준으로 문장 단위로 쪼갠다 — ▸(맨 위) task의
+    `다음:`을 하위 목록 여러 줄로 나눠 읽기 쉽게 하기 위함(namu-64).
+
+    (namu-57 1-2가 세운) "자르지 않는다"는 성질을 그대로 유지한다 — 폭 기준
+    하드랩(textwrap)은 쓰지 않는다(마크다운 렌더러가 부드러운 줄바꿈을 뭉개
+    화면에 반영되지 않는다).
+    글자 보존 불변식: 반환값을 공백 하나로 이으면 원문(공백 정규화 후)과
+    정확히 같다 — 조각을 자르지도, 버리지도 않는다.
+
+    숫자 바로 앞(마침표 직전)과 공백 다음 첫 글자가 둘 다 숫자면 문장 경계로
+    보지 않는다 — `v0.1.39`, `0.1.26` 같은 버전 문자열은 자체로는 마침표 뒤에
+    공백이 없어 이미 안전하지만, "...9. 0.1.40으로..."처럼 숫자로 끝난 문장
+    바로 뒤에 또 다른 숫자로 시작하는 버전이 오면 소수점/버전 표기로 오인해
+    잘못 쪼갤 수 있어 이 경우만 별도로 막는다.
     """
-    return " ".join(text.split())
+    normalized = " ".join(text.split())
+    if not normalized:
+        return []
+
+    sentences: list[str] = []
+    start = 0
+    for m in _SENTENCE_END_RE.finditer(normalized):
+        punct_pos = m.start()
+        before = normalized[punct_pos - 1] if punct_pos > 0 else ""
+        after = normalized[m.end()] if m.end() < len(normalized) else ""
+        if before.isdigit() and after.isdigit():
+            continue  # 소수점/버전 표기 — 문장 경계 아님
+        sentences.append(normalized[start : m.end()].rstrip())
+        start = m.end()
+    tail = normalized[start:]
+    if tail:
+        sentences.append(tail)
+    return sentences
+
+
+def _build_next_block(note: str) -> str:
+    """▸(맨 위) task의 `다음:` 블록 — 문장을 하위 목록 항목으로 한 줄씩 나눠 렌더.
+
+    첫 문장은 기존과 같은 `- 다음: <문장>` 줄에 싣고, 이후 문장은 같은 계층
+    (`  - <문장>`)의 후속 줄로 이어 붙인다 — 목록 서식이 깨지지 않게 기존
+    `- 다음: ...` 하위 줄과 들여쓰기를 맞춘다(namu-64). 문장이 하나뿐이면
+    기존(namu-57 1-2) 전문 한 줄 표시와 동일한 결과가 나온다(회귀 없음).
+    """
+    sentences = _split_sentences(note)
+    if not sentences:
+        return "\n  - 다음: (기록 없음)"
+    lines = [f"\n  - 다음: {sentences[0]}"]
+    for s in sentences[1:]:
+        lines.append(f"\n  - {s}")
+    return "".join(lines)
 
 
 def _build_other_room_lines(other_rows: list[dict[str, str | None]]) -> list[str]:
@@ -240,9 +298,16 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
     이 방/다른 방 분기(namu-63)에서 이 렌더 로직이 두 벌로 복사돼 있던 것도
     이 헬퍼 하나로 합쳤다 — 한쪽만 고치는 드리프트를 막기 위함.
 
-    ▸(맨 위)만 `다음:`을 전문으로 싣는다(namu-57 1-2 보완, `_flat` 참고) — 그
-    한 줄이 재진입 지점이라 잘리면 안 된다. 한도는 `_OPEN_TASK_LINES`, 초과분은
-    "… (N개 더)"로 접는다.
+    ▸(맨 위)만 `다음:`을 전문으로 싣는다(namu-57 1-2 보완, `_split_sentences`
+    참고) — 그 한 줄이 재진입 지점이라 잘리면 안 된다. 한도는 `_OPEN_TASK_LINES`,
+    초과분은 "… (N개 더)"로 접는다.
+
+    ▸ 항목은 제목 서식으로 강조한다(namu-64) — 마크다운은 색을 고를 수 없어
+    굵기+색을 함께 얻는 방법이 이것뿐이다. 앞뒤로 빈 줄을 둬 나머지 목록과
+    시각적으로 분리한다(사용자 지적 — "다음에 이어갈 작업이 눈에 안 띈다").
+    단계는 반드시 구역 제목(`### 📂 열린 task …`)보다 **한 단계 아래**(`####`)
+    여야 한다 — 같은 `###`를 쓰면 크기·색이 구역 제목과 동일해져 ▸가 "이어갈
+    작업"이 아니라 새 구역처럼 보인다(검수 지적, namu-64 재검토).
     """
     lines: list[str] = []
     missing_next = 0
@@ -252,18 +317,15 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
             missing_next += 1
         if i >= _OPEN_TASK_LINES:
             continue
-        marker = "▸ " if i == 0 else ""
-        if note:
-            next_text = _flat(note) if i == 0 else _one_line(note)
-        else:
-            next_text = "(기록 없음)"
         ts = _latest_log_ts(task_dir / "log.md")
         date = _short_date(f"{ts[0]} {ts[1]}") if ts else "?"
-        lines.append(
-            f"- {marker}**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}"
-            f"  `{date}`"
-            f"\n  - 다음: {next_text}"
-        )
+        title = f"**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}  `{date}`"
+        if i == 0:
+            next_block = _build_next_block(note) if note else "\n  - 다음: (기록 없음)"
+            lines.append(f"\n#### ▸ {title}\n{next_block}")
+        else:
+            next_text = _one_line(note) if note else "(기록 없음)"
+            lines.append(f"- {title}\n  - 다음: {next_text}")
     if len(open_tasks) > _OPEN_TASK_LINES:
         lines.append(f"- … ({len(open_tasks) - _OPEN_TASK_LINES}개 더)")
     return lines, missing_next
