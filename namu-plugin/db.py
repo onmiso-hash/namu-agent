@@ -557,6 +557,9 @@ def search_bowl(
             entries = [
                 e for e in entries
                 if q in (e.get("text") or "").lower()
+                # 화면에서 뺀 '왜/상세'도 훑는다 — 안 그러면 요약만 보이게 만든 것이
+                # 곧 "그 내용은 검색으로도 못 찾는다"가 된다(namu-65 완료조건 11).
+                or q in (e.get("detail") or "").lower()
                 or q in (e.get("tag") or "").lower()
                 or q in (e.get("task_slug") or "").lower()
             ]

@@ -203,10 +203,12 @@ def next_note(task_dir: Path) -> str | None:
     except OSError:
         lines = []
 
-    for line in lines:
+    for index, line in enumerate(lines):
         parsed = _parse_log_line(line)
         if parsed is not None and parsed["tag"] == "다음" and parsed["text"]:
-            entries.append(parsed["text"])
+            # 요약이 있으면 요약, 없으면 첫 줄(namu-65 5단계).
+            shown, _rest = _display_text(lines, index, parsed["text"])
+            entries.append(shown)
     if entries:
         return entries[-1]
 
@@ -222,6 +224,48 @@ def next_note(task_dir: Path) -> str | None:
         if body and body.strip() != "(완료)":
             return body.strip()
     return None
+
+
+# 세 줄 묶음(namu-65 4단계)의 이어지는 줄. 머리줄 다음에 오는 **들여쓴** 줄들이며,
+# 라벨은 셋뿐이다. `요약:`은 이관된 옛 줄에만 있다 — 그때는 머리줄이 이미 긴 원문이라
+# 요약을 아래에 덧붙였기 때문이고, 새로 적히는 줄은 머리줄 자체가 요약이다.
+_CONT_LABELS = ("요약", "왜", "상세")
+
+
+def _continuations(lines: list[str], head_index: int) -> dict[str, str]:
+    """머리줄(head_index) 바로 다음의 들여쓴 줄들을 라벨→값으로 모은다.
+
+    들여쓰기로 판정하는 이유는 읽는 쪽 규약이 "`[`로 시작하는 줄만 항목"이기 때문이다
+    — 그 규약을 그대로 두면 옛 450줄과 새 세 줄 묶음이 한 파일에 섞여도 항목 수가
+    흔들리지 않는다. 라벨이 없는 들여쓴 줄(옛 로그의 이어쓴 문단)은 무시한다.
+    """
+    found: dict[str, str] = {}
+    for line in lines[head_index + 1:]:
+        if not line[:1].isspace():
+            break
+        stripped = line.strip()
+        for label in _CONT_LABELS:
+            prefix = f"{label}:"
+            if stripped.startswith(prefix):
+                found.setdefault(label, stripped[len(prefix):].strip())
+                break
+    return found
+
+
+def _display_text(lines: list[str], head_index: int, head_text: str | None) -> tuple[str | None, str]:
+    """화면에 실을 한 줄과, 검색용으로 함께 훑을 나머지를 돌려준다.
+
+    규칙은 "요약이 있으면 요약, 없으면 첫 줄"이다(namu-65 5단계). 이관된 옛 줄은
+    머리줄이 2,000자짜리 문단이라 요약을 써야 하고, 새 줄은 머리줄이 곧 요약이다.
+    화면에서 빠진 부분도 검색에서는 빠지면 안 되므로 따로 돌려준다.
+    """
+    cont = _continuations(lines, head_index)
+    summary = cont.get("요약")
+    rest = [v for k, v in cont.items() if k != "요약" or summary is None]
+    if summary:
+        rest.append(head_text or "")
+        return summary, " ".join(x for x in rest if x)
+    return head_text, " ".join(x for x in rest if x)
 
 
 def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str | None]]:
@@ -430,7 +474,7 @@ def journal(
             except OSError:
                 continue
 
-            for line in lines:
+            for index, line in enumerate(lines):
                 parsed = _parse_log_line(line)
                 if parsed is None:
                     continue
@@ -443,6 +487,7 @@ def journal(
                     continue
                 if via is not None and parsed["via"] != via:
                     continue
+                shown, rest = _display_text(lines, index, parsed["text"])
                 entries.append(
                     {
                         "ts": ts,
@@ -451,7 +496,10 @@ def journal(
                         "tag": parsed["tag"],
                         "machine": parsed["machine"],
                         "via": parsed["via"],
-                        "text": parsed["text"],
+                        # 화면에는 요약 한 줄만(namu-65 완료조건 10). 화면에서 뺀
+                        # 부분은 detail로 남겨 검색에서까지 빠지지 않게 한다.
+                        "text": shown,
+                        "detail": rest,
                     }
                 )
 

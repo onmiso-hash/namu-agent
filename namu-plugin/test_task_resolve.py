@@ -577,6 +577,9 @@ def test_journal_entry_shape(pool):
         "machine": "hp",
         "via": None,
         "text": "그릇 성격 확정",
+        # namu-65 5단계 — 화면에서 뺀 부분(왜/상세)을 검색용으로 함께 싣는다.
+        # 세 줄 묶음이 아닌 옛 줄은 빈 문자열이다.
+        "detail": "",
     }
 
 
