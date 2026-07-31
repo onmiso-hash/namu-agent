@@ -24,6 +24,7 @@ from task_resolve import (
     next_why,
     one_line as _one_line,
     open_tasks_briefing,
+    pins_by_slug,
     record_project_marker,
     strip_slug_prefix as _strip_slug_prefix,
     task_title as _title_without_slug,
@@ -267,13 +268,19 @@ def _build_other_room_lines(other_rows: list[dict[str, str | None]]) -> list[str
         date = _short_date(row["last_ts"]) if row["last_ts"] else "?"
         slug = row["slug"] or ""
         title = _one_line(_strip_slug_prefix(row["title"] or slug, slug), _TITLE_LIMIT)
-        lines.append(f"- `{row['project']}` **{slug}** — {title}  `{date}`")
+        # 다른 방에 꽂힌 책갈피도 표시한다(namu-70) — 그 방에 들어가기 전에
+        # "저기 이어서 할 게 정해져 있다"는 것이 보여야 이 표시가 값을 한다.
+        pin_head = "📌 " if row.get("pin_machine") else ""
+        pin_mark = f" `{row['pin_machine']}가 꽂음`" if row.get("pin_machine") else ""
+        lines.append(f"- `{row['project']}` {pin_head}**{slug}** — {title}  `{date}`{pin_mark}")
     if len(other_rows) > _OTHER_ROOM_LINES:
         lines.append(f"- … ({len(other_rows) - _OTHER_ROOM_LINES}개 더)")
     return lines
 
 
-def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
+def _build_this_room_lines(
+    open_tasks: list[Path], pins: dict[str, dict[str, str]] | None = None
+) -> tuple[list[str], int]:
     """"이 방" 열린 task 목록 줄들 + "다음" 기록이 없는 task 개수 반환.
 
     다른 방 유무와 무관하게 항상 같은 형식을 쓴다(검수 지적 — 날짜 표기가
@@ -292,6 +299,7 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
     여야 한다 — 같은 `###`를 쓰면 크기·색이 구역 제목과 동일해져 ▸가 "이어갈
     작업"이 아니라 새 구역처럼 보인다(검수 지적, namu-64 재검토).
     """
+    pins = pins or {}
     lines: list[str] = []
     missing_next = 0
     for i, task_dir in enumerate(open_tasks):
@@ -302,9 +310,15 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
             continue
         ts = _latest_log_ts(task_dir / "log.md")
         date = _short_date(f"{ts[0]} {ts[1]}") if ts else "?"
+        pin = pins.get(task_dir.name)
+        # 책갈피가 꽂힌 줄에는 어느 PC가 꽂았는지까지 붙인다(namu-70) — 두 PC가
+        # 각자 꽂을 수 있으므로, 표시만 있고 주인이 없으면 "내가 꽂았나?"가 된다.
+        # 📌 자체는 줄 앞(맨 위는 제목 머리, 나머지는 항목 머리)에만 찍는다 —
+        # 한 줄에 두 번 나오면 표시가 아니라 잡음이 된다(실측 후 다듬음).
+        pin_mark = f" `{pin['machine']}가 꽂음`" if pin else ""
         title = (
-            f"**{task_dir.name}** — "
-            f"{_one_line(_title_without_slug(task_dir), _TITLE_LIMIT)}  `{date}`"
+            f"{'📌 ' if pin and i > 0 else ''}**{task_dir.name}** — "
+            f"{_one_line(_title_without_slug(task_dir), _TITLE_LIMIT)}  `{date}`{pin_mark}"
         )
         if i == 0:
             next_block = _build_next_block(note) if note else "\n  - 다음: (기록 없음)"
@@ -312,7 +326,8 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
             why = next_why(task_dir)
             if why:
                 next_block += f"\n  - 왜: {_one_line(why)}"
-            lines.append(f"\n#### ▸ {title}\n{next_block}")
+            head = "📌" if pin else "▸"
+            lines.append(f"\n#### {head} {title}\n{next_block}")
         else:
             next_text = _one_line(note) if note else "(기록 없음)"
             lines.append(f"- {title}\n  - 다음: {next_text}")
@@ -321,14 +336,31 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
     return lines, missing_next
 
 
-def _open_task_explain_lines(missing_next: int) -> list[str]:
-    """▸ 설명 문단 + "다음" 기록 없는 task 경고. 이 방에 열린 task가 있을 때만 붙인다."""
-    lines = [
-        "▸는 가장 최근 활동한 task일 뿐 **단정이 아닙니다** — 나머지도 전부 열려 있습니다. "
-        "다만 사용자가 대상을 지목하지 않고 \"이어서 하자\"고만 하면 **되묻지 말고 ▸의 "
-        "`다음:`부터 착수하세요** — 이어갈 지점은 이미 log의 마지막 `[다음]` 줄에 적혀 "
-        "있으니 사용자에게 다시 물을 이유가 없습니다. 다른 task를 원하면 사용자가 이름을 댑니다."
-    ]
+def _open_task_explain_lines(missing_next: int, pinned: bool = False) -> list[str]:
+    """맨 위 항목 설명 문단 + "다음" 기록 없는 task 경고. 이 방에 열린 task가 있을 때만 붙인다.
+
+    (namu-70) **왜 이게 맨 위인지**를 반드시 적는다 — 지금까지 정렬 기준이 화면
+    어디에도 없어서, 26초 늦게 만든 사소한 작업이 앞자리를 차지한 것을 사용자가
+    알 방법이 없었다. 책갈피가 꽂혀 있으면 그것이 이유이고, 없으면 최근 활동순이
+    이유다. 둘 다 한 문장으로 밝힌다.
+    """
+    if pinned:
+        lines = [
+            "📌는 **사용자가 꽂아둔 책갈피**입니다 — 그래서 맨 위입니다(여러 개면 최근에 "
+            "꽂은 순, 나머지는 최근 활동순). 사용자가 대상을 지목하지 않고 \"이어서 하자\"고만 "
+            "하면 **되묻지 말고 📌의 `다음:`부터 착수하세요**. 책갈피를 옮기려면 "
+            "`namu_task_pin`, 빼려면 `namu_task_unpin`입니다(작업을 닫으면 자동으로 빠집니다)."
+        ]
+    else:
+        lines = [
+            "이 목록은 **최근 활동순**입니다(중요도순이 아닙니다) — ▸는 가장 최근 활동한 "
+            "task일 뿐 **단정이 아닙니다**. 나머지도 전부 열려 있습니다. 다만 사용자가 대상을 "
+            "지목하지 않고 \"이어서 하자\"고만 하면 **되묻지 말고 ▸의 `다음:`부터 착수하세요** "
+            "— 이어갈 지점은 이미 log의 마지막 `[다음]` 줄에 적혀 있으니 사용자에게 다시 물을 "
+            "이유가 없습니다. 다른 task를 원하면 사용자가 이름을 댑니다. 사용자가 \"다음엔 "
+            "이것부터\"라고 정해두면 `namu_task_pin`으로 책갈피를 꽂으세요 — 다음 세션부터 "
+            "📌로 맨 위에 섭니다."
+        ]
     if missing_next:
         lines.append(
             f"⚠ \"다음\" 기록이 없는 task {missing_next}개 — 세션 끝에 log.md에 "
@@ -379,7 +411,11 @@ def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[
                 )
             parts.append("")
 
-    this_room_lines, missing_next = _build_this_room_lines(open_tasks)
+    pins = pins_by_slug(tasks_dir)
+    # 맨 위 항목이 책갈피 때문에 거기 있는가 — 설명 문구가 갈리는 기준(namu-70).
+    # find_open_tasks가 이미 책갈피를 앞으로 당겨 놨으므로 첫 항목만 보면 된다.
+    top_pinned = bool(open_tasks) and open_tasks[0].name in pins
+    this_room_lines, missing_next = _build_this_room_lines(open_tasks, pins)
 
     if not other_rows:
         # 다른 방이 하나도 없으면 기존 출력 그대로(namu-63 확정 형식 — 회귀 방지).
@@ -388,7 +424,7 @@ def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[
         parts.append(f"### 📂 열린 task {len(open_tasks)}개")
         parts.extend(this_room_lines)
         parts.append("")
-        parts.extend(_open_task_explain_lines(missing_next))
+        parts.extend(_open_task_explain_lines(missing_next, top_pinned))
         parts.append("")
         return (parts, _extract_task_title(open_tasks[0] / "task.md"))
 
@@ -412,7 +448,7 @@ def _build_task_section(project_dir: str | Path, tasks_dir: Path) -> tuple[list[
     parts.append("")
 
     if open_tasks:
-        parts.extend(_open_task_explain_lines(missing_next))
+        parts.extend(_open_task_explain_lines(missing_next, top_pinned))
         parts.append("")
         return (parts, _extract_task_title(open_tasks[0] / "task.md"))
 

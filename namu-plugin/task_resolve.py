@@ -207,6 +207,143 @@ def _sorted_task_dirs(tasks_dir: Path) -> list[Path]:
     return [task_dir for _, task_dir in task_ts_list]
 
 
+# ---------------------------------------------------------------------------
+# 책갈피(pin, namu-70) — "다음엔 이것부터" 표시
+# ---------------------------------------------------------------------------
+#
+# 왜 log.md가 아니라 별도 파일인가: ①log는 append-only라 "껐다 켰다 하는 현재 상태"를
+# 담을 수 없다(다섯 번 바꾸면 줄 다섯 개가 남고 지금 값은 계산해야 나온다) ②log에
+# 적으면 그 task의 last_ts가 갱신돼 **순서가 두 경로로 흔들린다** — 이 작업이 없애려던
+# "기록을 건드려 화면 순서를 바꾸는" 짓과 결과가 같아진다. 순서는 표시의 문제이지
+# 기록의 문제가 아니다(namu-70 목적).
+#
+# 왜 기기(machine)마다 파일을 따로 두는가: 책갈피는 mutable이라 같은 파일을 두 PC가
+# 고치면 git 병합 충돌이 난다(profile.yaml에서 실제로 났던 종류의 사고). 각 PC가
+# 제 이름이 붙은 파일에만 쓰면 충돌 가능성 자체가 0이고, 파일은 그대로 동기화되므로
+# 다른 PC가 무엇을 꽂아뒀는지도 보인다(사용자 결정 2026-08-01).
+_PIN_PREFIX = ".pin."
+
+# 파일 이름에 들어가는 값이라 경로 조작(`../`)·구분자를 원천 차단한다. log 파싱용
+# `_MACHINE_RE`보다 길이를 넉넉히 잡는다 — 저기 20자는 "본문 조각을 machine으로
+# 오인하지 않기" 위한 보수적 상한이고, 여기는 실제 호스트 이름이 그대로 온다.
+_PIN_MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _pin_path(tasks_dir: Path, machine: str) -> Path:
+    if not _PIN_MACHINE_RE.match(machine or ""):
+        raise ValueError(f"기기 이름이 파일 이름으로 쓸 수 없는 형태입니다: {machine!r}")
+    return tasks_dir / f"{_PIN_PREFIX}{machine}"
+
+
+def set_pin(tasks_dir: Path, machine: str, slug: str, ts: str) -> None:
+    """이 기기의 책갈피를 slug로 꽂는다(기존 값은 덮어쓴다 — 기기당 하나).
+
+    ts는 호출자가 준다 — 이 모듈은 stdlib 전용(statusLine 공유)이라 config를 못
+    쓰는데, 기록 시각은 반드시 `cfg.now()`(기준 시간대)여야 하기 때문이다. 여기서
+    `datetime.now()`를 쓰면 시간대가 다른 호스트의 책갈피와 선후가 뒤집힌다.
+    """
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    _pin_path(tasks_dir, machine).write_text(f"{slug}\n{ts}\n", encoding="utf-8")
+
+
+def clear_pin(tasks_dir: Path, machine: str) -> str | None:
+    """이 기기의 책갈피를 뺀다. 꽂혀 있던 slug를 반환(없었으면 None).
+
+    다른 기기의 책갈피는 건드리지 않는다 — 그 파일은 그 기기의 것이고, 남의 PC
+    상태를 여기서 지우면 그쪽에서 되살아나 깜빡이게 된다.
+    """
+    path = _pin_path(tasks_dir, machine)
+    slug = None
+    try:
+        slug = path.read_text(encoding="utf-8").splitlines()[0].strip() or None
+    except (OSError, IndexError):
+        slug = None
+    try:
+        path.unlink()
+    except OSError:
+        return None
+    return slug
+
+
+def read_pins(tasks_dir: Path) -> list[dict[str, str]]:
+    """이 방에 꽂힌 책갈피 전부를 **최근에 꽂은 순**으로 반환.
+
+    항목: `{"machine", "slug", "ts"}`. 파일이 깨졌거나 slug가 비면 건너뛴다
+    (책갈피 하나가 망가졌다고 브리핑 전체가 멈추면 안 된다).
+
+    닫힌 task를 가리키는 책갈피도 그대로 돌려준다 — 걸러내는 일은 열린 task
+    목록과 맞춰 보는 쪽(`_pinned_first`)이 한다. 그래야 다른 기기가 꽂아둔
+    책갈피를 지우지 않고도 화면에서 조용히 사라진다.
+    """
+    try:
+        paths = sorted(tasks_dir.glob(f"{_PIN_PREFIX}*"))
+    except OSError:
+        return []
+
+    pins: list[dict[str, str]] = []
+    for path in paths:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        slug = lines[0].strip() if lines else ""
+        if not slug:
+            continue
+        pins.append(
+            {
+                "machine": path.name[len(_PIN_PREFIX):],
+                "slug": slug,
+                "ts": lines[1].strip() if len(lines) > 1 else "",
+            }
+        )
+    pins.sort(key=lambda p: (p["ts"], p["machine"]), reverse=True)
+    return pins
+
+
+def _pinned_first(tasks_dir: Path, task_dirs: list[Path]) -> list[Path]:
+    """책갈피가 꽂힌 task를 앞으로 당긴다(여러 개면 최근에 꽂은 것부터).
+
+    파이썬 sorted는 안정 정렬이라, 책갈피가 없는 task들의 상대 순서(최근 활동순)는
+    그대로 유지된다 — 책갈피는 "맨 앞 몇 개"만 정하고 나머지 규칙은 안 건드린다.
+    """
+    pins = read_pins(tasks_dir)
+    if not pins:
+        return task_dirs
+
+    rank: dict[str, int] = {}
+    for i, pin in enumerate(pins):
+        rank.setdefault(pin["slug"], i)
+    return sorted(task_dirs, key=lambda d: rank.get(d.name, len(pins)))
+
+
+def clear_pin_if_points_to(tasks_dir: Path, machine: str, slug: str) -> bool:
+    """이 기기의 책갈피가 slug를 가리키고 있으면 뺀다. 뺐으면 True.
+
+    작업을 닫을 때 부른다 — 끝난 작업이 계속 맨 위에 남으면 책갈피가 곧 방해물이
+    된다. 다른 기기 것은 건드리지 않는다(닫힌 task를 가리키는 책갈피는 열린 목록과
+    맞춰 보는 단계에서 이미 화면에서 사라진다).
+    """
+    try:
+        current = _pin_path(tasks_dir, machine).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    if not current or current[0].strip() != slug:
+        return False
+    clear_pin(tasks_dir, machine)
+    return True
+
+
+def pins_by_slug(tasks_dir: Path) -> dict[str, dict[str, str]]:
+    """slug → 그 task에 꽂힌 책갈피 중 **가장 최근 것**. 화면 표시용.
+
+    두 PC가 같은 task를 꽂으면 항목이 둘이지만 화면에 붙일 표시는 하나면 된다.
+    """
+    result: dict[str, dict[str, str]] = {}
+    for pin in read_pins(tasks_dir):
+        result.setdefault(pin["slug"], pin)
+    return result
+
+
 def _is_closed(task_dir: Path) -> bool:
     """닫힘 판정 권위: context가 있으면 context, 없으면(레거시) log 폴백.
 
@@ -221,6 +358,15 @@ def _is_closed(task_dir: Path) -> bool:
     if list(task_dir.glob("context.*.md")):
         return _all_contexts_done(task_dir)
     return _log_says_closed(task_dir / "log.md")
+
+
+def is_open(task_dir: Path) -> bool:
+    """이 task가 아직 열려 있는가(닫힘 판정은 `_is_closed` 하나가 권위).
+
+    모듈 밖(mcp_server 등)에서 닫힘 여부를 물을 때 쓰는 공개 이름이다 — 판정
+    규칙이 두 벌로 갈리지 않도록 새로 구현하지 않고 그대로 뒤집어 준다.
+    """
+    return not _is_closed(task_dir)
 
 
 def find_active_task(tasks_dir: Path) -> tuple[str, str] | None:
@@ -238,8 +384,14 @@ def find_open_tasks(tasks_dir: Path) -> list[Path]:
     `find_active_task`는 이 목록의 첫 번째만 뽑아 "진행 중 1개"로 단정했는데,
     실측상 열린 task가 6개인데도 1개만 보이는 게 브리핑이 계속 빗나간 원인이었다
     (namu-57 증상 A). 목록을 그대로 넘겨 호출자가 전부 보여주게 한다.
+
+    (namu-70) 책갈피가 꽂혀 있으면 그 task가 앞에 온다 — 최근 활동순 하나로만
+    세우면 만든 순서가 곧 중요도가 돼, 26초 늦게 만든 사소한 작업이 급한 작업
+    앞에 서는 일이 실제로 있었다. 여기서 흡수하므로 statusLine·브리핑·웹이
+    각자 순서 규칙을 따로 갖지 않는다.
     """
-    return [d for d in _sorted_task_dirs(tasks_dir) if not _is_closed(d)]
+    open_dirs = [d for d in _sorted_task_dirs(tasks_dir) if not _is_closed(d)]
+    return _pinned_first(tasks_dir, open_dirs)
 
 
 def next_why(task_dir: Path) -> str | None:
@@ -367,8 +519,10 @@ def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str
     for project in projects:
         tasks_dir = tasks_root_for(project)
         project_name = tasks_dir.name
+        pins = pins_by_slug(tasks_dir)
         for task_dir in find_open_tasks(tasks_dir):
             ts = _latest_log_ts(task_dir / "log.md")
+            pin = pins.get(task_dir.name)
             rows.append(
                 {
                     "project": project_name,
@@ -378,10 +532,19 @@ def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str
                     "next": next_note(task_dir),
                     # ▸ 항목에만 쓰이는 한 줄(namu-65) — 없으면 None.
                     "why": next_why(task_dir),
+                    # 책갈피(namu-70) — 안 꽂혀 있으면 둘 다 None. dict를 통째로
+                    # 넣지 않고 두 칸으로 펴는 이유는 이 반환값이 웹·대시보드까지
+                    # 그대로 가는 평평한 표이기 때문이다(중첩되면 소비자마다 파싱).
+                    "pin_machine": pin["machine"] if pin else None,
+                    "pin_ts": pin["ts"] if pin else None,
                 }
             )
 
-    rows.sort(key=lambda r: r["last_ts"] or "", reverse=True)
+    # 책갈피가 꽂힌 것부터(최근에 꽂은 순), 나머지는 지금까지대로 최근 활동순.
+    rows.sort(
+        key=lambda r: (bool(r["pin_ts"] is not None), r["pin_ts"] or "", r["last_ts"] or ""),
+        reverse=True,
+    )
     return rows
 
 

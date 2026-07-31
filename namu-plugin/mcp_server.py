@@ -282,9 +282,23 @@ def _record_task_entry(
         line += f" (via {via})"
     block = _log_block(line, reason, body)
 
-    task_dir = task_resolve.tasks_root_for(resolved_project) / slug
+    tasks_root = task_resolve.tasks_root_for(resolved_project)
+    task_dir = tasks_root / slug
     _append_task_log_line(task_dir, block)
+    _unpin_if_closing(tasks_root, slug, tag)
     return block + _unmet_done_when_warning(task_dir, tag)
+
+
+def _unpin_if_closing(tasks_root: Path, slug: str, tag: str) -> None:
+    """닫는 줄이면 이 기기의 책갈피도 같이 뺀다(namu-70).
+
+    끝난 작업이 계속 맨 위에 남으면 책갈피가 곧 방해물이 된다. 다른 기기가 꽂은
+    책갈피는 파일을 건드리지 않고도 화면에서 사라지므로(열린 task 목록과 맞춰
+    보기 때문) 여기서는 제 것만 정리하면 된다.
+    """
+    if tag not in _CLOSING_TAGS:
+        return
+    task_resolve.clear_pin_if_points_to(tasks_root, cfg.NAMU_MACHINE, slug)
 
 
 def _unmet_done_when_warning(task_dir: Path, tag: str) -> str:
@@ -795,6 +809,66 @@ def namu_memo_remove(id: str, ctx: Context | None = None) -> str:
     removed_summary, _reason, _body = memo.layers(removed)
     memory_sync.sync_push(f"memo remove: {removed_summary[:40]} ({cfg.NAMU_MACHINE})")
     return f"메모를 뗐습니다: {removed_summary} (id={removed.get('id')})"
+
+
+def _pin_target(project: str | None, task: str | None, ctx: Context | None) -> tuple[Path, str]:
+    """책갈피 대상 (tasks_root, slug)로 정규화 — 기록 경로와 같은 해석 규칙을 쓴다."""
+    resolved_project = _resolve_record_project(project, ctx)
+    slug = _resolve_task_slug(resolved_project, task)
+    return (task_resolve.tasks_root_for(resolved_project), slug)
+
+
+@mcp.tool()
+def namu_task_pin(task: str, project: str | None = None, ctx: Context | None = None) -> str:
+    """Put a bookmark on the task to resume next ("start here next time", namu-70).
+
+    The bookmark ONLY changes display order — it writes nothing to log.md. Two
+    reasons that matters: log.md is append-only (it cannot express a bookmark
+    being moved or removed), and a log line would bump the task's last activity
+    time, so the task would jump to the top for a second, indistinguishable
+    reason. Order is a display concern, not a record concern.
+
+    One bookmark per machine, stored under this project's tasks folder as
+    `.pin.<machine>`. Machines never write each other's file, so two PCs can
+    each keep their own bookmark with zero merge conflicts; all of them show up
+    in the briefing, most recently pinned first, labelled with the machine.
+
+    A bookmark on a task that gets closed ([완료]/[중단]) simply stops showing —
+    closing also removes this machine's bookmark automatically.
+
+    Args:
+      task: task slug, or a unique prefix of it (same rule as recording).
+      project: project folder name. Required from the web (no cwd there).
+    """
+    _resolve_via(ctx)
+    tasks_root, slug = _pin_target(project, task, ctx)
+    if not task_resolve.is_open(tasks_root / slug):
+        raise ValueError(
+            f"task {slug!r}는 이미 닫힌 작업입니다 — 책갈피는 열린 작업에만 꽂습니다"
+        )
+    ts = cfg.now().strftime("%Y-%m-%d %H:%M:%S")
+    task_resolve.set_pin(tasks_root, cfg.NAMU_MACHINE, slug, ts)
+    memory_sync.sync_push(f"pin: {slug} ({cfg.NAMU_MACHINE})")
+    return f"책갈피를 꽂았습니다: {slug} ({cfg.NAMU_MACHINE}, {ts}) — 다음 세션 브리핑 맨 위에 📌로 뜹니다"
+
+
+@mcp.tool()
+def namu_task_unpin(project: str | None = None, ctx: Context | None = None) -> str:
+    """Take this machine's bookmark off (namu-70). Other machines' bookmarks are
+    left alone — that file belongs to that machine, and clearing it here would
+    only have it come back on the next sync.
+
+    Args:
+      project: project folder name. Required from the web (no cwd there).
+    """
+    _resolve_via(ctx)
+    resolved_project = _resolve_record_project(project, ctx)
+    tasks_root = task_resolve.tasks_root_for(resolved_project)
+    removed = task_resolve.clear_pin(tasks_root, cfg.NAMU_MACHINE)
+    if removed is None:
+        return f"이 기기({cfg.NAMU_MACHINE})에 꽂힌 책갈피가 없습니다"
+    memory_sync.sync_push(f"unpin: {removed} ({cfg.NAMU_MACHINE})")
+    return f"책갈피를 뺐습니다: {removed} ({cfg.NAMU_MACHINE})"
 
 
 @mcp.tool()
