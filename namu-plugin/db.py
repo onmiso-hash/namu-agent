@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from contextlib import closing
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
 import yaml
 from ulid import ULID
@@ -105,7 +105,9 @@ def record(
     p = paths or cfg.data_paths_for()
 
     entry_id = str(ULID())
-    timestamp = datetime.now(timezone.utc).isoformat()
+    # 기준 시간대(cfg.now)로 찍는다 — namu-71. 여기만 UTC로 남아 있어서 같은 서버에
+    # 5분 간격으로 저장한 쪽지(+09:00)와 교훈(+00:00)의 시각이 9시간 어긋났다.
+    timestamp = cfg.now().isoformat()
     machine = cfg.NAMU_MACHINE
 
     doc = {
@@ -274,12 +276,12 @@ def _axis_conds(
     prefix는 컬럼 앞에 붙는 테이블 별칭(FTS 조인 시 `"l."`, 아니면 `""`).
     machine/via/task_type/outcome_filter는 정확 일치, task는 LIKE 부분일치
     (learnings의 task 컬럼은 "namu-57 1단계 — …" 같은 자유 문장이라 정확 일치로
-    걸면 못 찾는다). since/until은 timestamp(ISO8601 UTC 문자열) 사전순 비교.
+    걸면 못 찾는다). since/until은 timestamp(ISO8601 문자열) 사전순 비교.
 
-    ⚠️ timestamp는 UTC 저장값이다(db.record). tasks 그릇(task_resolve.journal)의
-    log.md 시각은 PC 현지시각이라 그릇마다 기준이 다르다 — KST 등 UTC+9면 날짜
-    경계가 최대 9시간 어긋날 수 있다. 저장 형식을 통일하지 않은 채 필터만 얹은
-    상태이므로 since/until 값을 그릇 간에 그대로 재사용하면 안 된다.
+    ⚠️ timestamp는 기준 시간대(cfg.now) 저장값이다(db.record, namu-71) — 이제
+    tasks/memo 그릇과 같은 벽시계라 since/until 값을 그릇 간에 재사용해도 된다.
+    다만 namu-71 이전에 쌓인 항목은 UTC(+00:00)로 적혀 있어 사전순 비교가 그
+    구간에서만 최대 9시간 어긋난다(과거 항목이라 최신순 정렬은 뒤집히지 않는다).
     """
     conds: list[str] = []
     params: list = []
@@ -425,12 +427,12 @@ def search(
       - machine/via/task_type/outcome_filter: 정확히 일치.
       - task: task 컬럼 부분일치(LIKE `%값%`) — learnings의 task 컬럼은
         "namu-57 1단계 — …" 같은 자유 문장이라 `task='namu-57'`로 걸려야 한다.
-      - since/until: timestamp(ISO8601 UTC 문자열) 사전순 비교. since는
+      - since/until: timestamp(ISO8601 문자열) 사전순 비교. since는
         `timestamp >= ?`. until은 날짜만 주면(길이<=10) 그날을 포함해야 하므로
         다음날 날짜로 `timestamp < ?`, 시각까지 주면 `timestamp <= ?`.
-        ⚠️ 이 timestamp는 UTC 저장값이다(db.record). tasks 그릇(log.md)의 시각은
-        PC 현지시각이라 그릇마다 기준이 다르다 — KST면 9시간차로 날짜 경계가
-        어긋날 수 있다(저장 형식은 이번엔 고치지 않고 여기 명시만 한다).
+        ⚠️ 이 timestamp는 기준 시간대(cfg.now) 저장값이다(db.record, namu-71) —
+        tasks(log.md)·memo와 같은 벽시계다. namu-71 이전 항목만 UTC로 남아 있어
+        그 구간의 날짜 경계가 9시간 어긋난다.
 
     summary(outcome 집계)는 기존 의미를 유지한다 — outcome_filter와 limit은
     무시하고 query + 나머지 필터(machine/via/task/task_type/since/until)에 걸린

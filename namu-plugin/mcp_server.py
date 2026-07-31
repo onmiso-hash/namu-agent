@@ -390,6 +390,20 @@ def _create_task_entry(
     # 못 한다). 저장 전에 접두를 걷어 원본부터 깨끗하게 만든다 — 읽는 쪽
     # (task_resolve.strip_slug_prefix)의 흡수는 이미 적힌 것들을 위한 것이다.
     display_title = task_resolve.strip_slug_prefix((title or slug).strip() or slug, slug)
+
+    # 제목 칸에 문제 설명을 통째로 넣는 호출이 잦다(namu-70·71 실물 — 각각 60·70자).
+    # 제목은 statusLine 한 줄과 브리핑 목록에 그대로 실리는 이름이고, 설명이 갈 곳은
+    # 바로 아래 `## 목적`이다. 읽는 쪽에서 자르는 안전망은 이미 있지만(one_line),
+    # 자른 제목은 원문을 되찾을 수 없으므로 **들어올 때** 막는다. 거절인 이유는
+    # namu-66(닫는 말)과 같다 — 조용히 잘라 저장하면 호출자가 잘못 넣은 줄 모른다.
+    if len(display_title) > task_resolve.TITLE_LINE_LIMIT:
+        raise ValueError(
+            f"제목이 너무 깁니다({len(display_title)}자 > "
+            f"{task_resolve.TITLE_LINE_LIMIT}자) — 제목은 statusLine 한 줄에 실리는 "
+            "'이름'입니다. 짧은 이름만 남기고 설명은 purpose(목적) 칸으로 옮기세요. "
+            f"받은 제목: {display_title!r}"
+        )
+
     machine = cfg.NAMU_MACHINE
     today = cfg.now().strftime("%Y-%m-%d")
 

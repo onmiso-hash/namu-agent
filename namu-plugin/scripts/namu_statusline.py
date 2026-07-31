@@ -5,7 +5,8 @@
 개발 기기의 글로벌 `~/.claude/settings.json`은 repo 루트 사본의 절대경로를 참조 중이라
 그쪽을 옮기면 깨지므로, 설치형 사용자를 위해 이 경로(`namu-plugin/scripts/`)에
 내용을 복사해 동봉했다. 두 파일은 import 경로 계산(아래 sys.path 라인)만 다르고
-나머지 로직은 동일해야 한다 — 한쪽을 고치면 반드시 다른 쪽도 맞출 것.
+나머지 로직은 동일해야 한다 — 한쪽을 고치면 반드시 다른 쪽도 맞출 것
+(test_statusline_render.py가 이 약속을 시험으로 잡는다, namu-72).
 
 관측성: 매 렌더를 ~/.namu/db/statusline.log에 남긴다(namu-35: 데이터 루트 고정, 환경변수
 NAMU_HOME 폐지) — statusLine 미동기화 증상이 재발하면 이 로그와 화면을 대조해
@@ -23,7 +24,7 @@ from pathlib import Path
 # (repo 루트 scripts/ 버전은 parent.parent가 repo 루트라 "namu-plugin"을 덧붙였다 — 계산 기준이 다름)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from task_resolve import resolve_active_task, tasks_root_for
+from task_resolve import TITLE_LINE_LIMIT, one_line, resolve_active_task, tasks_root_for
 
 # cp949 파이프 안전망 — 호출 측이 -X utf8 없이 부르면 📌(비BMP 이모지) print가
 # UnicodeEncodeError로 죽고, 한글만 있는 '진행 task 없음'은 살아남아
@@ -186,9 +187,14 @@ def main() -> None:
         t = resolve_active_task(ws)
         if t:
             slug, title = t[0], t[1]
-            # task.md 제목 관례가 "<slug> — <설명>"이라 제목이 이미 slug로 시작하면
-            # 중복 표시를 피한다(namu-37).
-            task_part = f"📌 {title}" if title.startswith(slug) else f"📌 {slug} · {title}"
+            # title은 이미 slug 접두가 걷힌 상태다(task_resolve.task_title, namu-64)
+            # — 여기서 다시 판별하지 않는다. 예전에는 "제목이 slug로 시작하면 제목만
+            # 찍는다"로 중복을 피했는데, 실물처럼 slug가 **두 번** 박힌 제목
+            # (`<slug> — <slug> — 설명`)은 그 판별을 통과해 그대로 두 번 찍혔다.
+            # 길이는 브리핑과 **같은 장치**로 자른다(namu-72) — statusLine은 한 줄이라
+            # 긴 제목이 들어오면 모델·폴더·컨텍스트 표시까지 밀어낸다.
+            title = one_line(title, TITLE_LINE_LIMIT)
+            task_part = f"📌 {slug}" if title == slug else f"📌 {slug} — {title}"
         else:
             task_part = "진행 task 없음"
     except Exception:

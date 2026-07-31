@@ -66,6 +66,26 @@ def strip_slug_prefix(title: str, slug: str) -> str:
     return title or slug
 
 
+# 한 줄 화면(브리핑 목록·statusLine)에 제목을 실을 때의 공통 상한.
+# 40자인 이유는 브리핑이 namu-64부터 써 온 값이며, statusLine은 모델·폴더·컨텍스트
+# 표시가 같은 줄을 나눠 쓰므로 그보다 넉넉할 이유가 없기 때문이다.
+TITLE_LINE_LIMIT = 40
+
+
+def one_line(text: str, limit: int = 70) -> str:
+    """여러 줄을 한 줄로 접고 limit자에서 자른다(잘리면 … 표시).
+
+    (namu-72) 원래 session_context.py에만 있어 **브리핑만** 제목을 잘랐다.
+    statusLine은 같은 데이터를 다른 경로로 읽으면서 이 장치를 안 거쳐, 긴 제목이
+    화면 한 줄을 통째로 뒤덮었다(실물: namu-70·71). 자르는 규칙이 화면마다 따로
+    있으면 새 화면이 생길 때마다 같은 사고가 반복되므로, 제목을 만드는 쪽
+    (task_resolve, stdlib 전용이라 statusLine도 import 가능)으로 옮겨 한 벌만 둔다
+    — strip_slug_prefix를 여기로 옮긴 것과 같은 판단이다.
+    """
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
 def task_title(task_dir: Path) -> str:
     """task.md 제목에서 폴더명 접두를 걷어낸 '보여주기용' 제목.
 
@@ -375,7 +395,12 @@ def find_latest_closed_task(tasks_dir: Path) -> Path | None:
 
 
 def tasks_root_for(project_dir: str | Path) -> Path:
-    """tasks 저장 루트 = 개인 풀 `~/.namu/tasks/<basename(project_dir)>/` (namu-34).
+    """tasks 저장 루트 = 개인 풀 `~/.namu/tasks/<프로젝트 방 이름>/` (namu-34).
+
+    방 이름을 정하는 규칙은 `project_key_for` 하나뿐이다 — namu-73에서
+    `basename(현재 폴더)` → `basename(프로젝트 뿌리)`로 개정됐다(하위 폴더로
+    들어가면 작업을 잃어버리던 결함). 읽는 쪽·쓰는 쪽이 모두 이 함수를 거치므로
+    화면과 기록이 갈릴 일이 없다.
 
     규칙 한 줄, 특례 0 — 메모리 데이터 루트(cfg.NAMU_DATA_ROOT, 교훈·db 전용)와는
     무관하며 개발 repo(이 repo)도 예외를 두지 않는다. tasks는 여전히 "프로젝트 귀속"
@@ -386,8 +411,57 @@ def tasks_root_for(project_dir: str | Path) -> Path:
     Path.home()은 HOME 환경변수를 존중하므로(POSIX) 테스트는 monkeypatch로
     가짜 HOME을 주입해 실제 ~/.namu를 건드리지 않고 격리할 수 있다.
     """
-    key = os.path.basename(str(project_dir).rstrip("/\\"))
-    return Path.home() / ".namu" / "tasks" / key
+    return Path.home() / ".namu" / "tasks" / project_key_for(project_dir)
+
+
+# 프로젝트 뿌리 표시. `.git`은 폴더(보통)일 수도 파일(하위 모듈·worktree)일 수도 있어
+# is_dir()로 좁히지 않는다 — 하위 모듈에서 상위로 빨려 올라가면 별도 프로젝트의
+# 작업이 남의 방에 섞인다(namu-cloud-routing이 실제로 이 repo의 하위 모듈이다).
+_PROJECT_ROOT_MARKERS = (".git",)
+
+
+def project_key_for(project_dir: str | Path) -> str:
+    """프로젝트 방 이름 = `basename(프로젝트 뿌리)` (namu-73).
+
+    namu-34는 이 값을 `basename(현재 폴더)`로 정했다. 그 규칙은 작업 도중 폴더를
+    한 칸만 옮겨도 다른 프로젝트로 오인한다 — 실물로 `~/.namu/tasks/`에 작업 없이
+    이름표만 있는 빈 방(namu-plugin·scratchpad·namu)이 생겼고, statusLine은 그동안
+    '진행 task 없음'을 냈다. 기록도 같은 함수를 쓰므로 하위 폴더에서 남긴 기록이
+    엉뚱한 방에 쌓일 수 있었다.
+
+    그래서 위로 거슬러 올라가며 프로젝트 뿌리 표시(`.git`)를 찾고 그 폴더 이름을
+    쓴다. 찾지 못하면 namu-34의 규칙 그대로 현재 폴더 이름으로 폴백한다.
+
+    **홈 폴더에서 멈춘다** — dotfiles를 git으로 관리하는 사람이 드물지 않은데, 홈을
+    뿌리로 인정하면 홈 아래 모든 프로젝트가 한 방으로 합쳐진다(작업 기록이 서로
+    섞이는 쪽이 방이 갈리는 것보다 훨씬 나쁘다).
+
+    경로가 실재하지 않으면 탐색하지 않고 곧장 basename을 쓴다 — 이 함수는 폴더
+    경로뿐 아니라 이미 확정된 방 이름(`project='namu-agent'`처럼 웹에서 넘어오는
+    값)으로도 불리기 때문이다.
+    """
+    raw = str(project_dir).rstrip("/\\")
+    fallback = os.path.basename(raw)
+
+    try:
+        start = Path(raw).resolve()
+        if not start.is_dir():
+            return fallback
+        home = Path.home().resolve()
+    except OSError:
+        return fallback
+
+    current = start
+    while True:
+        if current == home:
+            break
+        if any((current / marker).exists() for marker in _PROJECT_ROOT_MARKERS):
+            return current.name
+        if current.parent == current:  # 파일시스템 최상단
+            break
+        current = current.parent
+
+    return fallback
 
 
 def _tasks_pool_root() -> Path:

@@ -22,11 +22,13 @@ from task_resolve import (
     journal,
     next_note,
     next_why,
+    one_line as _one_line,
     open_tasks_briefing,
     record_project_marker,
     strip_slug_prefix as _strip_slug_prefix,
     task_title as _title_without_slug,
 )
+from task_resolve import TITLE_LINE_LIMIT as _TITLE_LIMIT
 
 
 def _same_resolved_path(a: str | Path, b: str | Path) -> bool:
@@ -190,12 +192,6 @@ def _short_date(ts: str) -> str:
 # `_title_without_slug`)으로 계속 부른다(import 별칭).
 
 
-def _one_line(text: str, limit: int = 70) -> str:
-    """여러 줄을 한 줄로 접고 limit자에서 자른다(잘리면 … 표시)."""
-    flat = " ".join(text.split())
-    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
-
-
 # 문장 경계: 마침표/물음표/느낌표 + 공백. `_split_sentences`가 이 뒤에서 숫자
 # 사이(버전 문자열 등)인지 한 번 더 확인해 걸러낸다(정규식만으로는 "0.1.26"처럼
 # 공백이 아예 없는 경우까지만 자동으로 안전하고, "9. 0.1.40으로" 같이 숫자 뒤
@@ -270,7 +266,7 @@ def _build_other_room_lines(other_rows: list[dict[str, str | None]]) -> list[str
     for row in other_rows[:_OTHER_ROOM_LINES]:
         date = _short_date(row["last_ts"]) if row["last_ts"] else "?"
         slug = row["slug"] or ""
-        title = _one_line(_strip_slug_prefix(row["title"] or slug, slug), 40)
+        title = _one_line(_strip_slug_prefix(row["title"] or slug, slug), _TITLE_LIMIT)
         lines.append(f"- `{row['project']}` **{slug}** — {title}  `{date}`")
     if len(other_rows) > _OTHER_ROOM_LINES:
         lines.append(f"- … ({len(other_rows) - _OTHER_ROOM_LINES}개 더)")
@@ -306,7 +302,10 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
             continue
         ts = _latest_log_ts(task_dir / "log.md")
         date = _short_date(f"{ts[0]} {ts[1]}") if ts else "?"
-        title = f"**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}  `{date}`"
+        title = (
+            f"**{task_dir.name}** — "
+            f"{_one_line(_title_without_slug(task_dir), _TITLE_LIMIT)}  `{date}`"
+        )
         if i == 0:
             next_block = _build_next_block(note) if note else "\n  - 다음: (기록 없음)"
             # ▸는 이어받는 지점이라 '왜'까지 한 줄 더 붙인다(namu-65, 사용자 결정).

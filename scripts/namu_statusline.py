@@ -21,7 +21,7 @@ from pathlib import Path
 # namu-plugin을 path에 추가 — task_resolve는 stdlib only이므로 plain python3로 import 가능
 sys.path.insert(0, str(Path(__file__).parent.parent / "namu-plugin"))
 
-from task_resolve import resolve_active_task, tasks_root_for
+from task_resolve import TITLE_LINE_LIMIT, one_line, resolve_active_task, tasks_root_for
 
 # cp949 파이프 안전망 — 호출 측이 -X utf8 없이 부르면 📌(비BMP 이모지) print가
 # UnicodeEncodeError로 죽고, 한글만 있는 '진행 task 없음'은 살아남아
@@ -188,6 +188,9 @@ def main() -> None:
             # — 여기서 다시 판별하지 않는다. 예전에는 "제목이 slug로 시작하면 제목만
             # 찍는다"로 중복을 피했는데, 실물처럼 slug가 **두 번** 박힌 제목
             # (`<slug> — <slug> — 설명`)은 그 판별을 통과해 그대로 두 번 찍혔다.
+            # 길이는 브리핑과 **같은 장치**로 자른다(namu-72) — statusLine은 한 줄이라
+            # 긴 제목이 들어오면 모델·폴더·컨텍스트 표시까지 밀어낸다.
+            title = one_line(title, TITLE_LINE_LIMIT)
             task_part = f"📌 {slug}" if title == slug else f"📌 {slug} — {title}"
         else:
             task_part = "진행 task 없음"

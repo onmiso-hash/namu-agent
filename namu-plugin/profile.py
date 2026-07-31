@@ -4,8 +4,6 @@ learnings.yaml(교훈/대화기록)과 달리 profile.yaml은 사실·선호(fac
 작은 데이터라 SQLite 캐시 없이 통째 로딩한다. append-only + supersedes 포인터로
 정정을 표현한다(수정·삭제 금지 — db.py의 learnings와 같은 원칙).
 """
-from datetime import datetime, timezone
-
 import yaml
 from ulid import ULID
 
@@ -55,7 +53,8 @@ def record_fact(
     p = paths or cfg.data_paths_for()
 
     entry_id = str(ULID())
-    timestamp = datetime.now(timezone.utc).isoformat()
+    # 기준 시간대(cfg.now)로 찍는다 — namu-71. db.record와 같은 이유로 여기만 UTC였다.
+    timestamp = cfg.now().isoformat()
     machine = cfg.NAMU_MACHINE
 
     doc = {

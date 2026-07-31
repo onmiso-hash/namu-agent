@@ -462,6 +462,104 @@ def test_leading_namu_version_badge(tmp_path):
     assert result.stdout.startswith(f"[Namu {expected_ver}] [TEST] myproj ")
 
 
+# ---------------------------------------------------------------------------
+# 긴 제목 + 사본 드리프트 (namu-72)
+#
+# 실물 사고: 사용자 화면에 `📌 <slug> · <70자 설명>`이 통째로 찍혔다. 원인이 둘이다 —
+# ①statusLine이 브리핑의 '40자에서 자르기'를 안 거쳤다. ②이 파일이 repo 루트 사본만
+# 돌려봐서, 사용자가 실제로 실행하는 동봉 사본(namu-plugin/scripts/)의 렌더가 namu-64
+# 수정 전에 멈춰 있는 것을 아무도 못 봤다. ②를 잡지 않으면 ①의 수정도 사용자에게
+# 도달했는지 알 수 없으므로, 아래 두 시험은 짝이다.
+# ---------------------------------------------------------------------------
+
+_BUNDLED_SCRIPT = Path(__file__).parent / "scripts" / "namu_statusline.py"
+_SHARED_FROM = "from task_resolve import"
+
+
+def _logic_part(path: Path) -> str:
+    """두 사본이 같아야 하는 구간 — task_resolve import 줄부터 끝까지.
+
+    그 위(모듈 설명·sys.path 계산)는 '경로 계산만 다르다'고 문서가 약속한 구간이라
+    비교에서 뺀다. 파일 전체를 비교하면 이 정당한 차이 때문에 시험이 늘 빨개져
+    아무도 안 보게 된다.
+    """
+    text = path.read_text(encoding="utf-8")
+    assert _SHARED_FROM in text, f"{path}에 공유 구간 시작 표시가 없다"
+    return text.split(_SHARED_FROM, 1)[1]
+
+
+def test_two_statusline_copies_do_not_drift():
+    """repo 루트 사본과 플러그인 동봉 사본의 로직부가 한 글자도 다르지 않아야 한다.
+
+    실제로 어긋나 있었다 — namu-64가 루트만 고쳐, 사용자가 실행하는 동봉 사본은
+    옛 렌더(`📌 <slug> · <title>`)를 계속 내보내고 있었다.
+    """
+    assert _logic_part(_SCRIPT) == _logic_part(_BUNDLED_SCRIPT), (
+        "statusline 사본 2개의 로직부가 어긋났다 — 한쪽만 고쳤을 때 사용자 화면에는 "
+        "반영되지 않는다. 루트 사본을 동봉 사본으로 복사하고 상단 설명·sys.path 두 "
+        "군데만 되돌려라."
+    )
+
+
+def _render_with_title(script: Path, tmp_path: Path, title: str) -> str:
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    task_dir = fake_home / ".namu" / "tasks" / "project" / "long-title-task"
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.md").write_text(
+        f"# long-title-task — {title}\n\n## 목적\n테스트\n\n## 완료조건\n- [ ] 완료\n",
+        encoding="utf-8",
+    )
+    (task_dir / "log.md").write_text(
+        "# log — long-title-task\n[시작] 2026-08-01 10:00:00 hp · 시작\n", encoding="utf-8"
+    )
+
+    env = os.environ.copy()
+    env.pop("NAMU_HOME", None)
+    env["HOME"] = str(fake_home)
+    env["USERPROFILE"] = str(fake_home)
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        input=json.dumps(
+            {"model": {"display_name": "TEST"}, "workspace": {"current_dir": str(project_dir)}}
+        ),
+        capture_output=True,
+        encoding="utf-8",
+        env=env,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_long_title_is_truncated_in_both_copies(tmp_path):
+    """긴 제목은 두 사본 모두에서 40자로 잘려 나온다(잘린 표시 … 포함).
+
+    대조군: 고치기 전 코드는 제목을 그대로 실으므로 이 단언에서 실패한다.
+    """
+    from task_resolve import TITLE_LINE_LIMIT
+
+    long_title = (
+        "그릇마다 시각 표기 시간대가 다르다 — 쪽지는 한국시(+09:00), "
+        "교훈은 세계시(+00:00)로 저장돼 9시간 어긋난다"
+    )
+    for i, script in enumerate([_SCRIPT, _BUNDLED_SCRIPT]):
+        out = _render_with_title(script, tmp_path / f"copy{i}", long_title)
+        shown = out.split("📌 ", 1)[1].split(" | ", 1)[0]
+        title_part = shown.split(" — ", 1)[1]
+        assert title_part.endswith("…"), f"{script.name}: 잘린 표시가 없다 — {title_part!r}"
+        assert len(title_part) <= TITLE_LINE_LIMIT, f"{script.name}: {len(title_part)}자"
+        assert long_title not in out, f"{script.name}: 원문이 그대로 실렸다"
+
+
+def test_short_title_is_left_alone(tmp_path):
+    """짧은 제목은 …도 안 붙고 그대로 나온다 — 자르는 장치가 늘 자르지는 않는지 확인
+    (항상 자르는 구현도 위 시험은 통과하므로 이 대조가 있어야 보증이 된다)."""
+    out = _render_with_title(_SCRIPT, tmp_path, "작업 닫기 규율")
+    assert "📌 long-title-task — 작업 닫기 규율 |" in out
+    assert "…" not in out
+
+
 if __name__ == "__main__":
     import pytest
 

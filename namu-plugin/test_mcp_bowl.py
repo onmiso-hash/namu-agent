@@ -623,6 +623,50 @@ def test_namu_record_create_strips_slug_prefix_from_title(fake_home):
     assert head.count("namu-99") == 1
 
 
+def test_namu_record_create_rejects_overlong_title(fake_home):
+    """제목 칸에 문제 설명을 통째로 넣으면 거절한다(namu-72).
+
+    실물: namu-70·71이 60·70자짜리 문장을 제목으로 받아 statusLine 한 줄을 뒤덮었다.
+    읽는 쪽에 자르는 안전망을 뒀지만, 잘린 제목은 원문을 되찾을 수 없으므로 들어올
+    때 막는다 — 조용히 잘라 저장하면 호출자가 잘못 넣은 줄 모른다(namu-66과 같은
+    판단).
+    """
+    long_title = (
+        "그릇마다 시각 표기 시간대가 다르다 — 쪽지는 한국시(+09:00), "
+        "교훈은 세계시(+00:00)로 저장돼 9시간 어긋난다"
+    )
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
+        f" create=True, body='생략', title={long_title!r}, purpose='설명은 여기로')\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    assert "제목이 너무 깁니다" in result.stdout
+    # 거절했으면 반쯤 만들어진 task가 남아서도 안 된다.
+    assert not (fake_home / ".namu" / "tasks" / "proj-new" / "namu-99").exists()
+
+
+def test_namu_record_create_accepts_normal_title(fake_home):
+    """상한 이하의 평범한 제목은 그대로 통과한다 — 거절 규칙이 모든 생성을 막고
+    있는 것은 아닌지 확인하는 대조군."""
+    result = _run_probe(
+        fake_home,
+        "mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
+        " create=True, body='생략', title='작업 닫기 규율', purpose='짧은 제목은 통과')\n"
+        "print('OK')\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    head = (
+        fake_home / ".namu" / "tasks" / "proj-new" / "namu-99" / "task.md"
+    ).read_text(encoding="utf-8").splitlines()[0]
+    assert head == "# namu-99 — 작업 닫기 규율"
+
+
 def test_namu_record_create_without_purpose_raises(fake_home):
     result = _run_probe(
         fake_home,

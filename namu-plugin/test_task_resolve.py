@@ -156,6 +156,70 @@ def test_config_tasks_dir_for_matches_task_resolve(fake_home, tmp_path, monkeypa
 
 
 # ---------------------------------------------------------------------------
+# 프로젝트 뿌리 찾기(namu-73) — 하위 폴더로 들어가도 같은 방을 가리켜야 한다
+#
+# 실물 사고: 작업 도중 폴더가 한 칸 내려가자 statusLine이 '진행 task 없음'을 냈고,
+# ~/.namu/tasks/에 작업 없이 이름표만 있는 빈 방 3개가 생겼다. 기록도 같은 함수를
+# 쓰므로 하위 폴더에서 남긴 기록이 엉뚱한 방에 쌓일 수 있었다.
+# ---------------------------------------------------------------------------
+
+
+def _make_repo(root: Path, *, git_is_file: bool = False) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    if git_is_file:
+        (root / ".git").write_text("gitdir: ../.git/modules/sub\n", encoding="utf-8")
+    else:
+        (root / ".git").mkdir()
+    return root
+
+
+def test_subdirectory_resolves_to_project_root(fake_home, tmp_path):
+    """하위 폴더에서 불러도 프로젝트 뿌리의 방을 가리킨다(이 결함의 본체)."""
+    repo = _make_repo(tmp_path / "my-project")
+    deep = repo / "plugin" / "scripts"
+    deep.mkdir(parents=True)
+
+    assert tasks_root_for(str(deep)) == fake_home / ".namu" / "tasks" / "my-project"
+    assert tasks_root_for(str(repo)) == tasks_root_for(str(deep))
+
+
+def test_nested_repo_keeps_its_own_room(fake_home, tmp_path):
+    """하위 모듈(.git이 파일)은 자기 방을 쓴다 — 상위로 빨려 올라가면 별도
+    프로젝트의 작업이 남의 방에 섞인다(namu-cloud-routing이 실제 하위 모듈이다)."""
+    outer = _make_repo(tmp_path / "outer-project")
+    inner = _make_repo(outer / "vendor" / "inner-project", git_is_file=True)
+
+    assert tasks_root_for(str(inner)) == fake_home / ".namu" / "tasks" / "inner-project"
+    assert tasks_root_for(str(inner / "src")) != tasks_root_for(str(outer))
+
+
+def test_no_marker_falls_back_to_folder_name(fake_home, tmp_path):
+    """뿌리 표시가 없으면 namu-34의 옛 규칙(현재 폴더 이름) 그대로 — 저장소가
+    아닌 폴더에서 쓰던 사람의 방 이름이 바뀌면 기존 기록이 안 보이게 된다."""
+    plain = tmp_path / "plain-folder"
+    plain.mkdir()
+
+    assert tasks_root_for(str(plain)) == fake_home / ".namu" / "tasks" / "plain-folder"
+
+
+def test_home_repo_does_not_swallow_every_project(fake_home, tmp_path, monkeypatch):
+    """홈 폴더 자체가 저장소여도(dotfiles 관리) 모든 프로젝트가 한 방으로 합쳐지지
+    않는다 — 기록이 서로 섞이는 쪽이 방이 갈리는 것보다 훨씬 나쁘다."""
+    home = fake_home
+    (home / ".git").mkdir(parents=True, exist_ok=True)
+    plain = home / "work" / "no-repo-project"
+    plain.mkdir(parents=True)
+
+    assert tasks_root_for(str(plain)) == home / ".namu" / "tasks" / "no-repo-project"
+
+
+def test_bare_project_name_is_passed_through(fake_home):
+    """폴더 경로가 아니라 이미 확정된 방 이름(웹에서 넘어오는 project='namu-agent')
+    으로 불려도 탐색하지 않고 그대로 쓴다."""
+    assert tasks_root_for("namu-agent") == fake_home / ".namu" / "tasks" / "namu-agent"
+
+
+# ---------------------------------------------------------------------------
 # .project 마커 — 충돌 감지(namu-34 ②)
 # ---------------------------------------------------------------------------
 

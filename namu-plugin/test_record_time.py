@@ -225,3 +225,78 @@ def test_open_tasks_briefing_sorts_by_latest_not_last_line(tmp_path, monkeypatch
     rows = open_tasks_briefing(["p1"])
     assert [r["slug"] for r in rows] == ["t-recent", "t-older"]
     assert rows[0]["last_ts"] == "2026-07-25 17:50:25"
+
+
+# ---------------------------------------------------------------------------
+# ④ yaml 그릇들(learnings/profile/memo)이 같은 시계를 쓰는가 — namu-71
+#
+# 같은 클라우드 서버에서 5분 간격으로 저장한 쪽지(+09:00)와 교훈(+00:00)의 시각이
+# 9시간 어긋난 실물 사고. 원인은 db.record/profile.record_fact 두 곳만 cfg.now()가
+# 아니라 datetime.now(timezone.utc)를 쓰고 있었던 것이다. 고치기 전 코드는 호스트
+# TZ와 무관하게 +00:00을 적으므로 아래 단언에서 반드시 실패한다.
+# ---------------------------------------------------------------------------
+
+
+_YAML_PROBE = """
+import sys
+sys.path.insert(0, {plugin_dir!r})
+import db, memo, profile
+db.record('t-tz', 'success', '이유', task_type='other', verified_by='ai',
+          tags=[], summary='요약', body='상세')
+profile.record_fact('주제', summary='요약', reason='이유', body='상세')
+memo.add('쪽지', reason='이유', body='상세')
+print('OK')
+"""
+
+
+def _record_all_bowls_with_host_tz(home: Path, host_tz: str) -> dict[str, str]:
+    """호스트 TZ를 지정해 세 그릇에 한 건씩 기록하고, 각 yaml의 timestamp를 돌려준다."""
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["TZ"] = host_tz
+    env.pop("NAMU_HOME", None)
+    env.pop("NAMU_TZ", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", _YAML_PROBE.format(plugin_dir=str(_NAMU_PLUGIN_DIR))],
+        cwd=str(_NAMU_PLUGIN_DIR),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+    stamps = {}
+    for bowl, filename in [
+        ("learnings", "learnings.yaml"),
+        ("profile", "profile.yaml"),
+        ("memo", "memo.yaml"),
+    ]:
+        text = (home / ".namu" / "memory" / filename).read_text(encoding="utf-8")
+        line = next(l for l in text.splitlines() if l.strip().startswith("timestamp:"))
+        stamps[bowl] = line.split("timestamp:", 1)[1].strip().strip("'\"")
+    return stamps
+
+
+@pytest.mark.parametrize("host_tz", ["UTC", "America/New_York"])
+def test_yaml_bowls_share_one_clock(tmp_path, host_tz):
+    """세 그릇의 저장 시각이 같은 기준 시간대(서울)로 찍힌다.
+
+    그릇마다 다르면 브리핑·목록이 여러 그릇을 최근순으로 섞을 때 실제보다 오래된
+    것이 위로 온다(namu-71 발단).
+    """
+    home = tmp_path / "fake_home"
+    home.mkdir()
+
+    stamps = _record_all_bowls_with_host_tz(home, host_tz)
+    expected = datetime.now(_SEOUL)
+
+    for bowl, raw in stamps.items():
+        stamped = datetime.fromisoformat(raw)
+        assert stamped.utcoffset() == timedelta(hours=9), f"{bowl}: {raw}"
+        assert abs(stamped - expected) < timedelta(minutes=2), f"{bowl}: {raw}"
+
+    # 문자열을 그대로 사전순 비교하는 코드(db.py의 since/until)가 조용히 어긋나지
+    # 않으려면 표기까지 같아야 한다 — 오프셋이 갈리면 같은 순간도 다르게 정렬된다.
+    assert len({s[-6:] for s in stamps.values()}) == 1, stamps
