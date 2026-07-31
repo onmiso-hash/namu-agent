@@ -25,6 +25,7 @@
 
 - `docs/plan.md` — NAMU 전체 계획·결정 이력·로드맵
 - `docs/mcp_memory_design.md` — MCP 메모리 서버 상세 설계 (스키마, SQLite 테이블, 도구 명세)
+- `docs/memory_schema_v2.md` — **기억 구조 v2 (namu-65, 진행 중)**. 네 그릇 공통 3층(`summary`/`reason`/`body`), 파라미터 19개→13개 통일, 데이터 이관 계획. 7장에 "착수 전 확인된 사실(다시 찾지 말 것)" 표가 있으니 구현 전 반드시 읽을 것
 
 구현 작업 시 위 문서를 먼저 참조할 것.
 

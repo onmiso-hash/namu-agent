@@ -20,7 +20,10 @@ from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
 from db import search_bowl as _search_bowl
 
-mcp = FastMCP("namu-memory")
+# 소개문(instructions)은 손으로 쓰지 않는다 — 도구 설명과 같은 선언(config.FIELDS)에서
+# 만들어야 둘이 갈라지지 않는다(namu-65 후속 ②). http_server.py도 이 인스턴스를 그대로
+# 재사용하므로 웹 경로에서도 같은 소개문이 나간다.
+mcp = FastMCP("namu-memory", instructions=record_input.server_instructions())
 
 
 def get_conn() -> sqlite3.Connection:

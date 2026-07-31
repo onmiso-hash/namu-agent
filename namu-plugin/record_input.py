@@ -192,6 +192,12 @@ def _reject_foreign_fields(bowl: str, values: dict) -> None:
         )
 
 
+def _first_sentence(desc: str) -> str:
+    """설명의 첫 문장. 거절 메시지와 문서 표가 같은 한 줄을 쓰게 하는 단일 기준이다 —
+    두 곳에서 따로 자르면 같은 칸이 화면마다 다르게 소개된다."""
+    return desc.split(".")[0].strip()
+
+
 def _check_required(bowl: str, values: dict) -> None:
     """필수 칸이 비면 거절한다. `생략` 한 단어는 채운 것으로 본다."""
     for name in sorted(cfg.required_fields(bowl)):
@@ -200,7 +206,7 @@ def _check_required(bowl: str, values: dict) -> None:
         field = cfg.field_by_name(name)
         raise ValueError(
             f"{cfg.bowl_label(bowl)}({bowl}) 기록에는 '{name}'이 필요합니다 — "
-            f"{field.desc.split('.')[0]}. 적을 게 정말 없으면 "
+            f"{_first_sentence(field.desc)}. 적을 게 정말 없으면 "
             f"'{cfg.OMITTED}' 한 단어를 넣으세요(예: {field.example})."
         )
 
@@ -267,6 +273,144 @@ def tool_description() -> str:
         "어디로 옮겼는지 반환문에 알린다. 새로 쓸 때는 위 칸 이름만 쓴다."
     )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 서버 소개문 (namu-65 후속 ②)
+# ---------------------------------------------------------------------------
+#
+# MCP 서버는 `FastMCP(instructions=...)`로 자기소개를 한 문단 넘길 수 있는데, 지금까지
+# 비어 있어서 클라이언트(AI)는 도구 설명만 보고 그릇의 성격을 짐작해야 했다. 소개문을
+# 손으로 쓰면 도구 설명과 갈라지고, **갈라진 설명을 읽은 AI가 잘못된 그릇에 담는 것**이
+# namu-65의 발단이므로 여기서도 같은 선언(`config.FIELDS`)에서 만든다.
+
+# 서버가 노출하는 도구 이름. 이름이 바뀌거나 늘면 `test_server_instructions.py`가
+# mcp_server.py의 실제 등록 목록과 대조해 실패한다.
+_TOOL_LINES = (
+    ("namu_recall", "세션을 시작할 때 한 번 부른다 — 붙여둔 쪽지·최근 활동·"
+                    "열린 작업·관련 교훈을 한꺼번에 돌려준다."),
+    ("namu_search", "지난 기억을 낱말로 찾는다."),
+    ("namu_record", "기억 한 건을 남긴다(아래 규칙)."),
+    ("namu_memo_remove", "다 쓴 쪽지를 뗀다 — 네 그릇 중 유일하게 지워지는 그릇이다."),
+    ("namu_sync_setup", "개인 원격 저장소와 자동 동기화를 켠다(처음 한 번)."),
+)
+
+
+def server_instructions() -> str:
+    """MCP 서버 소개문. 그릇 설명과 기록 규칙을 도구 설명문과 같은 표에서 만든다."""
+    bowl_field = cfg.field_by_name("bowl")
+    lines = [
+        "NAMU 기억 서버 — 대화가 끝나도 남는 기억을 네 그릇에 나눠 담고 다시 꺼낸다.",
+        "",
+        # 그릇의 성격은 `bowl` 칸 설명이 이미 네 그릇을 다 짚고 있다 — 소개문에 따로
+        # 쓰면 그게 곧 갈라질 두 번째 설명이 된다.
+        f"그릇 고르기 — {bowl_field.desc}",
+        "",
+        "도구:",
+    ]
+    lines += [f"- {name} — {desc}" for name, desc in _TOOL_LINES]
+    lines += ["", "── 기록 규칙(namu_record) ──", "", tool_description()]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 문서용 표 (namu-65 후속 ①) — 손으로 옮겨 적지 않는다
+# ---------------------------------------------------------------------------
+#
+# 설계서 4장에는 칸 표가 손으로 적혀 있었다. 표가 코드(`config.FIELDS`)와 문서 두
+# 곳에 살면 반드시 갈라지고, **갈라진 표를 읽은 AI가 잘못된 그릇에 담는 것**이 이번
+# 작업의 발단이었다. 그래서 문서에 싣는 표도 도구 설명문과 같은 선언에서 만든다.
+# `scripts/gen_field_docs.py`가 이 함수의 결과를 문서에 끼워 넣고, 문서를 손으로
+# 고치면 `test_field_docs.py`가 실패한다.
+
+_MARK_REQUIRED = "필수"
+_MARK_OPTIONAL = "선택"
+_MARK_ABSENT = "—"
+
+
+def _cell(text: str) -> str:
+    """표 칸 안에서 깨지는 글자를 막는다(세로줄은 칸 구분자, 줄바꿈은 행 구분자)."""
+    return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _mark(field, bowl: str) -> str:
+    if bowl in field.required_in:
+        return _MARK_REQUIRED
+    if bowl in field.bowls:
+        return _MARK_OPTIONAL
+    return _MARK_ABSENT
+
+
+def field_table_markdown() -> str:
+    """칸 × 그릇 배치표(마크다운). 열 순서는 `cfg.BOWL_NAMES`를 그대로 따른다."""
+    header = ["칸"] + [cfg.bowl_label(b) for b in cfg.BOWL_NAMES] + ["뜻"]
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "|" + "---|" * len(header),
+    ]
+    for field in cfg.FIELDS:
+        row = (
+            [f"`{field.name}`"]
+            + [_mark(field, b) for b in cfg.BOWL_NAMES]
+            + [_cell(_first_sentence(field.desc))]
+        )
+        lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(lines)
+
+
+def field_detail_markdown() -> str:
+    """칸별 상세(설명 전문·예시·닫힌 값). 표의 '뜻'은 첫 문장뿐이라 나머지를 여기 편다."""
+    lines = []
+    for field in cfg.FIELDS:
+        lines.append(f"- **`{field.name}`** — {field.desc}")
+        lines.append(f"  - 예) `{field.example}`")
+        # 값 목록이 같은 그릇은 한 줄로 묶는다 — bowl처럼 네 그릇이 같은 값을 받는 칸을
+        # 그릇마다 되풀이하면 같은 줄이 네 번 나와 정작 다른 칸(status)의 차이가 묻힌다.
+        grouped: dict = {}
+        for bowl in cfg.BOWL_NAMES:
+            allowed = cfg.allowed_values(field.name, bowl)
+            if allowed:
+                grouped.setdefault(allowed, []).append(bowl)
+        for allowed, bowls in grouped.items():
+            where = (
+                "쓸 수 있는 값"
+                if len(bowls) == len(field.bowls)
+                else "·".join(cfg.bowl_label(b) for b in bowls) + "에서 쓸 수 있는 값"
+            )
+            lines.append(f"  - {where}: " + " · ".join(f"`{v}`" for v in allowed))
+    return "\n".join(lines)
+
+
+def alias_table_markdown() -> str:
+    """옛 이름 → 새 이름 대응표. `cfg.FIELD_ALIASES` 선언 순서를 유지한다."""
+    lines = [
+        "| 옛 이름 | 새 이름 | 어느 그릇에서 | 비고 |",
+        "|---|---|---|---|",
+    ]
+    for alias in cfg.FIELD_ALIASES:
+        new = f"`{alias.new}`" if alias.new else "(없앰)"
+        where = _bowl_list_ko(alias.bowls) if alias.bowls else "모든 그릇"
+        lines.append(
+            f"| `{alias.old}` | {new} | {_cell(where)} | {_cell(alias.note)} |"
+        )
+    return "\n".join(lines)
+
+
+def docs_section() -> str:
+    """설계서 4장에 끼워 넣는 생성 구역 전체."""
+    omitted = cfg.OMITTED
+    return "\n\n".join([
+        f"칸은 {len(cfg.FIELDS)}개, 그릇은 {len(cfg.BOWL_NAMES)}개다. "
+        f"**필수**는 비면 거절하는 자리이고(적을 게 없으면 `{omitted}` 한 단어), "
+        f"**{_MARK_ABSENT}**는 그 그릇이 받지 않는 칸이라 주면 거절당한다.",
+        field_table_markdown(),
+        "### 칸별 설명",
+        field_detail_markdown(),
+        "### 옛 이름 → 새 이름",
+        alias_table_markdown(),
+        "옛 이름으로 호출해도 **새 이름으로 옮겨 저장하고, 어디로 옮겼는지 반환문에 "
+        "알린다.** 말없이 버리는 경로는 코드에 없다.",
+    ])
 
 
 def normalize(provided: dict) -> RecordInput:
