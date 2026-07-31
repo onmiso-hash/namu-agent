@@ -115,6 +115,29 @@ def test_output_is_valid_session_start_json(tmp_path):
     assert data["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 
 
+def test_briefing_also_goes_to_user_visible_channel(tmp_path):
+    """브리핑이 AI 컨텍스트뿐 아니라 **사용자 화면**에도 나간다(namu-64 결함B).
+
+    `additionalContext`는 AI만 보고, 사용자 터미널에 뜨는 것은 `systemMessage`다.
+    예전에는 전자만 있어서 "사람이 읽기 좋게" 다듬은 브리핑을 정작 사람이 못 봤다.
+    두 통로의 내용이 같아야 한다 — 화면용만 따로 요약하면 그 순간 두 벌이 갈라진다.
+    """
+    machine = "hp"
+    fake_home = tmp_path / "fake_home"
+    _make_dot_namu_memory(fake_home)
+    project_dir = tmp_path / "project"
+    _make_active_task(fake_home / ".namu" / "tasks" / "project", "visible-task", machine)
+
+    result = _run_hook(
+        fake_home, machine, {"cwd": str(project_dir)}, {"PYTHONIOENCODING": "utf-8"}
+    )
+
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["systemMessage"] == data["hookSpecificOutput"]["additionalContext"]
+    assert "visible-task" in data["systemMessage"]
+
+
 def test_reads_project_dir_from_stdin_cwd_ignores_dot_namu_tasks(tmp_path):
     """stdin의 cwd로 지정된 프로젝트의 개인 풀 tasks만 보인다 — `~/.namu/tasks/`
     바로 아래(basename 폴더 없이)의 task는 무시된다(namu-26 이원화 + namu-34 저장

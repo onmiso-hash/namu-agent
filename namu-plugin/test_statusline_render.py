@@ -173,8 +173,9 @@ def test_task_title_starting_with_slug_shows_title_once(tmp_path):
 
 
 def test_task_title_not_starting_with_slug_keeps_slug_and_title(tmp_path):
-    """task.md 제목이 slug로 시작하지 않으면 기존 "📌 {slug} · {제목}" 형식을 유지한다
-    (namu-37 ①, 하위 호환)."""
+    """task.md 제목이 slug로 시작하지 않아도 "📌 {slug} — {제목}" 한 형식으로 찍는다
+    (namu-37 ① 하위 호환 + namu-64: 제목의 slug 접두는 task_resolve가 이미 걷어내므로
+    statusLine은 더 이상 형식을 둘로 나누지 않는다)."""
     fake_home = tmp_path / "fake_home"
     project_dir = tmp_path / "project"
     slug = "encoding-test-task"
@@ -196,7 +197,34 @@ def test_task_title_not_starting_with_slug_keeps_slug_and_title(tmp_path):
     result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "cp949"})
 
     assert result.returncode == 0
-    assert "📌 encoding-test-task · 테스트 작업" in result.stdout
+    assert "📌 encoding-test-task — 테스트 작업" in result.stdout
+
+
+def test_task_title_with_doubled_slug_shows_name_once(tmp_path):
+    """제목에 slug가 **두 번** 박힌 실물 task(namu-63·64)도 이름이 한 번만 찍힌다.
+
+    옛 판별("제목이 slug로 시작하면 제목만 찍는다")은 이 경우를 통과시켜
+    `📌 <slug> — <slug> — 설명`이 그대로 나왔다(namu-64 결함A).
+    """
+    fake_home = tmp_path / "fake_home"
+    project_dir = tmp_path / "project"
+    slug = "namu-64-briefing-readability"
+    task_dir = fake_home / ".namu" / "tasks" / "project" / slug
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.md").write_text(
+        f"# {slug} — {slug} — 브리핑 가독성\n\n## 목적\n테스트\n\n## 완료조건\n- [ ] 완료\n",
+        encoding="utf-8",
+    )
+    (task_dir / "log.md").write_text(
+        f"# log — {slug}\n[시작] 2026-07-28 10:00:00 hp · 시작\n", encoding="utf-8"
+    )
+
+    stdin_json = {"model": {"display_name": "TEST"}, "workspace": {"current_dir": str(project_dir)}}
+    result = _run_statusline(fake_home, stdin_json, {"PYTHONIOENCODING": "utf-8"})
+
+    assert result.returncode == 0
+    assert result.stdout.count(slug) == 1
+    assert f"📌 {slug} — 브리핑 가독성" in result.stdout
 
 
 def test_rate_limits_both_present_render_5h_and_7d(tmp_path):

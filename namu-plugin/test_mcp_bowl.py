@@ -493,6 +493,29 @@ def test_namu_record_create_writes_task_and_log_and_start_line(fake_home):
     assert "[시작]" in result.stdout
 
 
+def test_namu_record_create_strips_slug_prefix_from_title(fake_home):
+    """title에 slug가 이미 들어와도 머리줄에 이름이 두 번 박히지 않는다(namu-64 결함A 원천 차단).
+
+    실물 namu-63·64가 `# <slug> — <slug> — 설명`으로 만들어졌고 task.md는 불변이라
+    사후 수정이 불가능했다 — 그래서 생성 시점에 막는다.
+    """
+    result = _run_probe(
+        fake_home,
+        "mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
+        " create=True, body='생략', title='namu-99 — 이름이 이미 들어간 제목',"
+        " purpose='제목 중복 차단')\n"
+        "print('OK')\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+    task_md = (
+        fake_home / ".namu" / "tasks" / "proj-new" / "namu-99" / "task.md"
+    ).read_text(encoding="utf-8")
+    head = task_md.splitlines()[0]
+    assert head == "# namu-99 — 이름이 이미 들어간 제목"
+    assert head.count("namu-99") == 1
+
+
 def test_namu_record_create_without_purpose_raises(fake_home):
     result = _run_probe(
         fake_home,

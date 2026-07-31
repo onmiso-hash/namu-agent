@@ -333,7 +333,12 @@ def _create_task_entry(
             "create=False로 호출하세요"
         )
 
-    display_title = (title or slug).strip() or slug
+    # 호출자가 title에 slug를 이미 넣어 넘기는 일이 잦다("namu-64-… — 브리핑 …").
+    # 그대로 두면 아래 머리줄이 `# <slug> — <slug> — 설명`이 돼 이름이 영구히 두 번
+    # 박힌다(namu-63·64 실물이 그렇게 만들어졌고, task.md는 불변이라 사후 수정도
+    # 못 한다). 저장 전에 접두를 걷어 원본부터 깨끗하게 만든다 — 읽는 쪽
+    # (task_resolve.strip_slug_prefix)의 흡수는 이미 적힌 것들을 위한 것이다.
+    display_title = task_resolve.strip_slug_prefix((title or slug).strip() or slug, slug)
     machine = cfg.NAMU_MACHINE
     today = cfg.now().strftime("%Y-%m-%d")
 

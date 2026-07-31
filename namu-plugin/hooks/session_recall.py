@@ -71,13 +71,21 @@ def main() -> None:
         if md is None:
             sys.exit(0)
 
+        # 같은 브리핑을 두 통로로 내보낸다(namu-64 결함B, 사용자 결정 2026-07-31).
+        #   additionalContext → AI 컨텍스트에만 들어간다(화면에 안 뜬다)
+        #   systemMessage     → 사용자 터미널에 표시된다
+        # 예전에는 additionalContext 하나뿐이라, "사람이 읽기 좋게" 다듬은 브리핑을
+        # 정작 사람이 한 번도 보지 못했다(사용자 지적: "브리핑 내역이 안떴어").
+        # AI가 매 세션 옮겨 적는 규약으로 때우지 않은 이유는 그게 지켜진다는 보장이
+        # 없기 때문이다 — 훅이 직접 내보내면 AI의 협조와 무관하게 항상 뜬다.
         print(
             json.dumps(
                 {
+                    "systemMessage": md,
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
                         "additionalContext": md,
-                    }
+                    },
                 },
                 ensure_ascii=False,
             )

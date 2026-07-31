@@ -15,6 +15,7 @@ NAMU "세션 브리핑"을 출력한다. 아래 순서대로 수행하고 마지
    python scripts/namu_active_task.py --all --json
    ```
    JSON 배열이 나온다: `[{project, slug, title, last_ts, next}, ...]` (가장 최근 활동 순, 개인 풀 전체).
+   `title`에는 task 이름(slug)이 들어 있지 않다(namu-64 — 만드는 쪽에서 걷어낸다). 그대로 `<slug> · <제목>`으로 이어 붙이면 된다.
    `project`가 현재 폴더명과 같으면 "이 방", 다르면 "다른 방"으로 나눠라(현재 폴더명은 `basename $(pwd)`로 구한다).
    `next`가 `null`이면 그 task는 "다음" 기록이 없는 것이다 — 조용히 빈칸으로 두지 말고 `(기록 없음)`이라고 명시하라.
    배열이 비어 있으면 "열린 task 없음"으로 간주한다.

@@ -184,9 +184,11 @@ def main() -> None:
         t = resolve_active_task(ws)
         if t:
             slug, title = t[0], t[1]
-            # task.md 제목 관례가 "<slug> — <설명>"이라 제목이 이미 slug로 시작하면
-            # 중복 표시를 피한다(namu-37).
-            task_part = f"📌 {title}" if title.startswith(slug) else f"📌 {slug} · {title}"
+            # title은 이미 slug 접두가 걷힌 상태다(task_resolve.task_title, namu-64)
+            # — 여기서 다시 판별하지 않는다. 예전에는 "제목이 slug로 시작하면 제목만
+            # 찍는다"로 중복을 피했는데, 실물처럼 slug가 **두 번** 박힌 제목
+            # (`<slug> — <slug> — 설명`)은 그 판별을 통과해 그대로 두 번 찍혔다.
+            task_part = f"📌 {slug}" if title == slug else f"📌 {slug} — {title}"
         else:
             task_part = "진행 task 없음"
     except Exception:

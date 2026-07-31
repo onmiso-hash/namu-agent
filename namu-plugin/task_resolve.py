@@ -41,6 +41,40 @@ def _extract_task_title(task_md_path: Path) -> str:
     return task_md_path.parent.name
 
 
+def strip_slug_prefix(title: str, slug: str) -> str:
+    """task 제목에서 폴더명(slug) 접두를 **반복해서** 걷어낸다.
+
+    실물 task.md의 첫 헤더는 `# namu-57-memory-retrieval — 메모리 "꺼내는 쪽" …`
+    형태다 — 읽는 쪽은 대개 slug를 이미 굵게 쓴 뒤 제목을 붙이므로, 그대로 두면
+    같은 이름이 한 줄에 두 번 나온다. 반복인 이유는 task 생성 시 title에 이미
+    slug가 들어간 채 넘어오면 저장 쪽이 한 번 더 앞에 붙여 `# <slug> — <slug> —
+    설명`이 되기 때문이다(namu-63·64 실물). 생성 쪽은 namu-64에서 막았지만
+    log·task.md는 append-only/불변이라 이미 적힌 것은 고칠 수 없어, 읽는 쪽에서
+    영구히 흡수한다.
+
+    (namu-64 재검토) 이 함수는 원래 session_context.py에만 있어 "화면 그리는
+    단계에서만" 가려졌고, 같은 데이터를 쓰는 다른 소비자(scripts/
+    namu_active_task.py --all --json, namu_recall의 tasks, 웹 대시보드)에는
+    중복이 그대로 새어 나갔다. 그래서 제목을 만드는 쪽(task_resolve)으로 옮겨
+    모든 소비자가 한 번에 깨끗한 제목을 받게 했다.
+    """
+    while title.startswith(slug):
+        stripped = title[len(slug):].lstrip(" —-–:")
+        if not stripped:
+            break
+        title = stripped
+    return title or slug
+
+
+def task_title(task_dir: Path) -> str:
+    """task.md 제목에서 폴더명 접두를 걷어낸 '보여주기용' 제목.
+
+    원문 그대로가 필요하면 `_extract_task_title`을 쓴다 — 여기서 걷어내는 것은
+    표기 중복뿐이고 원본 파일은 건드리지 않는다.
+    """
+    return strip_slug_prefix(_extract_task_title(task_dir / "task.md"), task_dir.name)
+
+
 def _parse_log_ts(line: str) -> tuple[str, str] | None:
     """log.md 한 줄에서 (날짜, 시간) 튜플 추출."""
     match = re.search(r"^\[.*?\]\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}:\d{2}))?(?:\s|$)", line)
@@ -173,8 +207,7 @@ def find_active_task(tasks_dir: Path) -> tuple[str, str] | None:
     """tasks_dir에서 log 타임스탬프가 가장 최신인 진행 중 task의 (폴더명, 제목) 반환. 없으면 None."""
     for task_dir in _sorted_task_dirs(tasks_dir):
         if not _is_closed(task_dir):
-            title = _extract_task_title(task_dir / "task.md")
-            return (task_dir.name, title)
+            return (task_dir.name, task_title(task_dir))
 
     return None
 
@@ -301,6 +334,11 @@ def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str
 
     반환 항목: `{"project", "slug", "title", "last_ts", "next"}`. `next`는
     자르지 않은 전문이다(잘리면 재진입 지점 의미가 없어진다) — 없으면 None.
+
+    `title`은 `task_title()`을 거쳐 slug 접두가 걷힌 상태다(namu-64 재검토) —
+    slug는 같은 dict의 `slug` 키로 이미 따로 주므로, 제목에까지 넣으면 모든
+    소비자가 이름을 두 번 찍는다. 예전에는 session_context(브리핑 렌더)만
+    걷어내서 --all --json·namu_recall·대시보드에는 중복이 그대로 나갔다.
     """
     if projects is None:
         projects = list_projects()
@@ -315,7 +353,7 @@ def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str
                 {
                     "project": project_name,
                     "slug": task_dir.name,
-                    "title": _extract_task_title(task_dir / "task.md"),
+                    "title": task_title(task_dir),
                     "last_ts": f"{ts[0]} {ts[1]}" if ts else None,
                     "next": next_note(task_dir),
                     # ▸ 항목에만 쓰이는 한 줄(namu-65) — 없으면 None.

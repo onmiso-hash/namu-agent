@@ -9,6 +9,9 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+# `_extract_task_title`은 원문 그대로가 필요한 곳(교훈 검색 질의)에서만 쓴다 —
+# 거기서는 제목에 남은 task 이름이 오히려 검색어로 쓸모 있다. 화면 표기는
+# slug를 걷어낸 `task_title`을 쓴다.
 from task_resolve import _extract_task_title, _latest_log_ts, _line_tag
 from task_resolve import find_active_task as _resolve_task
 from task_resolve import find_latest_closed_task as _find_latest_closed_task
@@ -21,6 +24,8 @@ from task_resolve import (
     next_why,
     open_tasks_briefing,
     record_project_marker,
+    strip_slug_prefix as _strip_slug_prefix,
+    task_title as _title_without_slug,
 )
 
 
@@ -179,29 +184,10 @@ def _short_date(ts: str) -> str:
     return ts[5:10]
 
 
-def _strip_slug_prefix(title: str, slug: str) -> str:
-    """task 제목에서 폴더명(slug) 접두를 걷어낸다.
-
-    실물 task.md의 첫 헤더는 `# namu-57-memory-retrieval — 메모리 "꺼내는 쪽" …`
-    형태라, 브리핑 줄에 slug를 이미 굵게 쓴 뒤 제목을 붙이면 같은 slug가 두 번
-    나와 좁은 CLI 폭을 낭비한다.
-
-    접두는 **반복해서** 걷어낸다(namu-64) — task 생성 시 title에 이미 slug를 넣어
-    넘기면 저장 쪽이 slug를 한 번 더 앞에 붙여 `# <slug> — <slug> — 설명` 형태가
-    되고(namu-63·64 실물이 그렇다), 한 번만 걷어내면 브리핑 줄에 이름이 그대로
-    두 번 찍힌다. 기록은 append-only라 원본을 고칠 수 없으므로 읽는 쪽에서 흡수한다.
-    """
-    while title.startswith(slug):
-        stripped = title[len(slug):].lstrip(" —-–:")
-        if not stripped:
-            break
-        title = stripped
-    return title or slug
-
-
-def _title_without_slug(task_dir: Path) -> str:
-    """task.md 제목에서 폴더명 접두를 걷어낸다(task_dir 기반 래퍼, `_strip_slug_prefix` 참고)."""
-    return _strip_slug_prefix(_extract_task_title(task_dir / "task.md"), task_dir.name)
+# 제목에서 slug 접두를 걷어내는 일은 task_resolve로 옮겼다(namu-64 재검토) —
+# 브리핑 렌더에서만 걷어내니 같은 데이터를 쓰는 --all --json·namu_recall·대시보드에
+# 중복이 그대로 새어 나갔다. 여기서는 옛 이름(`_strip_slug_prefix`/
+# `_title_without_slug`)으로 계속 부른다(import 별칭).
 
 
 def _one_line(text: str, limit: int = 70) -> str:

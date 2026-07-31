@@ -15,6 +15,8 @@ from task_resolve import (
     open_tasks_briefing,
     record_project_marker,
     resolve_active_task,
+    strip_slug_prefix,
+    task_title,
     tasks_root_for,
 )
 
@@ -681,6 +683,57 @@ def test_open_tasks_briefing_next_is_full_untruncated(fake_home):
     assert len(rows) == 1
     assert rows[0]["next"] == long_next.strip()
     assert len(rows[0]["next"]) == len(long_next.strip())
+
+
+# ---------------------------------------------------------------------------
+# 제목 중복(namu-64 결함A) — 브리핑 렌더가 아니라 **제목을 만드는 쪽**에서 걷어낸다.
+# 예전에는 session_context(화면)만 걷어내서 --all --json·namu_recall·대시보드에는
+# `<slug> — <slug> — 설명`이 그대로 나갔다.
+# ---------------------------------------------------------------------------
+
+
+def test_strip_slug_prefix_removes_repeated_slug():
+    assert strip_slug_prefix("namu-64-x — namu-64-x — 브리핑 가독성", "namu-64-x") == "브리핑 가독성"
+    assert strip_slug_prefix("namu-64-x — 브리핑 가독성", "namu-64-x") == "브리핑 가독성"
+    assert strip_slug_prefix("브리핑 가독성", "namu-64-x") == "브리핑 가독성"
+    # slug만 있는 제목은 지워 없애지 않고 slug를 그대로 돌려준다(빈 제목 방지).
+    assert strip_slug_prefix("namu-64-x", "namu-64-x") == "namu-64-x"
+
+
+def test_task_title_strips_slug_from_task_md_header(fake_home):
+    task_dir = _make_pool_task(
+        fake_home, "proj-x", "namu-99", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n"
+    )
+    (task_dir / "task.md").write_text(
+        "# namu-99 — namu-99 — 두 번 박힌 실물 제목\n", encoding="utf-8"
+    )
+    assert task_title(task_dir) == "두 번 박힌 실물 제목"
+
+
+def test_open_tasks_briefing_title_has_no_slug_duplication(fake_home):
+    """namu_recall의 tasks·`--all --json`이 같은 함수를 쓰므로 여기서 한 번에 막힌다."""
+    task_dir = _make_pool_task(
+        fake_home, "proj-x", "namu-99", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n"
+    )
+    (task_dir / "task.md").write_text(
+        "# namu-99 — namu-99 — 두 번 박힌 실물 제목\n", encoding="utf-8"
+    )
+
+    rows = open_tasks_briefing(["proj-x"])
+    assert rows[0]["title"] == "두 번 박힌 실물 제목"
+    assert "namu-99" not in rows[0]["title"]
+    assert rows[0]["slug"] == "namu-99"  # 이름은 slug 칸으로만 나간다
+
+
+def test_find_active_task_title_has_no_slug_duplication(fake_home):
+    """statusLine도 같은 중복을 안고 있었다 — (슬러그, 제목)을 그대로 이어 찍기 때문."""
+    task_dir = _make_pool_task(
+        fake_home, "proj-x", "namu-99", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n"
+    )
+    (task_dir / "task.md").write_text("# namu-99 — namu-99 — 제목\n", encoding="utf-8")
+
+    slug, title = find_active_task(fake_home / ".namu" / "tasks" / "proj-x")
+    assert (slug, title) == ("namu-99", "제목")
 
 
 def test_open_tasks_briefing_next_none_when_no_next_tag(fake_home):
