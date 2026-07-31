@@ -177,10 +177,26 @@ def _resolve_task_slug(project: str, task: str | None) -> str:
     )
 
 
+# 작업을 닫는 태그는 이 둘뿐이다(task_resolve._log_says_closed가 보는 것도 이 둘).
+_CLOSING_TAGS = ("완료", "중단")
+
+# "닫는다"는 뜻으로 흔히 쓰이지만 닫히지 **않는** 말들(namu-66). 실물 로그에서
+# '종료' 1건·'마무리' 1건이 나왔고, 그중 namu-37은 기록만 보면 닫힌 적이 없는
+# 상태로 남았다 — 옛 형식 파일이 우연히 닫아 주고 있었을 뿐이다.
+_CLOSING_SYNONYMS = (
+    "종료", "마무리", "끝", "종결", "완결", "닫음", "닫기", "done", "close", "closed", "finish",
+)
+
+
 def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str]:
     """tag/text 입력 정리: strip, 빈 값 거절, tag에 ']'·개행 금지, text 개행은
     공백으로 접어 한 줄로 만든다(log.md는 줄 단위 파일이라 여러 줄이 들어가면
     파싱이 깨진다). tag 생략(None) 시 기본값 '기록'.
+
+    닫는 뜻의 유의어는 거절한다(namu-66) — 태그는 자유 문자열이라 '종료'라고 적어도
+    저장은 성공하지만 판정은 '완료'/'중단'만 보므로, 적은 쪽은 닫았다고 믿고
+    목록에는 계속 열려 있는 상태가 된다. 조용히 어긋나느니 그 자리에서 거절하는 게
+    낫다("닫았다고 생각했는데 안 닫힘"은 몇 주 뒤에야 발견된다).
     """
     tag = "기록" if tag is None else tag.strip()
     text = (text or "").strip()
@@ -188,6 +204,12 @@ def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str
         raise ValueError("tag는 빈 값일 수 없습니다")
     if "]" in tag or "\n" in tag or "\r" in tag:
         raise ValueError("tag에는 ']'나 개행을 쓸 수 없습니다")
+    if tag.lower() in _CLOSING_SYNONYMS:
+        raise ValueError(
+            f"tag={tag!r}는 작업을 닫지 못합니다 — 닫는 말은 '완료'(다 끝냄)와 "
+            "'중단'(더 안 함) 둘뿐입니다. 정말 닫는 것이면 그 둘 중 하나로 다시 "
+            "적고, 한 단계만 끝난 것이면 '기록'처럼 닫지 않는 말을 쓰세요"
+        )
     if not text:
         raise ValueError("text는 필수입니다(빈 값 불가)")
     text = " ".join(text.split())
@@ -262,7 +284,36 @@ def _record_task_entry(
 
     task_dir = task_resolve.tasks_root_for(resolved_project) / slug
     _append_task_log_line(task_dir, block)
-    return block
+    return block + _unmet_done_when_warning(task_dir, tag)
+
+
+def _unmet_done_when_warning(task_dir: Path, tag: str) -> str:
+    """닫는 줄인데 task.md에 안 채운 완료조건이 남아 있으면 붙일 경고(namu-66).
+
+    막지 않고 경고만 하는 이유: 이관("남은 몫은 다른 방에서")이나 범위 축소로 닫는
+    것은 정당하고 실제로 자주 있다(namu-50). 다만 그때도 "무엇을 안 하고 닫는지"가
+    기록에 드러나야 하므로, 조용히 넘어가는 대신 눈에 보이게 한다.
+
+    기록 자체는 이미 append됐다 — 경고 때문에 기록이 사라지면 append-only가 깨진다.
+    """
+    if tag not in _CLOSING_TAGS:
+        return ""
+    try:
+        lines = (task_dir / "task.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    unmet = [ln.strip()[5:].strip() for ln in lines if ln.strip().startswith("- [ ]")]
+    unmet = [u for u in unmet if u and u != "..."]
+    if not unmet:
+        return ""
+    listed = "\n".join(f"  · {u}" for u in unmet[:5])
+    more = f"\n  · … 외 {len(unmet) - 5}개" if len(unmet) > 5 else ""
+    return (
+        f"\n⚠ 안 채운 완료조건 {len(unmet)}개가 남은 채로 [{tag}] 했습니다:\n"
+        f"{listed}{more}\n"
+        "  정말 충족했다면 task.md의 네모칸을 채우고, 안 하고 닫는 것이라면 "
+        "왜 안 하는지를 이 줄에 남기세요(이관·범위 축소는 정당한 종결 사유입니다)."
+    )
 
 
 _NEW_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")

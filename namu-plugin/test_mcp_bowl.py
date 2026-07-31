@@ -460,6 +460,113 @@ def test_namu_recall_project_star_merges_all_even_on_stdio(tmp_path, fake_home):
 
 
 # ---------------------------------------------------------------------------
+# ⑧-2 닫기 규율(namu-66) — 닫는 말 강제 + 완료조건 미충족 경고
+# ---------------------------------------------------------------------------
+
+
+def _make_pool_task_with_done_when(home: Path, project: str, slug: str, done_when: list[str]):
+    task_dir = home / ".namu" / "tasks" / project / slug
+    task_dir.mkdir(parents=True)
+    body = "\n".join(f"- [ ] {d}" for d in done_when)
+    (task_dir / "task.md").write_text(
+        f"# {slug} — 테스트\n\n## 목적\n테스트\n\n## 완료조건\n{body}\n", encoding="utf-8"
+    )
+    (task_dir / "log.md").write_text("# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n", encoding="utf-8")
+    return task_dir
+
+
+@pytest.mark.parametrize("bad_tag", ["종료", "마무리", "끝", "Done", "close"])
+def test_namu_record_rejects_closing_synonym_tags(fake_home, bad_tag):
+    """'종료'·'마무리' 등은 닫는 뜻으로 쓰이지만 판정은 '완료'/'중단'만 본다 —
+    저장은 성공하고 작업은 안 닫히는 조용한 어긋남이라 그 자리에서 거절한다(namu-66).
+
+    실물: 로그 전체에 '종료' 1건·'마무리' 1건이 있었고 namu-37은 기록상 미종결로 남았다.
+    """
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n")
+
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        f"    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', tag={bad_tag!r},"
+        " summary='다 했다', reason='생략', body='생략')\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    assert "완료" in result.stdout and "중단" in result.stdout  # 쓸 수 있는 말을 알려준다
+
+    log = (fake_home / ".namu" / "tasks" / "proj-x" / "namu-57" / "log.md").read_text(encoding="utf-8")
+    assert bad_tag not in log  # 거절했으면 줄도 남지 않아야 한다
+
+
+def test_namu_record_allows_normal_and_closing_tags(fake_home):
+    """'완료'·'중단'·일반 태그는 그대로 통과한다(과잉 거절 방지)."""
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n")
+
+    result = _run_probe(
+        fake_home,
+        "for t in ['기록', '결정', '중단', '완료']:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', tag=t,"
+        " summary='한 줄', reason='생략', body='생략')\n"
+        "print('OK')\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "OK" in result.stdout
+
+
+def test_namu_record_warns_when_closing_with_unmet_done_when(fake_home):
+    """안 채운 완료조건이 남은 채로 닫으면 경고가 붙는다 — 다만 기록은 그대로 남는다."""
+    _make_pool_task_with_done_when(fake_home, "proj-x", "namu-70", ["조건1", "조건2"])
+
+    result = _run_probe(
+        fake_home,
+        "out = mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-70', tag='완료',"
+        " summary='끝냈다', reason='생략', body='생략')\n"
+        "print('RESULT', out)\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "안 채운 완료조건 2개" in result.stdout
+    assert "조건1" in result.stdout and "조건2" in result.stdout
+
+    log = (fake_home / ".namu" / "tasks" / "proj-x" / "namu-70" / "log.md").read_text(encoding="utf-8")
+    assert "[완료]" in log  # 경고가 기록을 취소하지 않는다(append-only)
+    assert "⚠" not in log  # 경고는 반환문에만 — 로그를 오염시키지 않는다
+
+
+def test_namu_record_no_warning_when_done_when_all_checked(fake_home):
+    """완료조건을 다 채우고 닫으면 경고가 없다."""
+    task_dir = _make_pool_task_with_done_when(fake_home, "proj-x", "namu-70", ["조건1"])
+    (task_dir / "task.md").write_text(
+        "# namu-70 — 테스트\n\n## 완료조건\n- [x] 조건1\n", encoding="utf-8"
+    )
+
+    result = _run_probe(
+        fake_home,
+        "out = mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-70', tag='완료',"
+        " summary='끝냈다', reason='생략', body='생략')\n"
+        "print('RESULT', out)\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "안 채운 완료조건" not in result.stdout
+
+
+def test_namu_record_no_warning_for_non_closing_tag(fake_home):
+    """닫지 않는 줄(기록 등)에는 완료조건이 남아 있어도 경고하지 않는다 — 진행 중엔 당연하다."""
+    _make_pool_task_with_done_when(fake_home, "proj-x", "namu-70", ["조건1", "조건2"])
+
+    result = _run_probe(
+        fake_home,
+        "out = mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-70', tag='기록',"
+        " summary='진행 중', reason='생략', body='생략')\n"
+        "print('RESULT', out)\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "안 채운 완료조건" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
 # ⑨ namu_record(bowl='tasks', create=True) — 새 task 생성(namu-57 2단계 보완)
 # ---------------------------------------------------------------------------
 
