@@ -189,6 +189,26 @@ def find_open_tasks(tasks_dir: Path) -> list[Path]:
     return [d for d in _sorted_task_dirs(tasks_dir) if not _is_closed(d)]
 
 
+def next_why(task_dir: Path) -> str | None:
+    """마지막 `[다음]` 묶음의 '왜' 한 줄. 없으면 None.
+
+    브리핑의 ▸(가장 최근 작업)에만 쓴다(namu-65 5단계, 사용자 결정 A). 나머지 작업은
+    요약 한 줄이 맞지만 ▸는 **이어받는 지점**이라, 한 줄만으로는 왜 그 지점인지 몰라
+    착수가 어렵다. 전문을 다시 쏟는 것과 한 줄만 주는 것 사이의 절충이며, 이관이
+    남긴 줄이 정확히 '요약/왜' 두 줄이라 새 데이터 없이 된다.
+    """
+    try:
+        lines = (task_dir / "log.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    found = None
+    for index, line in enumerate(lines):
+        parsed = _parse_log_line(line)
+        if parsed is not None and parsed["tag"] == "다음" and parsed["text"]:
+            found = _continuations(lines, index).get("왜")
+    return found or None
+
+
 def next_note(task_dir: Path) -> str | None:
     """해당 task의 "다음 할 일" 한 줄. 없으면 None.
 
@@ -298,6 +318,8 @@ def open_tasks_briefing(projects: list[str] | None = None) -> list[dict[str, str
                     "title": _extract_task_title(task_dir / "task.md"),
                     "last_ts": f"{ts[0]} {ts[1]}" if ts else None,
                     "next": next_note(task_dir),
+                    # ▸ 항목에만 쓰이는 한 줄(namu-65) — 없으면 None.
+                    "why": next_why(task_dir),
                 }
             )
 

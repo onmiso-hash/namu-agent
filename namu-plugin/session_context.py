@@ -18,6 +18,7 @@ from task_resolve import (
     has_legacy_tasks,
     journal,
     next_note,
+    next_why,
     open_tasks_briefing,
     record_project_marker,
 )
@@ -322,6 +323,10 @@ def _build_this_room_lines(open_tasks: list[Path]) -> tuple[list[str], int]:
         title = f"**{task_dir.name}** — {_one_line(_title_without_slug(task_dir), 40)}  `{date}`"
         if i == 0:
             next_block = _build_next_block(note) if note else "\n  - 다음: (기록 없음)"
+            # ▸는 이어받는 지점이라 '왜'까지 한 줄 더 붙인다(namu-65, 사용자 결정).
+            why = next_why(task_dir)
+            if why:
+                next_block += f"\n  - 왜: {_one_line(why)}"
             lines.append(f"\n#### ▸ {title}\n{next_block}")
         else:
             next_text = _one_line(note) if note else "(기록 없음)"

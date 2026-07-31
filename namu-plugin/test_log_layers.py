@@ -96,3 +96,13 @@ def test_new_block_keeps_reason_and_body_for_search():
     shown, rest = tr._display_text(lines, 1, "구현 1단계부터 착수한다")
     assert shown == "구현 1단계부터 착수한다"
     assert "데이터 옮기기가 끝나" in rest and "BOWLS 옆에" in rest
+
+
+def test_next_why_reads_the_reason_line(task_dir):
+    # ▸(가장 최근 작업)에만 붙는 한 줄 — 이어받는 지점이 왜 그 지점인지 알려준다.
+    assert tr.next_why(task_dir(_MIGRATED)) == "여러 소비자가 공유하는 함수라 원천 수정이 낫다."
+    assert tr.next_why(task_dir(_NEW_BLOCK)) == "데이터 옮기기가 끝나 코드 차례이기 때문"
+
+
+def test_next_why_is_none_for_old_single_lines(task_dir):
+    assert tr.next_why(task_dir(_OLD_ONLY)) is None
