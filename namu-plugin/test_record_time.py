@@ -65,7 +65,7 @@ import sys
 sys.path.insert(0, {plugin_dir!r})
 import mcp_server
 print('LINE', mcp_server.namu_record(
-    bowl='tasks', project='p1', task='t1', text='시간대 확인'))
+    bowl='tasks', project='p1', task='t1', text='시간대 확인', reason='생략', body='생략'))
 """
 
 
@@ -129,7 +129,7 @@ def test_task_log_stamp_uses_seoul_regardless_of_host_tz(tmp_path, host_tz):
 
 
 def test_created_task_start_line_uses_seoul_too(tmp_path):
-    """create=True 경로(task.md의 생성일 + [시작] 줄)도 같은 시계를 쓴다 —
+    """create=True, body='생략' 경로(task.md의 생성일 + [시작] 줄)도 같은 시계를 쓴다 —
     한쪽만 고치면 새 task의 생성일과 첫 줄이 서로 어긋난다."""
     home = tmp_path / "fake_home"
     home.mkdir()
@@ -140,7 +140,7 @@ import sys
 sys.path.insert(0, {plugin_dir!r})
 import mcp_server
 print('OUT', mcp_server.namu_record(
-    bowl='tasks', project='p1', task='t-new', create=True, purpose='시간대 확인'))
+    bowl='tasks', project='p1', task='t-new', create=True, body='생략', purpose='시간대 확인'))
 """.format(plugin_dir=str(_NAMU_PLUGIN_DIR))
 
     env = os.environ.copy()

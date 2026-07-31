@@ -44,7 +44,7 @@ def test_add_creates_file_and_returns_id(paths):
     entries = memo.load_all(paths)
     assert len(entries) == 1
     assert entries[0]["id"] == memo_id
-    assert entries[0]["text"] == "영화 8시 20분 롯데시네마"
+    assert entries[0]["summary"] == "영화 8시 20분 롯데시네마"
     assert entries[0]["machine"] == cfg.NAMU_MACHINE
 
 
@@ -54,7 +54,7 @@ def test_add_keeps_insertion_order(paths):
     memo.add("둘째", paths=paths)
     memo.add("셋째", paths=paths)
 
-    assert [m["text"] for m in memo.load_all(paths)] == ["첫째", "둘째", "셋째"]
+    assert [m["summary"] for m in memo.load_all(paths)] == ["첫째", "둘째", "셋째"]
 
 
 def test_add_rejects_empty_text(paths):
@@ -84,8 +84,8 @@ def test_remove_deletes_only_that_memo(paths):
 
     removed = memo.remove(target, paths=paths)
 
-    assert removed["text"] == "뗄 메모"
-    assert [m["text"] for m in memo.load_all(paths)] == ["남을 메모 1", "남을 메모 2"]
+    assert removed["summary"] == "뗄 메모"
+    assert [m["summary"] for m in memo.load_all(paths)] == ["남을 메모 1", "남을 메모 2"]
 
 
 def test_remove_leaves_no_tombstone_in_file(paths):

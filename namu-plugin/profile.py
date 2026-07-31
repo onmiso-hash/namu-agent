@@ -16,16 +16,36 @@ _VALID_VERIFIED_BY = {"human", "ai", "unverified"}
 
 def record_fact(
     subject: str,
-    statement: str,
-    source: str,
+    statement: str | None = None,
+    source: str | None = None,
     supersedes: str | None = None,
     verified_by: str = "human",
     tags: list | None = None,
     via: str | None = None,
     paths: "cfg.DataPaths | None" = None,
+    *,
+    summary: str | None = None,
+    reason: str | None = None,
+    body: str | None = None,
 ) -> str:
-    if not source:
-        raise ValueError("source는 필수입니다")
+    """개인 사실 한 건을 남긴다(append-only).
+
+    namu-65 3단계로 3층(summary/reason/body)을 도입했다. 옛 이름과의 관계:
+    `statement` → `summary`(한 줄) + `body`(상세), `source` → `reason`(어떻게 아는가).
+    축 이름인 `subject`는 그대로 둔다 — 교훈 그릇에서 `task`를 유지한 것과 같은
+    판단이다(저장 키를 바꾸면 읽는 곳이 한꺼번에 흔들린다).
+
+    옛 이름으로 부르면 새 칸으로 **옮겨 저장한다** — 말없이 버리지 않는다. 새 이름과
+    옛 이름을 함께 주면 새 이름이 이긴다(입력 경계가 이미 그 조합을 거절하므로 여기까지
+    오지 않는다).
+    """
+    if summary is None and statement is not None:
+        summary = statement
+    if reason is None and source is not None:
+        reason = source
+
+    if not reason:
+        raise ValueError("reason(어떻게 아는가)은 필수입니다")
     if verified_by not in _VALID_VERIFIED_BY:
         raise ValueError(f"verified_by는 {_VALID_VERIFIED_BY} 중 하나여야 합니다")
 
@@ -42,8 +62,9 @@ def record_fact(
         "id": entry_id,
         "timestamp": timestamp,
         "subject": subject,
-        "statement": statement,
-        "source": source,
+        "summary": summary,
+        "reason": reason,
+        "body": body,
         "supersedes": supersedes,
         "machine": machine,
         "verified_by": verified_by,
@@ -58,6 +79,20 @@ def record_fact(
         f.write("---\n" + yaml_str)
 
     return entry_id
+
+
+def layers(doc: dict) -> tuple[str, str, str]:
+    """항목 하나에서 (summary, reason, body)를 꺼낸다. **읽는 쪽은 전부 이걸 쓴다.**
+
+    3층 이전에 쌓인 항목은 `statement`/`source`라는 옛 이름을 갖고 있다. 폴백을 읽는
+    곳마다 따로 적으면 한 곳만 빠뜨려도 그 화면에서만 사실이 빈칸으로 보이는데,
+    그런 실패는 예외가 아니라 침묵이라 오래 발견되지 않는다(namu-62 훅 오탐과 같은
+    함정). 그래서 폴백을 여기 한 곳에만 둔다.
+    """
+    summary = doc.get("summary") or doc.get("statement") or ""
+    reason = doc.get("reason") or doc.get("source") or ""
+    body = doc.get("body") or ""
+    return str(summary), str(reason), str(body)
 
 
 def load_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:

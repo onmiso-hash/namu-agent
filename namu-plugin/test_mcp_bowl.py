@@ -84,8 +84,10 @@ def _run_probe(home: Path, case_code: str, cwd: Path | None = None) -> subproces
 def test_namu_search_query_only_call_unchanged(fake_home):
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(task='t1', outcome='success', reason='r1')\n"
-        "mcp_server.namu_record(task='t2', outcome='failure', reason='r2')\n"
+        "mcp_server.namu_record(bowl='learnings', task='t1', outcome='success',"
+        " reason='r1', summary='요약1', body='생략')\n"
+        "mcp_server.namu_record(bowl='learnings', task='t2', outcome='failure',"
+        " reason='r2', summary='요약2', body='생략')\n"
         "r = mcp_server.namu_search('t1')\n"  # 위치인자: query 그대로 첫 자리
         "print('RESULT', r['bowl'], r['count'], r['results'][0]['task'], 'summary' in r)\n",
     )
@@ -178,7 +180,7 @@ def test_namu_record_bowl_tasks_appends_and_returns_line(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57',"
-        " text='구현 진행중', tag='결정')\n"
+        " text='구현 진행중', reason='생략', body='생략', tag='결정')\n"
         "print('RESULT', repr(line))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -190,7 +192,8 @@ def test_namu_record_bowl_tasks_appends_and_returns_line(fake_home):
 
     printed = result.stdout.strip().split("RESULT ", 1)[1]
     returned_line = ast.literal_eval(printed)
-    assert returned_line == lines[-1]
+    # 옛 이름으로 부르면 반환문 뒤에 '어디로 옮겼는지' 안내가 붙는다(namu-65).
+    assert returned_line.splitlines()[0] == lines[-1]
 
 
 def test_namu_record_bowl_tasks_stdio_default_project(tmp_path, fake_home):
@@ -200,7 +203,7 @@ def test_namu_record_bowl_tasks_stdio_default_project(tmp_path, fake_home):
 
     result = _run_probe(
         fake_home,
-        "line = mcp_server.namu_record(bowl='tasks', task='namu-57', text='cwd 기본값')\n"
+        "line = mcp_server.namu_record(bowl='tasks', task='namu-57', text='cwd 기본값', reason='생략', body='생략')\n"
         "print('RESULT', repr(line))\n",
         cwd=cwd,
     )
@@ -220,7 +223,7 @@ def test_namu_record_bowl_tasks_missing_slug_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='nope-999', text='x')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='nope-999', text='x', reason='생략', body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -237,7 +240,7 @@ def test_namu_record_bowl_tasks_missing_slug_creates_no_folder(fake_home):
     _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='ghost-task', text='x')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='ghost-task', text='x', reason='생략', body='생략')\n"
         "except ValueError:\n"
         "    pass\n"
         "print('DONE')\n",
@@ -253,7 +256,7 @@ def test_namu_record_bowl_tasks_ambiguous_slug_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', text='x')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', text='x', reason='생략', body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -269,7 +272,7 @@ def test_namu_record_bowl_tasks_empty_text_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', text='   ')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', text='   ', reason='생략', body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -284,7 +287,7 @@ def test_namu_record_bowl_tasks_tag_with_bracket_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', text='x', tag='bad]tag')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', text='x', reason='생략', body='생략', tag='bad]tag')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -299,7 +302,7 @@ def test_namu_record_bowl_tasks_web_without_project_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', task='namu-57', text='x', ctx=_WEB_CTX)\n"
+        "    mcp_server.namu_record(bowl='tasks', task='namu-57', text='x', reason='생략', body='생략', ctx=_WEB_CTX)\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -312,7 +315,7 @@ def test_namu_record_bowl_tasks_project_star_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='*', task='namu-57', text='x')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='*', task='namu-57', text='x', reason='생략', body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -345,7 +348,7 @@ def test_namu_record_bowl_tasks_via_roundtrip(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57',"
-        " text='웹에서 기록', ctx=_WEB_CTX)\n"
+        " text='웹에서 기록', reason='생략', body='생략', ctx=_WEB_CTX)\n"
         "print('LINE', repr(line))\n"
         "r = mcp_server.namu_search(bowl='tasks', project='proj-x', via='claude')\n"
         "print('SEARCH', r['count'], r['results'][0]['text'], r['results'][0]['via'])\n",
@@ -369,7 +372,8 @@ def test_namu_recall_existing_two_keys_unchanged(fake_home):
     """
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(task='t1', outcome='success', reason='r1')\n"
+        "mcp_server.namu_record(bowl='learnings', task='t1', outcome='success',"
+        " reason='r1', summary='요약1', body='생략')\n"
         "r = mcp_server.namu_recall(query='t1')\n"
         "print('RESULT', sorted(r.keys()), r['learnings'][0]['task'], isinstance(r['profile'], list))\n",
     )
@@ -464,7 +468,7 @@ def test_namu_record_create_writes_task_and_log_and_start_line(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        " create=True, title='새 설계 작업', purpose='웹에서 새 task를 만들 수 있어야 한다',"
+        " create=True, body='생략', title='새 설계 작업', purpose='웹에서 새 task를 만들 수 있어야 한다',"
         " done_when=['조건1', '조건2'])\n"
         "print('RESULT', repr(line))\n",
     )
@@ -493,7 +497,7 @@ def test_namu_record_create_without_purpose_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99', create=True)\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99', create=True, body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -509,7 +513,7 @@ def test_namu_record_create_existing_slug_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', create=True,"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-57', create=True, body='생략',"
         " purpose='덮어쓰기 시도')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
@@ -529,7 +533,7 @@ def test_namu_record_missing_slug_without_create_still_raises(fake_home):
     result = _run_probe(
         fake_home,
         "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='ghost', text='x')\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='ghost', text='x', reason='생략', body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -544,7 +548,7 @@ def test_namu_record_create_path_traversal_slug_rejected(fake_home):
         fake_home,
         "for bad in ('../evil', 'a/b', 'a\\\\b', '..'):\n"
         "    try:\n"
-        "        mcp_server.namu_record(bowl='tasks', project='proj-x', task=bad, create=True,"
+        "        mcp_server.namu_record(bowl='tasks', project='proj-x', task=bad, create=True, body='생략',"
         " purpose='p')\n"
         "        print('NO_ERROR', bad)\n"
         "    except ValueError as e:\n"
@@ -589,7 +593,7 @@ def test_namu_record_create_without_text_warns_about_missing_next(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-98',"
-        " create=True, purpose='경고 확인용')\n"
+        " create=True, body='생략', purpose='경고 확인용')\n"
         "print('RESULT', repr(line))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -610,7 +614,7 @@ def test_namu_record_create_tag_without_text_raises_before_folder(fake_home):
         fake_home,
         "try:\n"
         "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-97',"
-        " create=True, purpose='p', tag='다음')\n"
+        " create=True, body='생략', purpose='p', tag='다음')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -637,7 +641,7 @@ def test_namu_record_create_then_recall_roundtrip(fake_home):
     """create=True로 만든 task가 곧바로 namu_recall의 열린 task 목록에 나온다."""
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-100', create=True,"
+        "mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-100', create=True, body='생략',"
         " purpose='왕복 확인용')\n"
         "r = mcp_server.namu_recall(project='proj-x')\n"
         "print('RESULT', [t['slug'] for t in r['tasks']], r['tasks'][0]['title'])\n",

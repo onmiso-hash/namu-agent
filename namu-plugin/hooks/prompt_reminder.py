@@ -27,12 +27,41 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 _MAX_TOTAL_CHARS = 2000
 
 
+def _one_line(fact: dict) -> str:
+    """이 사실을 매 입력에 붙일 한 덩어리로 만든다.
+
+    **여기서는 요약이 아니라 본문(body)을 우선한다.** 다른 화면과 반대인데 이유가
+    분명하다: 이 훅의 목적은 "규칙을 몰라서가 아니라 답을 쓰기 직전에 대조하지 않아
+    어긴다"는 사고를 막는 것이라(namu-62 ②), 지켜야 할 조항 자체가 화면에 있어야
+    쓸모가 있다. 요약만 띄우면 "규칙이 있다"는 사실만 알리고 규칙은 안 알리는 셈이다.
+
+    3층 도입 전 항목(`statement` 한 칸)도 그대로 읽힌다. 폴백은 profile.layers
+    한 곳에 두는 게 원칙이지만, 이 훅은 sys.path를 main 안에서 손보는 독립
+    스크립트라 최상단에서 profile을 import할 수 없다. 그래서 import에 실패해도 죽지
+    않고 옛 이름으로 읽는다 — 상시 주의가 조용히 꺼지는 것이 이 훅에서 가장 나쁜
+    실패다.
+    """
+    try:
+        import config as _cfg
+        import profile as _profile
+
+        summary, _reason, body = _profile.layers(fact)
+        omitted = _cfg.is_omitted(body)
+    except Exception:
+        summary = fact.get("summary") or fact.get("statement") or ""
+        body = fact.get("body") or ""
+        omitted = body.strip() == "생략"
+
+    text = body if (body and not omitted) else summary
+    return " ".join(str(text).split())
+
+
 def _render(facts: list[dict]) -> str | None:
     lines = []
     used = 0
     for fact in facts:
         subject = str(fact.get("subject") or "").strip()
-        statement = " ".join(str(fact.get("statement") or "").split())
+        statement = _one_line(fact)
         if not statement:
             continue
         line = f"- **{subject}** — {statement}" if subject else f"- {statement}"

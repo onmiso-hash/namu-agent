@@ -342,7 +342,7 @@ def test_search_bowl_profile_via_filter(monkeypatch, tmp_path):
         result = _db.search_bowl(conn, bowl="profile", via="claude")
 
     assert result["count"] == 1
-    assert result["results"][0]["statement"] == "사실 A"
+    assert result["results"][0]["summary"] == "사실 A"
 
 
 if __name__ == "__main__":

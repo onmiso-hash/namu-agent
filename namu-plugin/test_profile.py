@@ -37,8 +37,11 @@ def test_record_fact_then_load_all_and_active(monkeypatch, tmp_path):
     doc = all_docs[0]
     assert doc["id"] == entry_id
     assert doc["subject"] == "user"
-    assert doc["statement"] == "선호 언어는 한국어"
-    assert doc["source"] == "사용자가 직접 말함"
+    # namu-65 3단계 — 옛 이름으로 불러도 3층 칸으로 **옮겨** 저장된다
+    # (statement→summary, source→reason). 말없이 버리는 경로는 없다.
+    assert doc["summary"] == "선호 언어는 한국어"
+    assert doc["reason"] == "사용자가 직접 말함"
+    assert doc["body"] is None
     assert doc["machine"] == "test"
     assert doc["verified_by"] == "human"
     assert doc["tags"] == []
@@ -90,7 +93,7 @@ def test_supersedes_chain_only_latest_is_active(monkeypatch, tmp_path):
     active_docs = _profile.active()
     assert len(active_docs) == 1
     assert active_docs[0]["id"] == id_c
-    assert active_docs[0]["statement"] == "C"
+    assert active_docs[0]["summary"] == "C"
 
 
 def test_load_all_and_active_empty_when_file_missing(monkeypatch, tmp_path):

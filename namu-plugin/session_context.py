@@ -460,7 +460,11 @@ def _build_memo_section() -> list[str]:
     for m in memos:
         stamp = str(m.get("timestamp") or "")[:16].replace("T", " ")
         short_id = shorts.get(str(m.get("id") or ""), "")
-        lines.append(f"- {m.get('text', '')}  ({stamp} {m.get('machine', '')} · id `{short_id}`)")
+        # 브리핑에는 요약 한 줄만 싣는다(namu-65 완료조건 10) — 원문은 memo.yaml과
+        # namu_recall에 그대로 남는다. 3층 이전 메모는 옛 text가 요약 자리를 대신하므로
+        # 화면이 종전과 같다.
+        summary, _reason, _body = memo.layers(m)
+        lines.append(f"- {summary}  ({stamp} {m.get('machine', '')} · id `{short_id}`)")
     lines.append("※ 다 쓴 메모는 `namu_memo_remove`로 떼세요(떼면 파일에서 사라집니다).\n")
     return lines
 

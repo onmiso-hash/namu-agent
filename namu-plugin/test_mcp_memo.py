@@ -56,10 +56,10 @@ def _run_probe(home: Path, case_code: str) -> subprocess.CompletedProcess:
 def test_record_bowl_memo_appends_and_returns_id(fake_home):
     result = _run_probe(
         fake_home,
-        "mid = mcp_server.namu_record(bowl='memo', text='영화 8시 20분')\n"
+        "mid = mcp_server.namu_record(bowl='memo', summary='영화 8시 20분', reason='생략', body='영화 8시 20분')\n"
         "import memo\n"
         "entries = memo.load_all()\n"
-        "print('RESULT', len(entries), entries[0]['text'], entries[0]['id'] == mid)\n",
+        "print('RESULT', len(entries), entries[0]['summary'], entries[0]['id'] == mid)\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "RESULT 1 영화 8시 20분 True" in result.stdout
@@ -82,7 +82,7 @@ def test_record_bowl_memo_does_not_touch_learnings(fake_home):
     """이 그릇의 존재 이유 — 일회성 메모가 지식베이스에 섞이면 안 된다."""
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(bowl='memo', text='일회성 메모')\n"
+        "mcp_server.namu_record(bowl='memo', summary='일회성 메모', reason='생략', body='일회성 메모')\n"
         "import db, config as cfg\n"
         "from contextlib import closing\n"
         "with closing(mcp_server.get_conn()) as conn:\n"
@@ -98,7 +98,7 @@ def test_record_bowl_memo_ignores_default_kind(fake_home):
     호출자가 memo에 kind를 줄 이유가 없다(tasks와 같은 취급)."""
     result = _run_probe(
         fake_home,
-        "mid = mcp_server.namu_record(bowl='memo', text='kind 무관', kind='lesson')\n"
+        "mid = mcp_server.namu_record(bowl='memo', summary='kind 무관', reason='생략', body='kind 무관', kind='lesson')\n"
         "print('RESULT', bool(mid))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -113,11 +113,11 @@ def test_record_bowl_memo_ignores_default_kind(fake_home):
 def test_memo_remove_deletes_only_that_memo(fake_home):
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(bowl='memo', text='남을 것')\n"
-        "target = mcp_server.namu_record(bowl='memo', text='뗄 것')\n"
+        "mcp_server.namu_record(bowl='memo', summary='남을 것', reason='생략', body='남을 것')\n"
+        "target = mcp_server.namu_record(bowl='memo', summary='뗄 것', reason='생략', body='뗄 것')\n"
         "msg = mcp_server.namu_memo_remove(target)\n"
         "import memo\n"
-        "left = [m['text'] for m in memo.load_all()]\n"
+        "left = [m['summary'] for m in memo.load_all()]\n"
         "print('RESULT', left, '뗐습니다' in msg)\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -127,7 +127,7 @@ def test_memo_remove_deletes_only_that_memo(fake_home):
 def test_memo_remove_unknown_id_raises(fake_home):
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(bowl='memo', text='하나')\n"
+        "mcp_server.namu_record(bowl='memo', summary='하나', reason='생략', body='하나')\n"
         "try:\n"
         "    mcp_server.namu_memo_remove('ZZZZZZZZ')\n"
         "    print('RESULT no-raise')\n"
@@ -162,10 +162,10 @@ def test_recall_returns_memo_key(fake_home):
     """웹에는 세션 훅이 없어 recall 반환이 메모의 유일한 노출 경로다."""
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(bowl='memo', text='첫째')\n"
-        "mcp_server.namu_record(bowl='memo', text='둘째')\n"
+        "mcp_server.namu_record(bowl='memo', summary='첫째', reason='생략', body='첫째')\n"
+        "mcp_server.namu_record(bowl='memo', summary='둘째', reason='생략', body='둘째')\n"
         "r = mcp_server.namu_recall()\n"
-        "print('RESULT', [m['text'] for m in r['memo']], sorted(r.keys()))\n",
+        "print('RESULT', [m['summary'] for m in r['memo']], sorted(r.keys()))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "RESULT ['첫째', '둘째'] ['learnings', 'memo', 'profile', 'tasks']" in result.stdout
@@ -174,10 +174,10 @@ def test_recall_returns_memo_key(fake_home):
 def test_search_bowl_memo_filters_by_query(fake_home):
     result = _run_probe(
         fake_home,
-        "mcp_server.namu_record(bowl='memo', text='영화 8시 20분')\n"
-        "mcp_server.namu_record(bowl='memo', text='세탁소 전화')\n"
+        "mcp_server.namu_record(bowl='memo', summary='영화 8시 20분', reason='생략', body='영화 8시 20분')\n"
+        "mcp_server.namu_record(bowl='memo', summary='세탁소 전화', reason='생략', body='세탁소 전화')\n"
         "r = mcp_server.namu_search(bowl='memo', query='영화')\n"
-        "print('RESULT', r['count'], r['results'][0]['text'])\n",
+        "print('RESULT', r['count'], r['results'][0]['summary'])\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "RESULT 1 영화 8시 20분" in result.stdout

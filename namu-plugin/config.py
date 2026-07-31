@@ -1,8 +1,10 @@
 import os
 import platform
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
 from pathlib import Path
+from types import MappingProxyType
 
 from dotenv import load_dotenv, find_dotenv
 
@@ -155,6 +157,10 @@ class Bowl:
     merge: str  # "union"(줄 단위 병합) | "file"(파일 단위 — 병합 전략 불필요)
     cached: bool  # SQLite(NAMU_DB_PATH)에 인덱싱되는가
     web_exposed: bool  # 웹 MCP 도구(namu_record 등)로 노출되는가
+    # 사람이 읽는 이름(namu-65). 거절 메시지가 "bowl='profile'로 보내세요"가 아니라
+    # "개인 사실 그릇으로 보내세요"라고 말할 수 있어야 하고, 그 번역표가 메시지를
+    # 만드는 쪽마다 흩어지면 그릇 이름과 어긋난다 — 레지스트리에 함께 둔다.
+    label: str = ""
 
 
 # 그릇 레지스트리. 순서는 learnings → tasks → profile을 유지한다 — 기존
@@ -170,6 +176,7 @@ BOWLS: tuple[Bowl, ...] = (
         merge="union",
         cached=True,
         web_exposed=True,
+        label="교훈",
     ),
     Bowl(
         name="tasks",
@@ -178,6 +185,7 @@ BOWLS: tuple[Bowl, ...] = (
         merge="union",
         cached=False,
         web_exposed=True,
+        label="작업일지",
     ),
     Bowl(
         name="profile",
@@ -186,6 +194,7 @@ BOWLS: tuple[Bowl, ...] = (
         merge="union",
         cached=False,
         web_exposed=True,
+        label="개인 사실",
     ),
     # memo(namu-56) — 유일한 mutable 그릇. merge="union"이 아니라 "file"인 이유가
     # 핵심이다: 줄 단위 union 병합을 걸면 한쪽 PC에서 뗀 메모가 다른 PC의 파일에
@@ -199,8 +208,333 @@ BOWLS: tuple[Bowl, ...] = (
         merge="file",
         cached=False,
         web_exposed=True,
+        label="쪽지",
     ),
 )
+
+
+BOWL_NAMES: tuple[str, ...] = tuple(bowl.name for bowl in BOWLS)
+
+
+def bowl_label(name: str) -> str:
+    """그릇 이름 → 사람이 읽는 이름("learnings" → "교훈"). 모르는 이름은 그대로."""
+    for bowl in BOWLS:
+        if bowl.name == name:
+            return bowl.label or bowl.name
+    return name
+
+
+# ---------------------------------------------------------------------------
+# 그릇별 허용 칸 선언 (namu-65 구현 1단계 — docs/memory_schema_v2.md 7장)
+# ---------------------------------------------------------------------------
+#
+# 왜 선언으로 두나: 한 칸이 "요약"과 "상세" 두 일을 겸하도록 설계된 탓에 교훈 157건
+# 중 149건이 원 의도(reason 100자 이하)를 벗어났고, `text`처럼 그릇이 받지 않는 칸은
+# **말없이 버려져** 웹에서 저장한 조사 원문이 통째로 사라지는 사고가 났다. 어느 칸이
+# 어느 그릇에서 유효한지가 mcp_server의 분기문 안에만 흩어져 있었기 때문이다.
+# 이 표 하나에서 ①입력 검증(2단계) ②거절·안내 메시지 ③도구 설명문 ④저장 계층의
+# 칸 목록(3단계)을 전부 파생시켜, 같은 결함이 옆 그릇에서 재발하지 못하게 한다.
+#
+# 이 블록 자체는 **선언일 뿐 아무 동작도 바꾸지 않는다** — 파생시키는 쪽은 2단계부터다.
+
+# 3층 중 적을 게 없는 칸에 넣는 한 단어(설계 원칙 3). 빈 문자열을 허용하면 "안 적은
+# 것"과 "적을 게 없다고 판단한 것"이 구분되지 않아, 화면에서 감출지 경고할지 정할 수
+# 없다. 화면에서는 이 값이 든 줄을 감춘다.
+OMITTED = "생략"
+
+
+def is_omitted(value: "str | None") -> bool:
+    """`생략` 한 단어인가(앞뒤 공백 무시). 화면에서 감출지 판단하는 단일 기준."""
+    return (value or "").strip() == OMITTED
+
+
+@dataclass(frozen=True)
+class Field:
+    """`namu_record`가 받는 입력 칸 하나의 선언(namu-65).
+
+    bowls/required_in에 그릇 이름을 적는 것이 곧 그 그릇의 스키마 결정이다.
+    - `bowls`에 없는 그릇으로 이 칸이 오면 **조용히 버리지 않고 거절**하고,
+      `bowls_accepting()`이 알려주는 갈 곳을 메시지에 적는다(설계 원칙 4).
+    - `required_in`의 그릇에서 이 칸이 비면 거절한다. `생략` 한 단어는 채운 것으로 본다.
+
+    desc/example은 장식이 아니라 산출물이다 — 완료조건 2가 "항목마다 개별 설명(어느
+    그릇에서 필수인지·쓰면 안 되는지·예시 한 줄)"을 요구하며, 도구 설명문을 손으로
+    쓰면 표와 어긋난다. 설명문은 이 값들에서 만든다.
+
+    values: **그릇마다 다르다.** 같은 `status`라도 교훈은 success/failure/partial로
+    닫혀 있지만 작업일지 꼬리표는 실제로 30가지가 쓰이고 있어(`[결정]` 91회, `[분담]`
+    60회 등) 닫으면 기존 사용을 깬다. 그래서 "필드 하나에 값 목록 하나"가 아니라
+    그릇별 매핑이며, 항목이 없는 그릇은 자유 입력이다.
+    """
+
+    name: str
+    bowls: tuple[str, ...]        # 이 칸을 받는 그릇 (여기 없으면 거절)
+    required_in: tuple[str, ...]  # 비면 거절하는 그릇
+    desc: str                     # 개별 설명 — 도구 설명문·거절 메시지 공용
+    example: str                  # 예시 한 줄 (완료조건 2 ③)
+    values: "Mapping[str, tuple[str, ...]]" = MappingProxyType({})  # 그릇별 닫힌 허용값
+
+
+_ALL_BOWLS = ("learnings", "profile", "tasks", "memo")
+
+# 3층(summary/reason/body)은 네 그릇 전부에서 필수다 — 예외 없음(설계 원칙 2).
+# 적을 게 없으면 `생략`을 넣는다. reason을 필수에서 빼자는 재검토는 이미 닫힌
+# 논점이다: 기존 작업일지 450줄에 reason이 없던 것은 **칸 자체가 없었기 때문**이지
+# 불필요해서가 아니다.
+FIELDS: tuple[Field, ...] = (
+    # ── 내용 3층 ────────────────────────────────────────────────────────────
+    Field(
+        name="summary",
+        bowls=_ALL_BOWLS,
+        required_in=_ALL_BOWLS,
+        desc="한 줄 요약(무엇을?). 브리핑·목록 화면에 그대로 실리는 유일한 칸이라, "
+             "일을 한 AI가 저장 시점에 한 번 쓰고 고정한다 — 나중 세션이 볼 때마다 "
+             "새로 지어내던 요약이 매번 달라지던 문제를 여기서 끊는다.",
+        example="브리핑 가독성 수정은 데이터 구조 결함을 화면에서 걸레질한 것이었다",
+    ),
+    Field(
+        name="reason",
+        bowls=_ALL_BOWLS,
+        required_in=_ALL_BOWLS,
+        desc="왜 그런가 / 어떻게 알았나 / 왜 남기나(짧은 문단). 결론만 남기면 다음 "
+             "세션이 판단 근거를 알 수 없어 같은 논의를 되풀이한다.",
+        example="한 칸이 요약과 상세를 겸해 157건 중 149건이 원 의도를 벗어났기 때문",
+    ),
+    Field(
+        name="body",
+        bowls=_ALL_BOWLS,
+        required_in=_ALL_BOWLS,
+        desc="그때 무슨 일이 있었나 — 원문·경위 전부(길이 제한 없음). 쪽지에서는 "
+             "붙여둔 원문 자체가 여기 들어간다. 이 칸이 없어서 웹에서 저장한 조사 "
+             "원문이 통째로 사라졌다.",
+        example="(조사 자료 전문·재현 절차·측정값 등 원문 그대로)",
+    ),
+    # ── 분류 ────────────────────────────────────────────────────────────────
+    Field(
+        name="bowl",
+        # 2026-07-31 사용자 결정 — **생략 불가**. 옛 동작은 그릇을 안 적으면 조용히
+        # 교훈으로 보냈는데(kind 기본값 'lesson'), 이번에 kind를 없애면 그 자리에
+        # "말없이 교훈행"만 남는다. 그건 이 작업이 없애려는 결함과 같은 종류다:
+        # 잘못 담겨도 아무도 모르고, 교훈 창고가 지저분해진 뒤에야 드러난다(쪽지
+        # 그릇이 생긴 이유 자체가 일회성 메모의 learnings 유입이었다).
+        # 그릇 선택에도 설계 원칙 4를 그대로 적용한다 — 거절하고 갈 곳을 알려준다
+        # (`suggest_bowl()`이 준 칸을 보고 후보를 짚어준다).
+        # 옛 이름(kind='fact' 등)으로 부르는 호출은 종전 해석을 유지하므로 안 깨진다.
+        bowls=_ALL_BOWLS,
+        required_in=_ALL_BOWLS,
+        desc="어느 그릇에 담을지. 생략할 수 없다 — 안 적으면 거절하고 네 그릇을 "
+             "안내한다. 교훈(learnings)은 다시 쓸 배움, 개인 사실(profile)은 사용자에 "
+             "대한 사실, 작업일지(tasks)는 진행 기록, 쪽지(memo)는 쓰고 버릴 메모다.",
+        example="memo",
+        values=MappingProxyType({bowl: _ALL_BOWLS for bowl in _ALL_BOWLS}),
+    ),
+    Field(
+        name="topic",
+        bowls=("learnings", "profile", "tasks"),
+        required_in=("learnings", "profile", "tasks"),
+        desc="주제·작업 이름. 교훈은 어느 작업에서 얻었는지, 개인 사실은 무엇에 대한 "
+             "사실인지(옛 subject), 작업일지는 어느 작업의 log.md에 붙일지를 정한다 "
+             "— 작업일지에서는 이미 있는 작업의 이름이나 그 앞부분이어야 한다. "
+             "쪽지는 받지 않는다(쓰고 버리는 그릇이라 분류할 이유가 없다).",
+        example="namu-65-memory-schema-unify",
+    ),
+    Field(
+        name="status",
+        bowls=("learnings", "tasks"),
+        required_in=(),
+        desc="상태. 교훈은 success/failure/partial 셋 중 하나이며, 비면 교훈이 아니라 "
+             "단순 기록으로 취급한다(옛 kind를 대신하는 판정 기준). 작업일지는 줄 앞에 "
+             "붙는 꼬리표이고 기본값은 '기록'이다. 개인 사실·쪽지는 받지 않는다. "
+             "주의: 작업일지의 '완료'/'중단'은 **작업 전체가 닫힌다**는 뜻이라 진행 "
+             "메모에 쓰면 열린 작업 목록에서 사라진다(실제 사고 2회).",
+        example="failure",
+        values=MappingProxyType({"learnings": ("success", "failure", "partial")}),
+        # tasks는 일부러 닫지 않는다 — 실제 로그에 30가지 꼬리표가 쓰이고 있어
+        # 5가지로 닫으면 기존 사용을 깬다. 권장값: 시작·기록·다음·완료·중단.
+    ),
+    Field(
+        name="category",
+        bowls=("learnings",),
+        required_in=(),
+        desc="갈래. 생략하면 other. 교훈 전용이다(옛 task_type).",
+        example="code",
+        values=MappingProxyType({"learnings": ("code", "doc", "analysis", "other")}),
+    ),
+    Field(
+        name="tags",
+        bowls=("learnings", "profile", "memo"),
+        required_in=(),
+        desc="꼬리표 목록. 개인 사실에 '상시'를 붙이면 세션 시작 1회가 아니라 "
+             "사용자 입력마다 다시 올라온다. 작업일지는 받지 않는다 — 거기서 꼬리표에 "
+             "해당하는 것은 status다.",
+        example="['상시', '출력규칙']",
+    ),
+    # ── 대상·부가 ───────────────────────────────────────────────────────────
+    Field(
+        name="project",
+        bowls=("tasks",),
+        required_in=(),
+        desc="프로젝트 폴더 이름. 작업일지 전용이다. 로컬에서는 생략하면 현재 폴더로 "
+             "보지만, 웹에는 현재 폴더라는 것이 없으므로 반드시 적어야 한다.",
+        example="namu-agent",
+    ),
+    Field(
+        name="confidence",
+        bowls=("learnings", "profile"),
+        required_in=(),
+        desc="이 내용을 사람이 확인했는지, AI 판단인지(옛 verified_by). 나중에 신뢰도로 "
+             "거르기 위한 칸이라 짐작을 human으로 적으면 안 된다.",
+        example="human",
+        values=MappingProxyType({
+            "learnings": ("human", "ai", "unverified"),
+            "profile": ("human", "ai", "unverified"),
+        }),
+    ),
+    Field(
+        name="supersedes",
+        bowls=("profile",),
+        required_in=(),
+        desc="정정할 옛 기록의 id. 개인 사실은 고쳐 쓰지 않고(append-only) 새 항목이 "
+             "옛 항목을 가리키는 방식으로 정정한다.",
+        example="01KYKFDR8Q2N7V0C6W3M5Y1XT",
+    ),
+    Field(
+        name="create",
+        bowls=("tasks",),
+        required_in=(),
+        desc="참이면 새 작업 폴더를 만든다. 거짓(기본)일 때 없는 작업 이름을 주면 "
+             "만들지 않고 후보를 들어 거절한다.",
+        example="True",
+    ),
+    Field(
+        name="done_when",
+        bowls=("tasks",),
+        required_in=(),
+        desc="완료조건 목록. 작업을 새로 만들 때(create) 체크리스트로 적힌다.",
+        example="['입력 항목이 13개로 정리된다', '기존 테스트 386개 통과']",
+    ),
+)
+
+FIELD_NAMES: tuple[str, ...] = tuple(field.name for field in FIELDS)
+_FIELDS_BY_NAME: "Mapping[str, Field]" = MappingProxyType(
+    {field.name: field for field in FIELDS}
+)
+
+
+def field_by_name(name: str) -> "Field | None":
+    return _FIELDS_BY_NAME.get(name)
+
+
+def fields_for(bowl: str) -> tuple[Field, ...]:
+    """그 그릇이 받는 칸 선언 전부(선언 순서 유지 — 도구 설명문이 이 순서로 나온다)."""
+    return tuple(field for field in FIELDS if bowl in field.bowls)
+
+
+def allowed_fields(bowl: str) -> frozenset[str]:
+    """그 그릇이 받는 칸 이름. 여기 없는 칸이 오면 버리지 말고 거절한다."""
+    return frozenset(field.name for field in FIELDS if bowl in field.bowls)
+
+
+def required_fields(bowl: str) -> frozenset[str]:
+    """그 그릇에서 비면 거절하는 칸 이름(`생략` 한 단어는 채운 것으로 본다)."""
+    return frozenset(field.name for field in FIELDS if bowl in field.required_in)
+
+
+def bowls_accepting(field_name: str) -> tuple[str, ...]:
+    """그 칸을 받는 그릇 이름들. 거절 메시지에 "어디로 가야 하는지"를 적기 위한 것이라,
+    모르는 칸 이름이면 빈 튜플을 준다(=갈 곳이 없다는 뜻)."""
+    field = _FIELDS_BY_NAME.get(field_name)
+    return field.bowls if field else ()
+
+
+def allowed_values(field_name: str, bowl: str) -> tuple[str, ...]:
+    """그 그릇에서 그 칸이 받는 닫힌 값 목록. 빈 튜플이면 자유 입력이다."""
+    field = _FIELDS_BY_NAME.get(field_name)
+    if field is None:
+        return ()
+    return tuple(field.values.get(bowl, ()))
+
+
+@dataclass(frozen=True)
+class FieldAlias:
+    """옛 이름 → 새 이름 대응(namu-65 설계서 4장).
+
+    옛 이름으로 호출해도 **거절하지 않고 새 이름으로 옮겨 저장한 뒤, 어디로 옮겼는지
+    반환문에 알린다.** 말없이 버리는 경로를 코드에서 없애는 것이 이번 작업의 핵심이고,
+    옛 이름을 조용히 무시하는 것도 같은 종류의 유실이다.
+
+    bowls가 비어 있으면 모든 그릇에 적용된다. `text`처럼 그릇마다 갈 곳이 다른 이름이
+    있어서 그릇을 함께 적는다 — 이 이름 하나가 이번 사고의 원인이었다.
+    """
+
+    old: str
+    new: "str | None"  # None = 없앤 칸(대체 없음)
+    bowls: tuple[str, ...] = ()
+    note: str = ""
+
+
+FIELD_ALIASES: tuple[FieldAlias, ...] = (
+    FieldAlias("task", "topic", note="교훈의 작업 이름"),
+    FieldAlias("subject", "topic", note="개인 사실의 주제"),
+    FieldAlias("statement", "summary",
+               note="한 줄은 summary, 상세가 있으면 body로 나눠 넣는다"),
+    FieldAlias("source", "reason", note="'어떻게 아는가'라 2층(reason)이 맞다"),
+    FieldAlias("outcome", "status"),
+    FieldAlias("tag", "status", bowls=("tasks",), note="작업일지 꼬리표"),
+    # 이번 사고의 원인이 된 이름. 작업일지에서는 줄에 적히는 한 줄이라 summary지만,
+    # 나머지 그릇에서는 통째로 버려지던 원문이므로 body로 살린다.
+    FieldAlias("text", "summary", bowls=("tasks",), note="작업일지의 한 줄"),
+    FieldAlias("text", "body", bowls=("learnings", "profile", "memo"),
+               note="옛 경로에서 말없이 버려지던 원문 — body로 살린다"),
+    FieldAlias("task_type", "category"),
+    FieldAlias("verified_by", "confidence"),
+    FieldAlias("kind", None,
+               note="없앴다 — status가 있으면 교훈, 없으면 단순 기록으로 본다"),
+    FieldAlias("title", "summary", bowls=("tasks",), note="작업을 새로 만들 때"),
+    FieldAlias("purpose", "reason", bowls=("tasks",), note="작업을 새로 만들 때"),
+)
+
+
+def resolve_field_alias(old: str, bowl: str) -> "FieldAlias | None":
+    """옛 이름 + 그릇 → 대응 선언. 그릇을 지정한 항목을 먼저 본다(text처럼 그릇마다
+    갈 곳이 다른 이름이 있으므로, 전체 적용 항목이 앞서 잡히면 안 된다)."""
+    for alias in FIELD_ALIASES:
+        if alias.old == old and bowl in alias.bowls:
+            return alias
+    for alias in FIELD_ALIASES:
+        if alias.old == old and not alias.bowls:
+            return alias
+    return None
+
+
+def suggest_bowl(field_names: "Iterable[str]") -> "str | None":
+    """준 칸 이름만 보고 그릇 하나를 추정한다. 확실하지 않으면 None(추측 금지).
+
+    그릇을 안 적어 거절할 때 "네 개 중 고르세요"로 끝내지 않고 후보를 짚어주기 위한
+    것이다(설계 원칙 4). 근거는 **그 칸을 받는 그릇이 하나뿐인 경우**뿐이다 — 예를
+    들어 project/create/done_when은 작업일지만, supersedes는 개인 사실만, category는
+    교훈만 받는다. 근거가 갈리면 조용히 하나를 고르지 않고 None을 준다: 빗나간 추천은
+    없느니만 못하고, 애초에 이 작업이 없애려는 것이 '조용한 짐작'이다.
+
+    옛 이름도 근거로 본다(tag·title·purpose는 작업일지 전용). 다만 갈 곳이 그릇마다
+    다른 이름(`text`)은 근거에서 뺀다 — 그 이름 하나가 이번 사고의 원인이었다.
+    """
+    votes: set[str] = set()
+    for name in field_names:
+        field = _FIELDS_BY_NAME.get(name)
+        if field is not None:
+            if len(field.bowls) == 1:
+                votes.add(field.bowls[0])
+            continue
+        scoped = {
+            bowl
+            for alias in FIELD_ALIASES
+            if alias.old == name
+            for bowl in alias.bowls
+        }
+        if len(scoped) == 1:
+            votes.add(next(iter(scoped)))
+    return next(iter(votes)) if len(votes) == 1 else None
 
 
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)

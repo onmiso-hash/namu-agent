@@ -91,26 +91,52 @@ def short_ids(entries: list[dict], minimum: int = 8) -> dict[str, str]:
     return result
 
 
+def layers(entry: dict) -> tuple[str, str, str]:
+    """메모 한 장에서 (summary, reason, body)를 꺼낸다. **읽는 쪽은 전부 이걸 쓴다.**
+
+    3층 도입(namu-65) 전에 붙인 메모는 `text` 한 칸뿐이다. 그 시절 text는 붙여둔
+    내용 전부였으므로 요약 자리와 원문 자리 양쪽의 폴백이 된다 — 화면은 종전과 똑같이
+    보이고, 새로 붙는 메모부터 브리핑에 한 줄만 실린다.
+    """
+    legacy = entry.get("text") or ""
+    summary = entry.get("summary") or legacy
+    body = entry.get("body") or legacy
+    reason = entry.get("reason") or ""
+    return str(summary), str(reason), str(body)
+
+
 def add(
-    text: str,
+    text: str | None = None,
     tags: list | None = None,
     via: str | None = None,
     paths: "cfg.DataPaths | None" = None,
+    *,
+    summary: str | None = None,
+    reason: str | None = None,
+    body: str | None = None,
 ) -> str:
     """메모 한 장을 붙이고 id를 반환한다.
 
-    스키마는 최소로 고정한다(id/timestamp/text/machine/tags/via) — 유효기간(만료)은
+    스키마는 최소로 고정한다(id/timestamp/3층/machine/tags/via) — 유효기간(만료)은
     넣지 않기로 결정했다(2026-07-25 사용자 확정). 자동 삭제는 "내가 안 지웠는데
     없어졌다"가 되기 쉽고, 뗄 시점은 사람이 정하는 게 맞다.
+
+    namu-65 3단계로 3층이 들어왔다. 옛 `text`는 붙여둔 내용 자체였으므로 `body`로
+    간다 — 요약(`summary`)만 브리핑에 실리고 원문은 통째로 남는 구조다. 옛 이름으로
+    부르면 summary/body 양쪽을 그 값으로 채운다(화면이 종전과 같아진다).
     """
     text = (text or "").strip()
-    if not text:
-        raise ValueError("text는 필수입니다(빈 메모는 붙일 수 없습니다)")
+    summary = (summary or "").strip() or text
+    body = (body or "").strip() or text
+    if not summary or not body:
+        raise ValueError("빈 메모는 붙일 수 없습니다(요약과 원문이 필요합니다)")
 
     entry = {
         "id": str(ULID()),
         "timestamp": cfg.now().isoformat(),
-        "text": text,
+        "summary": summary,
+        "reason": (reason or "").strip() or None,
+        "body": body,
         "machine": cfg.NAMU_MACHINE,
         "tags": tags or [],
         "via": via,

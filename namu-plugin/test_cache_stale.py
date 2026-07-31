@@ -25,19 +25,28 @@ def _make_yaml(path: Path, n: int) -> None:
 
 
 def _make_db(path: Path, n: int) -> None:
-    """n개의 row를 가진 최신 스키마 SQLite DB 생성(kind/via 컬럼 포함)."""
+    """n개의 row를 가진 **최신** 스키마 SQLite DB 생성.
+
+    스키마를 손으로 적지 않고 `db._SCHEMA`를 그대로 실행한다 — 손으로 적으면 컬럼이
+    늘 때마다(namu-65의 summary/body처럼) 이 도우미가 낡아, "최신 스키마인데 낡음으로
+    판정된다"는 가짜 실패가 난다. 반대로 **옛 스키마** 도우미들은 재현이 목적이므로
+    하드코딩을 유지한다.
+    """
     with sqlite3.connect(path) as conn:
-        conn.executescript(
-            "CREATE TABLE IF NOT EXISTS learnings ("
-            "id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, task TEXT NOT NULL,"
-            "task_type TEXT, outcome TEXT, reason TEXT NOT NULL,"
-            "machine TEXT, verified_by TEXT, tags TEXT, kind TEXT, via TEXT);"
-        )
+        conn.executescript(_db._SCHEMA)
+        cols = ", ".join(_db._COLS)
+        holes = ",".join("?" * len(_db._COLS))
         for i in range(n):
+            values = {
+                "id": f"FAKE{i:04d}", "timestamp": "2025-01-01T00:00:00+00:00",
+                "task": f"t{i}", "task_type": "other", "outcome": "success",
+                "reason": f"r{i}", "machine": "test", "verified_by": "human",
+                "tags": "[]", "kind": "lesson", "via": None,
+                "summary": f"s{i}", "body": f"b{i}",
+            }
             conn.execute(
-                "INSERT INTO learnings VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (f"FAKE{i:04d}", "2025-01-01T00:00:00+00:00", f"t{i}",
-                 "other", "success", f"r{i}", "test", "human", "[]", "lesson", None),
+                f"INSERT INTO learnings ({cols}) VALUES ({holes})",
+                tuple(values.get(col) for col in _db._COLS),
             )
 
 

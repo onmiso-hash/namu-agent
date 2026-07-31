@@ -13,6 +13,7 @@ import config as cfg
 import memo
 import memory_sync
 import profile
+import record_input
 import task_resolve
 from mcp.server.fastmcp import Context, FastMCP
 from db import init_db, rebuild_from_yaml, record, cache_is_stale
@@ -208,6 +209,29 @@ def _append_task_log_line(task_dir: Path, line: str) -> None:
         f.write(line + "\n")
 
 
+# 작업일지 세 줄 묶음(namu-65 4단계). 이어지는 줄은 공백 4칸으로 들여쓴다 —
+# 읽는 쪽이 예나 지금이나 "`[`로 시작하는 줄"만 항목으로 세므로, 들여쓴 줄은
+# 옛 코드에서도 그냥 무시된다(옛 450줄과 새 줄이 한 파일에 섞여도 안전).
+_LOG_INDENT = "    "
+_LOG_REASON_LABEL = "왜: "
+_LOG_BODY_LABEL = "상세: "
+
+
+def _log_block(head: str, reason: str | None, body: str | None) -> str:
+    """머리줄 + (왜/상세) 이어지는 줄을 한 덩어리로 만든다.
+
+    `생략` 한 단어는 줄 자체를 만들지 않는다 — 화면에서 감추기로 한 값을 파일에
+    남겨두면 브리핑이 '왜: 생략'이라는 빈 소리를 하게 된다.
+    """
+    lines = [head]
+    for label, value in ((_LOG_REASON_LABEL, reason), (_LOG_BODY_LABEL, body)):
+        value = " ".join((value or "").split())
+        if not value or cfg.is_omitted(value):
+            continue
+        lines.append(f"{_LOG_INDENT}{label}{value}")
+    return "\n".join(lines)
+
+
 def _record_task_entry(
     project: str | None,
     task: str | None,
@@ -215,8 +239,10 @@ def _record_task_entry(
     tag: str | None,
     via: str | None,
     ctx: Context | None,
+    reason: str | None = None,
+    body: str | None = None,
 ) -> str:
-    """bowl='tasks' 경로: log.md에 한 줄 append하고 그 줄을 반환한다."""
+    """bowl='tasks' 경로: log.md에 한 줄(또는 세 줄 묶음) append하고 그것을 반환한다."""
     resolved_project = _resolve_record_project(project, ctx)
     slug = _resolve_task_slug(resolved_project, task)
     tag, text = _validate_task_tag_text(tag, text)
@@ -229,10 +255,11 @@ def _record_task_entry(
     line = f"[{tag}] {ts} {machine} · {text}"
     if via:
         line += f" (via {via})"
+    block = _log_block(line, reason, body)
 
     task_dir = task_resolve.tasks_root_for(resolved_project) / slug
-    _append_task_log_line(task_dir, line)
-    return line
+    _append_task_log_line(task_dir, block)
+    return block
 
 
 _NEW_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -523,98 +550,50 @@ def namu_search(
         )
 
 
-@mcp.tool()
+@mcp.tool(description=record_input.tool_description())
 def namu_record(
+    # ── 새 이름 13칸 (namu-65) ────────────────────────────────────────────
+    bowl: str | None = None,
+    summary: str | None = None,
+    reason: str | None = None,
+    body: str | None = None,
+    topic: str | None = None,
+    status: str | None = None,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    project: str | None = None,
+    confidence: str | None = None,
+    supersedes: str | None = None,
+    create: bool = False,
+    done_when: list[str] | None = None,
+    # ── 옛 이름 (그대로 불러도 새 칸으로 옮겨 저장한다) ───────────────────
     task: str | None = None,
     outcome: str | None = None,
-    reason: str | None = None,
-    task_type: str = "other",
-    verified_by: str = "ai",
-    tags: list[str] | None = None,
-    kind: str = "lesson",
+    task_type: str | None = None,
+    verified_by: str | None = None,
+    kind: str | None = None,
     subject: str | None = None,
     statement: str | None = None,
     source: str | None = None,
-    supersedes: str | None = None,
-    bowl: str | None = None,
-    project: str | None = None,
     text: str | None = None,
     tag: str | None = None,
-    create: bool = False,
     title: str | None = None,
     purpose: str | None = None,
-    done_when: list[str] | None = None,
     ctx: Context | None = None,
 ):
-    """Append-only record into one of THREE memory bowls. Pick `bowl`
-    explicitly, or omit it and it's inferred from `kind` (100% backward
-    compatible — existing lesson/note/fact calls need no change). Explicit
-    `bowl` that contradicts `kind` (e.g. bowl='learnings'+kind='fact')
-    raises ValueError immediately.
+    """기억 한 건을 남긴다. 자세한 칸 설명은 도구 설명문(표에서 자동 생성)에 있다.
 
-    bowl='learnings' (kind='lesson'|'note', default): a task outcome+reason
-      (lesson) or a conversation snippet (note) → learnings.yaml. Required:
-      task, reason (non-empty). lesson also requires outcome
-      ('success'/'failure'/'partial'); note's outcome is optional. Trigger:
-      lesson = your own judgment there's a generalizable pattern; note =
-      only when the user explicitly asks to remember the conversation.
+    여기(본문 주석)에는 **동작 순서**만 적는다 — 칸별 설명을 두 곳에 적으면
+    갈라지기 때문이다(namu-65: 설명문은 config.FIELDS에서만 만든다).
 
-    bowl='profile' (kind='fact'): a fact/preference → profile.yaml (no
-      SQLite cache). Required: subject, statement, source (non-empty — WHY
-      you know this). `supersedes`=<old id> corrects a prior fact
-      (append-only, never edited in place). Soft policy: propose to the
-      user first ("should I remember this?").
+    (1) record_input.normalize가 그릇을 확정하고, 옛 이름을 새 이름으로 옮기고,
+        그 그릇이 받지 않는 칸/빈 필수 칸/정해진 값 밖의 값을 거절한다.
+    (2) 그릇별 저장 계층으로 넘긴다(교훈=db.record, 개인 사실=profile.record_fact,
+        쪽지=memo.add, 작업일지=log.md append).
+    (3) 옮긴 내역(notices)을 반환문 뒤에 붙인다 — 옮겨놓고 알리지 않으면 그것도
+        조용한 유실이다.
 
-    bowl='tasks' (namu-57 2단계, new): one project work-log line →
-      that task's log.md (git merge=union — safe to append from anywhere,
-      including the web). Required: project (folder name, e.g.
-      'namu-agent'; on stdio omit for "current project", on the web it's
-      MANDATORY — no cwd there), task (slug or unique prefix like
-      'namu-57'; must already exist, this never creates a task folder unless
-      create=True — 0/2+ matches raise ValueError listing open
-      tasks/candidates and, for the 0-match case, a hint to pass
-      create=True), text (the note, newlines collapsed to spaces). tag
-      defaults to '기록' (must not contain ']' or a newline). Line format:
-      `[tag] YYYY-MM-DD HH:MM:SS <machine> · text`.
-      WARNING: tags '[완료]'/'[중단]' mean the WHOLE TASK is closing and
-      drop it from open-task briefings — never use them for a mid-task
-      progress note (this caused real incidents twice).
-
-    bowl='tasks', create=True (namu-57 2단계 보완, new): create a brand-new
-      task folder instead of appending to an existing one — this is how the
-      web starts new work (e.g. design sessions) since it has no local
-      /namu-task skill. Required: project (same rule as above), task (the
-      new slug — folder-name-safe chars only: letters/digits/hyphen/
-      underscore, first char alphanumeric; '/', '\\', '..' etc. are
-      rejected), purpose (non-empty — WHY this task exists; nobody can make
-      sense of a task with no purpose later). Optional: title (defaults to
-      the slug), done_when (list of completion-condition strings rendered
-      as an unchecked checklist). Raises ValueError if the slug already
-      exists (task.md is an immutable purpose statement, log.md is
-      append-only — creation never overwrites). Writes task.md + log.md
-      following the SKILL.md templates (no context.<machine>.md — that
-      legacy file is no longer created), appends a `[시작]` line, and
-      returns a human-readable string with the created path and that line.
-      ALSO PASS text (+tag, e.g. tag='다음') in the SAME call to record the
-      re-entry point as a second log line — a task created without it shows
-      "다음: (기록 없음)" in the briefing and the next session has no idea
-      where to resume, so the return string warns you when you omit it
-      (namu-62 ③; before that fix text/tag were silently dropped here).
-
-    bowl='memo' (namu-56, new): one sticky note → memo.yaml. Required: text.
-      Optional: tags. This is the ONLY mutable bowl — a memo is meant to be
-      taken down (namu_memo_remove), and when it is, it disappears from the
-      file with no tombstone. Use it for one-off, disposable things the user
-      asks you to hold on to (a showtime, a phone number, "remind me to call
-      the shop"). It is NOT indexed for search alongside lessons — that
-      separation is the whole point of this bowl, so never route disposable
-      notes into 'learnings' just because they feel memory-ish. Memos come
-      back automatically in namu_recall's `memo` field, so the user does not
-      have to ask for them.
-
-    id/timestamp/machine are filled in by the server for every bowl.
-    Returns: ULID str (learnings/profile/memo) or the appended log line / task
-    creation summary (tasks).
+    반환: 교훈/개인 사실/쪽지는 id, 작업일지는 실제로 적힌 줄(묶음).
     """
     # namu-38: samsung 라이브 실측에서 record 직후 git 단계까지 12분 공백이
     # 관측됐다 — ensure_db(캐시 재생성)/record(yaml+sqlite)/sync(git push) 세 구간
@@ -625,54 +604,99 @@ def namu_record(
     _ensure_db()
     t1 = time.perf_counter()
 
-    resolved_bowl = _resolve_record_bowl(bowl, kind)
+    # 입력 검증·이관은 전부 record_input 한 곳에서 한다(namu-65 2단계). 여기서
+    # 다시 판단하면 두 곳이 어긋나고, 어긋난 쪽이 조용히 이기는 것이 이번 사고였다.
+    parsed = record_input.normalize({
+        "bowl": bowl, "summary": summary, "reason": reason, "body": body,
+        "topic": topic, "status": status, "category": category, "tags": tags,
+        "project": project, "confidence": confidence, "supersedes": supersedes,
+        "create": create, "done_when": done_when,
+        "task": task, "outcome": outcome, "task_type": task_type,
+        "verified_by": verified_by, "kind": kind, "subject": subject,
+        "statement": statement, "source": source, "text": text, "tag": tag,
+        "title": title, "purpose": purpose,
+    })
+    v = parsed.values
+    resolved_bowl = parsed.bowl
+    v_summary = v.get("summary")
+    v_reason = v.get("reason")
+    v_body = v.get("body")
+    v_topic = v.get("topic")
+    v_tags = _normalize_tags(v.get("tags"))
 
     if resolved_bowl == "tasks":
-        if create:
+        if v.get("create"):
+            # 작업을 새로 만들 때 body는 "다음 세션이 시작할 지점"이 되어 `[다음]`
+            # 줄로 함께 적힌다 — 그 줄이 없는 작업은 브리핑에 "다음: (기록 없음)"으로
+            # 떠서 이어받을 수 없다(namu-62 ③). '생략'이면 줄을 만들지 않고, 대신
+            # 기존 경고가 그대로 뜨게 둔다.
+            start_point = None if cfg.is_omitted(v_body) else v_body
             result = _create_task_entry(
-                project, task, title, purpose, done_when, text, tag, via, ctx
+                v.get("project"), v_topic, v_summary, v_reason, v.get("done_when"),
+                start_point,
+                (v.get("status") or "다음") if start_point else None,
+                via, ctx,
             )
         else:
-            result = _record_task_entry(project, task, text, tag, via, ctx)
+            result = _record_task_entry(
+                v.get("project"), v_topic, v_summary, v.get("status"), via, ctx,
+                reason=v_reason, body=v_body,
+            )
         t2 = time.perf_counter()
-        memory_sync.sync_push(f"task: {task} ({cfg.NAMU_MACHINE})")
+        memory_sync.sync_push(f"task: {v_topic} ({cfg.NAMU_MACHINE})")
         t3 = time.perf_counter()
         memory_sync._append_sync_log(
             f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
         )
-        return result
+        return _with_notices(result, parsed.notices)
 
     if resolved_bowl == "memo":
-        entry_id = memo.add(text, tags=_normalize_tags(tags), via=via)
+        entry_id = memo.add(
+            tags=v_tags, via=via,
+            summary=v_summary, reason=v_reason, body=v_body,
+        )
         t2 = time.perf_counter()
-        memory_sync.sync_push(f"memo: {(text or '')[:40]} ({cfg.NAMU_MACHINE})")
+        memory_sync.sync_push(f"memo: {(v_summary or '')[:40]} ({cfg.NAMU_MACHINE})")
         t3 = time.perf_counter()
         memory_sync._append_sync_log(
             f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
         )
-        return entry_id
+        return _with_notices(entry_id, parsed.notices)
 
     if resolved_bowl == "learnings":
+        # kind는 없앤 칸이다 — status(성패)가 있으면 교훈, 없으면 단순 기록으로 본다.
         entry_id = record(
-            task, outcome, reason, task_type, verified_by, _normalize_tags(tags), kind=kind,
-            via=via,
+            v_topic, v.get("status"), v_reason,
+            v.get("category") or "other", v.get("confidence") or "ai", v_tags,
+            kind="lesson" if v.get("status") else "note",
+            via=via, summary=v_summary, body=v_body,
         )
     else:  # profile
-        vb = verified_by if verified_by in ("human", "ai", "unverified") else "human"
         entry_id = profile.record_fact(
-            subject, statement, source, supersedes=supersedes,
-            verified_by=vb, tags=_normalize_tags(tags), via=via,
+            v_topic, supersedes=v.get("supersedes"),
+            verified_by=v.get("confidence") or "human", tags=v_tags, via=via,
+            summary=v_summary, reason=v_reason, body=v_body,
         )
     t2 = time.perf_counter()
     # 설치형(~/.namu) 자동 동기화 활성 시에만 실제 push가 일어난다(sync_enabled 하드가드).
     # 반환값이 False여도(비활성/실패) record 자체의 성공 결과에는 영향을 주지 않는다.
-    label = (task or statement or subject or "")[:50]
-    memory_sync.sync_push(f"learn: {label} ({cfg.NAMU_MACHINE})")
+    memory_sync.sync_push(f"learn: {(v_summary or v_topic or '')[:50]} ({cfg.NAMU_MACHINE})")
     t3 = time.perf_counter()
     memory_sync._append_sync_log(
         f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
     )
-    return entry_id
+    return _with_notices(entry_id, parsed.notices)
+
+
+def _with_notices(result: str, notices: list) -> str:
+    """옮긴 내역을 반환문 뒤에 붙인다(완료조건 3).
+
+    안내가 없으면 결과를 그대로 돌려준다 — 새 이름으로 제대로 부른 호출까지 잔소리를
+    달면, 정작 봐야 할 때 안 읽힌다.
+    """
+    if not notices:
+        return result
+    return str(result) + "\n" + "\n".join(f"※ {n}" for n in notices)
 
 
 @mcp.tool()
@@ -695,8 +719,9 @@ def namu_memo_remove(id: str, ctx: Context | None = None) -> str:
     """
     _resolve_via(ctx)
     removed = memo.remove(id)
-    memory_sync.sync_push(f"memo remove: {str(removed.get('text', ''))[:40]} ({cfg.NAMU_MACHINE})")
-    return f"메모를 뗐습니다: {removed.get('text', '')} (id={removed.get('id')})"
+    removed_summary, _reason, _body = memo.layers(removed)
+    memory_sync.sync_push(f"memo remove: {removed_summary[:40]} ({cfg.NAMU_MACHINE})")
+    return f"메모를 뗐습니다: {removed_summary} (id={removed.get('id')})"
 
 
 @mcp.tool()

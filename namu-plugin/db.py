@@ -11,6 +11,12 @@ import memo as _memo
 import profile as _profile
 import task_resolve
 
+# namu-65 3단계 — 3층(summary/reason/body) 중 summary·body 컬럼 추가.
+# 저장 이름 규칙: **3층은 도입하되 축 이름(task/outcome/task_type/verified_by)은
+# 손대지 않는다.** 입력 이름은 boundary(record_input)에서 topic/status/category/
+# confidence로 통일되지만, 저장 키까지 바꾸면 161건 yaml + 이 스키마 + 읽는 곳
+# (세션 브리핑·statusline·웹 라우팅 등 이 repo 밖 소비자 포함)이 한꺼번에 흔들린다.
+# reason이라는 이름이 살아남은 덕에 교훈 159건 이관이 안전했던 것과 같은 판단이다.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS learnings (
     id          TEXT PRIMARY KEY,
@@ -23,22 +29,24 @@ CREATE TABLE IF NOT EXISTS learnings (
     verified_by TEXT CHECK(verified_by IN ('human','ai','unverified')),
     tags        TEXT,
     kind        TEXT,
-    via         TEXT
+    via         TEXT,
+    summary     TEXT,
+    body        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_learnings_type    ON learnings(task_type);
 CREATE INDEX IF NOT EXISTS idx_learnings_outcome ON learnings(outcome);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS learnings_fts USING fts5(
-    task, reason, tags,
+    task, reason, tags, summary, body,
     content='learnings',
     content_rowid='rowid',
     tokenize='trigram'
 );
 
 CREATE TRIGGER IF NOT EXISTS learnings_ai AFTER INSERT ON learnings BEGIN
-  INSERT INTO learnings_fts(rowid, task, reason, tags)
-  VALUES (new.rowid, new.task, new.reason, new.tags);
+  INSERT INTO learnings_fts(rowid, task, reason, tags, summary, body)
+  VALUES (new.rowid, new.task, new.reason, new.tags, new.summary, new.body);
 END;
 """
 
@@ -67,7 +75,17 @@ def record(
     kind: str = "lesson",
     via: str | None = None,
     paths: "cfg.DataPaths | None" = None,
+    *,
+    summary: str | None = None,
+    body: str | None = None,
 ) -> str:
+    """교훈 한 건을 남긴다(append-only).
+
+    summary/body는 namu-65 3단계에서 더한 3층의 1·3층이다. **여기서는 필수로 걸지
+    않는다** — 필수 여부는 그릇별로 다르고 그 판단은 입력 경계(record_input)가 표에서
+    파생해 이미 내린 뒤다. 저장 계층이 같은 규칙을 한 번 더 구현하면 두 곳이 어긋날 때
+    어느 쪽이 옳은지 알 수 없어진다. 옛 호출(3층 없음)도 그대로 통과한다.
+    """
     if not reason:
         raise ValueError("reason은 필수입니다")
     if kind not in _VALID_KINDS:
@@ -102,6 +120,8 @@ def record(
         "tags": tags,
         "kind": kind,
         "via": via,
+        "summary": summary,
+        "body": body,
     }
 
     # YAML 먼저 (진실의 원천)
@@ -117,10 +137,12 @@ def record(
         with conn:
             conn.execute(
                 """INSERT INTO learnings
-                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind, via)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by,
+                    tags, kind, via, summary, body)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (entry_id, timestamp, task, task_type, outcome, reason,
-                 machine, verified_by, json.dumps(tags, ensure_ascii=False), kind, via),
+                 machine, verified_by, json.dumps(tags, ensure_ascii=False), kind, via,
+                 summary, body),
             )
 
     return entry_id
@@ -148,11 +170,13 @@ def rebuild_from_yaml(paths: "cfg.DataPaths | None" = None) -> int:
                 kind = d.get("kind") or "lesson"
                 conn.execute(
                     """INSERT OR IGNORE INTO learnings
-                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by, tags, kind, via)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by,
+                        tags, kind, via, summary, body)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (d.get("id"), d.get("timestamp"), d.get("task"), d.get("task_type"),
                      d.get("outcome"), d.get("reason"), d.get("machine"), d.get("verified_by"),
-                     json.dumps(tags, ensure_ascii=False), kind, d.get("via")),
+                     json.dumps(tags, ensure_ascii=False), kind, d.get("via"),
+                     d.get("summary"), d.get("body")),
                 )
     return len(docs)
 
@@ -190,10 +214,20 @@ def cache_is_stale(yaml_path, db_path) -> bool:
     return yaml_count != db_count
 
 
+# 조회 컬럼 목록. **끝에 추가한다** — `_row_to_dict`가 SELECT 결과를 이 순서로
+# 짝지으므로 중간에 끼우면 값이 한 칸씩 밀린다. 여기에 이름을 더하면
+# `cache_is_stale`이 옛 스키마 db를 자동으로 낡음 판정해 재생성한다(namu-65 3단계에서
+# summary/body를 더한 것이 그 경로를 그대로 탄다 — 새 감지 장치를 만들 필요 없음).
 _COLS = (
     "id", "timestamp", "task", "task_type", "outcome",
     "reason", "machine", "verified_by", "tags", "kind", "via",
+    "summary", "body",
 )
+
+# SELECT 절은 _COLS에서 만든다 — 컬럼을 더할 때 네 군데 하드코딩된 목록을 손으로
+# 맞추다 어긋나면, 값이 조용히 다른 칸으로 들어간다(자리만 밀리므로 예외도 안 난다).
+_SELECT_COLS = ", ".join(_COLS)
+_SELECT_COLS_L = ", ".join(f"l.{col}" for col in _COLS)
 
 
 def _row_to_dict(row: tuple) -> dict:
@@ -299,8 +333,7 @@ def _fts_query(
         conds = ["learnings_fts MATCH ?"] + extra_conds
         params = [fts_term] + extra_params
         sql = (
-            "SELECT l.id, l.timestamp, l.task, l.task_type, l.outcome,"
-            " l.reason, l.machine, l.verified_by, l.tags, l.kind, l.via"
+            f"SELECT {_SELECT_COLS_L}"
             " FROM learnings_fts"
             " JOIN learnings l ON l.rowid = learnings_fts.rowid"
             f" WHERE {' AND '.join(conds)}"
@@ -315,8 +348,11 @@ def _fts_query(
         )
         if q:
             like_term = f"%{q}%"
-            conds = ["(task LIKE ? OR reason LIKE ? OR tags LIKE ?)"] + extra_conds
-            params = [like_term, like_term, like_term] + extra_params
+            conds = [
+                "(task LIKE ? OR reason LIKE ? OR tags LIKE ?"
+                " OR summary LIKE ? OR body LIKE ?)"
+            ] + extra_conds
+            params = [like_term] * 5 + extra_params
         else:
             # 검색어 없음 — 필터만 적용(없으면 무조건 전체), 최신순으로 답한다.
             # ("어제 hp에서 뭐 했지"처럼 축만으로 묻는 질문에 답하기 위함.)
@@ -324,8 +360,7 @@ def _fts_query(
             params = extra_params
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         sql = (
-            "SELECT id, timestamp, task, task_type, outcome,"
-            " reason, machine, verified_by, tags, kind, via"
+            f"SELECT {_SELECT_COLS}"
             " FROM learnings"
             f" {where}"
             " ORDER BY id DESC"
@@ -350,8 +385,7 @@ def recall(
             params.append(task_type)
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         sql = (
-            "SELECT id, timestamp, task, task_type, outcome,"
-            " reason, machine, verified_by, tags, kind, via"
+            f"SELECT {_SELECT_COLS}"
             f" FROM learnings {where} ORDER BY id DESC LIMIT ?"
         )
         return [_row_to_dict(r) for r in conn.execute(sql, params + [lim]).fetchall()]
@@ -433,8 +467,11 @@ def search(
         )
         if q:
             like_term = f"%{q}%"
-            conds = ["(task LIKE ? OR reason LIKE ? OR tags LIKE ?)"] + extra_conds
-            params = [like_term, like_term, like_term] + extra_params
+            conds = [
+                "(task LIKE ? OR reason LIKE ? OR tags LIKE ?"
+                " OR summary LIKE ? OR body LIKE ?)"
+            ] + extra_conds
+            params = [like_term] * 5 + extra_params
         else:
             conds = extra_conds
             params = extra_params
@@ -548,11 +585,15 @@ def search_bowl(
                 memos = [m for m in memos if (m.get("timestamp") or "") <= bound]
         if query:
             q = query.lower()
-            memos = [
-                m for m in memos
-                if q in (m.get("text") or "").lower()
-                or any(q in str(t).lower() for t in (m.get("tags") or []))
-            ]
+            def _memo_matches(m: dict) -> bool:
+                # 3층 전부를 훑는다 — 원문(body)에만 있는 말로도 찾혀야 붙여둔 자료를
+                # 다시 꺼낼 수 있다. 옛 메모(text 한 칸)도 같은 헬퍼가 돌려준다.
+                summary, reason, body = _memo.layers(m)
+                haystack = " ".join([summary, reason, body])
+                haystack += " " + " ".join(str(t) for t in (m.get("tags") or []))
+                return q in haystack.lower()
+
+            memos = [m for m in memos if _memo_matches(m)]
         if limit is not None:
             memos = memos[:limit]
         return {"bowl": bowl, "results": memos, "count": len(memos)}
@@ -575,7 +616,10 @@ def search_bowl(
         q = query.lower()
 
         def _matches(d: dict) -> bool:
-            fields = [d.get("subject"), d.get("statement"), d.get("source")]
+            # 3층 전부를 훑는다(완료조건 11). 옛 이름(statement/source)으로 쌓인
+            # 항목도 같은 헬퍼가 돌려주므로 검색에서 빠지지 않는다.
+            summary, reason, body = _profile.layers(d)
+            fields = [d.get("subject"), summary, reason, body]
             tags = d.get("tags") or []
             haystack = " ".join(str(f) for f in fields if f) + " " + " ".join(str(t) for t in tags)
             return q in haystack.lower()
