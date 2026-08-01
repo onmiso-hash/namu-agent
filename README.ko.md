@@ -13,7 +13,8 @@ English: [README.md](README.md)
 | [🌳 NAMU 에이전트 시스템 — 쉽게 읽는 안내서](https://onmiso-hash.github.io/namu-agent/docs/namu_guide.html) | NAMU가 대체 뭔지 먼저 감을 잡고 싶다 |
 | [🚀 NAMU 설치 & 업데이트 가이드](https://onmiso-hash.github.io/namu-agent/docs/namu_quickstart.html) | 복사·붙여넣기로 바로 설치하고 싶다 |
 | [NAMU 설치 가이드 (상세)](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html) | 설치 중 막혔거나 더 자세히 알고 싶다 |
-| [🌐 NAMU 웹에서 쓰기 — 원격 MCP 셀프호스팅 가이드](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | Claude Code/agy 없이 웹 브라우저(claude.ai)에서만 쓰고 싶다 |
+| [☁️ **나무 클라우드** — 웹 AI에 기억 붙이기](https://namu-cloud.onnamu.kr/) | Claude Code/agy 없이 **웹 브라우저(claude.ai)에서만** 쓰고 싶다 — 서버를 직접 띄우지 않는 길 |
+| [🌐 NAMU 웹에서 쓰기 — 원격 MCP 셀프호스팅 가이드](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | 웹에서 쓰되 **서버는 내가 직접** 띄우고 관리하고 싶다 |
 
 ## NAMU가 뭐 하는 물건인가
 

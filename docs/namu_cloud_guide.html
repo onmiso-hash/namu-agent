@@ -266,130 +266,72 @@
 <div class="wrap">
 
   <header class="hero">
-    <span class="eyebrow">☁️ 경로 A · 중앙 호스팅 · 소수 신뢰 사용자 체험용</span>
-    <h1>NAMU 공용 클라우드 MCP — 경로 A 사용 가이드</h1>
-    <p class="lead">직접 서버를 띄우지 않고도, 중앙(onnamu.kr)이 대신 호스팅하는 <b>공용 NAMU 메모리 서버</b>에 접속만 하면 웹 브라우저의 claude.ai에서 바로 기억(교훈)을 꺼내 쓰고 기록할 수 있습니다.</p>
+    <span class="eyebrow">☁️ 경로 A · 중앙 호스팅 · 소수 사용자 체험 단계</span>
+    <h1>나무 클라우드 — 웹 AI에 기억 붙이기</h1>
+    <p class="lead">직접 서버를 띄우지 않고, 브라우저에서 쓰는 AI(claude.ai 등)에
+    주소 한 줄을 붙여 기억을 이어 쓰는 길입니다. <b>안내는 이제 서비스 사이트가
+    직접 합니다.</b></p>
     <div class="badges">
-      <span class="badge">🔑 웹에선 도구 3개만</span>
-      <span class="badge">👥 멀티유저(?user= 서랍 라우팅)</span>
-      <span class="badge">📅 기준일 2026-07-19(namu-54)</span>
+      <span class="badge">🔑 웹에선 기억 도구 3개</span>
+      <span class="badge">🗂️ 기억의 원본은 내 GitHub 저장소</span>
+      <span class="badge">📅 기준일 2026-08-02(namu-70)</span>
     </div>
   </header>
 
-  <nav class="toc">
-    <h2>목차</h2>
-    <ol>
-      <li><a href="#overview">경로 B와 차이</a></li>
-      <li><a href="#connect">연결법</a></li>
-      <li><a href="#terms">user·client가 뭔가</a></li>
-      <li><a href="#rules">입력 규칙</a></li>
-      <li><a href="#auth">인증·격리 모델</a></li>
-      <li><a href="#future">안 되는 것 / 나중 계획</a></li>
-    </ol>
-  </nav>
+  <div class="ok">
+    <span class="ic">→</span>
+    <div><b>여기서 시작하세요 — <a href="https://namu-cloud.onnamu.kr/" target="_blank" rel="noopener">https://namu-cloud.onnamu.kr</a></b>
+    <br>가입부터 AI에 붙이기까지 화면이 순서대로 안내합니다.</div>
+  </div>
 
-  <!-- 1. 개요 -->
-  <section id="overview">
-    <h2><span class="kicker">1</span> 이게 뭔가 — 경로 B(셀프호스팅)와 차이</h2>
-    <p class="sec-note">경로 A는 "중앙에서 우리가 대신 호스팅해주는 공용 서버에 접속만 하면 되는" 형태입니다(사용자가 직접 서버를 띄우는 경로 B와 반대). <b>현재는 소수 신뢰 사용자 체험용</b>이며 일반 공개 서비스가 아닙니다 — 이유는 5·6절 인증 한계를 보세요.</p>
+  <section id="why">
+    <h2><span class="kicker">1</span> 이 문서가 짧아진 이유</h2>
+    <p class="sec-note">절차를 화면과 문서 두 곳에 적어 두면, 화면을 고칠 때 한쪽만
+    고쳐집니다. 이 프로젝트에서 반복된 사고라 <b>절차의 원본을 화면 자체</b>로
+    옮겼습니다(namu-70). 이 문서는 이제 그 화면을 가리키는 이정표입니다.</p>
 
-    <div class="card">
-      <table>
-        <thead><tr><th></th><th>경로 B(셀프호스팅)</th><th>경로 A(공용 클라우드, 이 문서)</th></tr></thead>
-        <tbody>
-          <tr><td>서버는 누가 띄우나</td><td>사용자 본인이 직접</td><td>중앙(onnamu.kr)이 대신 호스팅</td></tr>
-          <tr><td>사용자 수</td><td>단일 사용자(자기 것 하나)</td><td>멀티유저(<code>?user=</code> 키로 사용자별 서랍 라우팅)</td></tr>
-          <tr><td>데이터 노출 범위</td><td>자기 <code>~/.namu</code> 하나만</td><td>중앙 저장소 안에서 <code>?user=</code> 키별 폴더로 분리</td></tr>
-        </tbody>
-      </table>
-
-      <div class="tip"><span class="ic">💡</span><span><b>라이브 사실</b> — 공용 서비스는 <code>namu-cloud-routing:v0.1.6</code> 이미지(내부 포트 8770, <code>namu_cloud_store</code> named volume)로 떠 있고, Cloudflare named tunnel(고정 도메인으로 상시 연결되는 터널)을 통해 <code>namu-cloud.onnamu.kr</code>에 연결돼 있습니다. 노출 도구는 개인용(경로 B)과 동일한 3종 <code>namu_recall</code>/<code>namu_record</code>/<code>namu_search</code>입니다 — <code>namu_sync_setup</code>과 tasks는 노출되지 않습니다(경로 B와 같은 이유, <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a> 1절 참고).</span></div>
-
-      <p class="sec-note" style="margin-top:14px">포트·이미지 태그·Cloudflare ingress 같은 인프라 세부는 onnamu-project/specs 관할이라 이 문서에서는 요약만 다루고 중복 관리하지 않습니다.</p>
+    <div class="grid3">
+      <div class="form-card">
+        <div class="ico">🚀</div>
+        <h4><a href="https://namu-cloud.onnamu.kr/start" target="_blank" rel="noopener">시작하기</a></h4>
+        <p>가입부터 접속 주소를 AI에 붙이기까지 네 걸음</p>
+      </div>
+      <div class="form-card">
+        <div class="ico">🧠</div>
+        <h4><a href="https://namu-cloud.onnamu.kr/memory" target="_blank" rel="noopener">무엇을 기억하나</a></h4>
+        <p>3층 기록과 그릇 세 가지, 담기지 않는 것</p>
+      </div>
+      <div class="form-card">
+        <div class="ico">🔒</div>
+        <h4><a href="https://namu-cloud.onnamu.kr/safety" target="_blank" rel="noopener">안전</a></h4>
+        <p>기억의 원본 위치·권한 범위·주소 관리·그만두는 법</p>
+      </div>
     </div>
   </section>
 
-  <!-- 2. 연결법 -->
-  <section id="connect">
-    <h2><span class="kicker">2</span> 연결법</h2>
-    <div class="card">
-      <p>접속 URL 형식은 다음과 같습니다.</p>
-      <span class="where web">☁️ 접속 URL 형식</span>
-      <pre><code>https://namu-cloud.onnamu.kr/mcp/&lt;PATH_SECRET&gt;?user=&lt;내-키&gt;&amp;client=&lt;AI-이름&gt;</code></pre>
-      <ul>
-        <li><code>&lt;PATH_SECRET&gt;</code> — 운영자가 배포한 공유 시크릿 경로. 사용자에게 별도로 전달됩니다.</li>
-        <li><code>?user=</code>·<code>&amp;client=</code> — 필수 쿼리(각각 3절·4절에서 설명).</li>
-      </ul>
-
-      <h3>등록 방법 1 — claude.ai 커스텀 커넥터</h3>
-      <p>설정 → Connectors → Add custom connector에 위 URL을 통째로 입력합니다(<a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a> 3-3절과 동일한 절차).</p>
-
-      <h3>등록 방법 2 — Claude Code CLI</h3>
-      <span class="where pc">🖥 로컬 PC 터미널</span>
-      <pre><code>claude mcp add --transport http namu-cloud \
-  "https://namu-cloud.onnamu.kr/mcp/&lt;PATH_SECRET&gt;?user=&lt;키&gt;&amp;client=&lt;AI&gt;"</code></pre>
-    </div>
+  <section id="terminal">
+    <h2><span class="kicker">2</span> 터미널에서 쓰신다면 이 길이 아닙니다</h2>
+    <p class="sec-note">Claude Code·agy는 주소를 붙이는 것이 아니라 <b>나무를
+    플러그인으로 설치</b>해야 합니다. 이 주소로는 기억 도구 세 개만 넘어가고,
+    세션 브리핑·작업 절차·마무리 점검처럼 나머지 절반이 따라오지 않습니다.
+    게다가 기억이 쌓이는 자리도 둘로 갈라집니다.</p>
+    <p><a href="install_guide.html">🔧 플러그인 설치 가이드로 가기</a></p>
   </section>
 
-  <!-- 3. user·client -->
-  <section id="terms">
-    <h2><span class="kicker">3</span> <code>user</code>·<code>client</code>가 뭔가</h2>
-    <div class="card">
-      <ul>
-        <li><b><code>user</code></b> — 내 서랍(폴더) 이름표입니다. 서버가 <code>?user=&lt;키&gt;</code>를 받아 <code>STORE_ROOT/users/&lt;키&gt;/</code>로 라우팅합니다. 같은 키를 쓰면 같은 기억 풀을 공유하고, 다른 키를 쓰면 서로 다른 서랍이 됩니다.</li>
-        <li><b><code>client</code></b> — 이 기억을 남긴 AI가 누구인지 나타내는 출처 태그(내부적으로 <code>via</code>로 저장). record 시 함께 저장돼, 나중에 "claude가 남긴 이력만" 같은 출처별 조회의 기준이 됩니다.</li>
-      </ul>
-      <div class="tip"><span class="ic">💡</span><span>역할을 한 줄로 요약하면: <b><code>user</code>=어느 서랍, <code>client</code>=어느 AI</b>입니다.</span></div>
-    </div>
-  </section>
-
-  <!-- 4. 입력 규칙 -->
-  <section id="rules">
-    <h2><span class="kicker">4</span> <code>user</code>·<code>client</code> 입력 규칙 (중요)</h2>
-    <div class="card">
-      <p>실코드로 검증된 형식은 다음과 같습니다.</p>
-      <table>
-        <thead><tr><th>값</th><th>형식</th></tr></thead>
-        <tbody>
-          <tr><td><code>user</code> 키</td><td>영숫자·<code>-</code>·<code>_</code> 1~64자 (<code>^[A-Za-z0-9_-]{1,64}$</code>)</td></tr>
-          <tr><td><code>client</code> 값</td><td>영숫자·<code>.</code>·<code>_</code>·<code>-</code> 1~40자 (<code>^[A-Za-z0-9._-]{1,40}$</code>)</td></tr>
-        </tbody>
-      </table>
-      <p class="sec-note">슬래시·공백·<code>..</code> 등 경로를 벗어나려는 문자는 거부됩니다.</p>
-
-      <div class="warn"><span class="ic">⚠</span><span><b>3개 도구(recall/record/search) 모두 <code>user</code>·<code>client</code> 둘 다 필수</b>입니다 — 하나라도 없거나 형식이 틀리면 도구 호출이 한국어+영어 상세 에러로 거부됩니다(에러 안내가 뜨니, URL 쿼리를 고쳐서 다시 붙이면 됩니다).</span></div>
-
-      <div class="tip"><span class="ic">💡</span><span><code>client</code> 이름은 <b>정확한 모델명 예시(<code>claude</code> / <code>chatgpt</code> / <code>gemini</code> / <code>cursor</code> / <code>copilot</code>)로 넣기를 권장</b>합니다. 애칭·변형도 형식만 맞으면 거부되지 않지만, <b>나중에 조회할 때 저장했던 값과 글자 그대로 똑같이 넣어야 찾힙니다</b> — <code>claude</code>와 <code>cld</code>는 서로 다른 값으로 저장됩니다. 자기만의 애칭을 쓸 거라면 매번 일관되게 쓰세요.</span></div>
-    </div>
-  </section>
-
-  <!-- 5. 인증·격리 -->
-  <section id="auth">
-    <h2><span class="kicker">5</span> 인증·격리 모델 (현재 — 반드시 읽을 것)</h2>
-    <div class="card">
-      <p>현재 인증은 <b>공유 <code>path_secret</code> 1개뿐</b>입니다. <code>?user=&lt;키&gt;</code>는 인증이 아니라 <b>폴더 이름표(라우팅 라벨)</b>일 뿐입니다.</p>
-
-      <div class="danger"><span class="ic">⛔</span><span>따라서 공유 시크릿 경로를 아는 사람은, 남의 <code>user</code> 키만 알아내면 그 서랍도 열 수 있습니다 — 이건 서로 협조한다는 전제 위의 <b>협조적 격리</b>이지, 암호학적으로 잠긴 접근 통제가 아닙니다. (경로 이탈 문자는 <code>_validate_user_key</code>/<code>_paths_for_user</code>가 막아주지만, "남의 키를 그대로 지정"하는 행위 자체는 막지 못합니다.)</span></div>
-
-      <p class="sec-note" style="margin-top:14px">그래서 현재 공용 서버는 <b>서로 신뢰하는 소수 체험용</b>이며, 아무나 접속하는 일반 공개 서비스로 쓰기엔 아직 부족합니다.</p>
-    </div>
-  </section>
-
-  <!-- 6. 안 되는 것 -->
-  <section id="future">
-    <h2><span class="kicker">6</span> 지금 안 되는 것 / 나중 계획</h2>
-    <div class="card">
-      <ul>
-        <li><b>미구현: 사용자별 인증</b> — 각 사용자가 자기 서랍에만 접근하도록 암호학적으로 잠그는 기능. 이게 갖춰져야 일반 공개가 가능합니다.</li>
-        <li><b>방향</b> — OAuth 사용자별 토큰으로 전환할 예정입니다. 상세 설계는 <a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/remote_mcp_design.md">remote_mcp_design.md</a> §11을 참고하세요.</li>
-      </ul>
-    </div>
+  <section id="inside">
+    <h2><span class="kicker">3</span> 안에서 어떻게 도는지 알고 싶다면</h2>
+    <p class="sec-note">인증·격리 모델, <code>client</code> 태그 규칙, 지금 안 되는
+    것 같은 기술적인 내용은 서비스 저장소의 문서에 있습니다.</p>
+    <p><a href="https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md"
+          target="_blank" rel="noopener">namu_cloud_guide.md (namu-cloud-routing)</a></p>
   </section>
 
   <footer>
-    이 문서는 초보자용 요약본입니다. 원문(설계 근거·최신 갱신)은 GitHub의
-    <a href="https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md">namu_cloud_guide.md</a>(namu-cloud-routing repo)를 참고하세요.
-    <br>단일 사용자 셀프호스팅은 <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a>, 설치형·clone 개발형 안내는 <a href="install_guide.html">설치 가이드</a>, 전체 그림은 <a href="namu_guide.html">안내서</a>를 참고하세요.
+    이 문서는 이정표입니다 — 실제 절차는
+    <a href="https://namu-cloud.onnamu.kr/" target="_blank" rel="noopener">나무 클라우드 사이트</a>에 있습니다.
+    <br>단일 사용자 셀프호스팅은 <a href="remote_mcp_guide.html">웹에서 쓰기 가이드</a>,
+    설치형·clone 개발형 안내는 <a href="install_guide.html">설치 가이드</a>,
+    전체 그림은 <a href="namu_guide.html">안내서</a>를 참고하세요.
   </footer>
 
 </div>

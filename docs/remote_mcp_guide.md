@@ -2,7 +2,9 @@
 
 > 📅 2026-07-17(namu-45) · 선행: `docs/remote_mcp_design.md`(설계 원본, v4 확정본) · namu-44(인증·디바운스 pull·터널 실측)·namu-45(클라우드 컨테이너 이미지) 구현 결과를 사용자 관점으로 정리한 문서. **2026-07-17 사용자 소유 상시 서버에 실제로 배포해 전 구간을 실측 검증한 뒤 이 개정판에 반영했다** — 자세한 내용은 4절 "검증 상태"를 볼 것.
 >
-> **범위** — 경로 B(셀프호스팅, 단일 사용자)만 다룬다. 중앙 호스팅(경로 A, 공용 클라우드 MCP)은 이제 별도 사용자 가이드가 있다 — [`namu_cloud_guide.md`](https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md)(namu-cloud-routing repo, namu-54로 이동). 설계 상세는 여전히 `remote_mcp_design.md` §11. 멀티유저·OAuth는 스코프 밖이다.
+> **범위** — 경로 B(셀프호스팅, 단일 사용자)만 다룬다. 멀티유저·OAuth는 스코프 밖이고, 설계 상세는 `remote_mcp_design.md` §11.
+>
+> ☁️ **서버를 직접 띄우기 싫다면 이 문서가 아니다** — 중앙에서 대신 호스팅하는 길(경로 A)이 있고, 절차는 화면이 안내한다: **<https://namu-cloud.onnamu.kr/>**. 기억의 원본은 회원 본인의 GitHub 저장소에 쌓이고, 접속 주소는 사람마다 다른 개인 열쇠로 자동 발급된다. 안에서 어떻게 도는지는 [`namu_cloud_guide.md`](https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_cloud_guide.md)(namu-cloud-routing repo).
 
 이 문서는 [설치형 사용설명서](install_guide.md)·[사용설명서](usage_guide.md)와 대상 독자가 다르다 — Claude Code/agy 없이 **웹 브라우저의 claude.ai에서 NAMU 기억(교훈)을 쓰고 싶은 사람**을 위한 것이다.
 

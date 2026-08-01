@@ -15,7 +15,8 @@ Just click — no code reading required.
 | [🌳 NAMU Agent System — The Easy-Read Guide](https://onmiso-hash.github.io/namu-agent/docs/namu_guide.html) (Korean) | You want to get a feel for what NAMU even is |
 | [🚀 NAMU Install & Update Guide](https://onmiso-hash.github.io/namu-agent/docs/namu_quickstart.html) (Korean) | You want copy-paste install steps right now |
 | [NAMU Install Guide (detailed)](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html) (Korean) | You got stuck installing, or want more depth |
-| [🌐 Using NAMU on the Web — Remote MCP Self-Hosting Guide](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) (Korean) | You want to use it only from a browser (claude.ai), without Claude Code/agy |
+| [☁️ **NAMU Cloud** — attach memory to your web AI](https://namu-cloud.onnamu.kr/) (Korean) | You want to use it only from a browser (claude.ai), without Claude Code/agy — and without running a server yourself |
+| [🌐 Using NAMU on the Web — Remote MCP Self-Hosting Guide](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) (Korean) | You want the browser route, but you'd rather **run the server yourself** |
 
 ## What NAMU actually does
 
