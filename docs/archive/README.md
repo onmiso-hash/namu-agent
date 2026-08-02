@@ -22,6 +22,6 @@
 | `namu_quickstart.html` | `install_guide.html` |
 | `install_guide.md` | `install_guide.html` |
 | `usage_guide.md` | `install_guide.html` 6장(첫 하루) |
-| `namu_cloud_guide.html` | `index.html` 5장 + 나무 클라우드 사이트 |
+| `namu_cloud_guide.html` | `index.html` 10장 + 나무 클라우드 사이트 |
 | `remote_mcp_guide.md` | `remote_mcp_guide.html` |
 | `memory_architecture.md` | `memory_architecture.html` |

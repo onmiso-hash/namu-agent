@@ -4,9 +4,58 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🌳 나무(NAMU) 안내서 — 무엇이고, 어떻게 쓰나</title>
-<meta name="description" content="나무는 AI가 대화를 닫아도 남는 기억을 갖게 하는 도구입니다. 나무가 무엇인지, 쓰는 방법 네 갈래가 어떻게 다른지 한 장에 정리했습니다.">
+<meta name="description" content="나무는 AI가 대화를 닫아도 남는 기억을 갖게 하는 도구입니다. 나무가 무엇인지, 나무를 붙이는 두 가지 방법이 무엇을 켜고 무엇을 못 켜는지 한 장에 정리했습니다.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
 <link rel="stylesheet" href="assets/namu-docs.css">
+<style>
+/* ── 이 문서 전용 그림 부품 (공용 CSS는 assets/namu-docs.css — 손대지 말 것) ── */
+.quote{background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border));border-radius:var(--radius);padding:22px 24px;margin:22px 0;text-align:center;}
+.quote b{display:block;font-size:1.15rem;line-height:1.55;letter-spacing:-.02em;color:var(--accent-deep);}
+.quote span{display:block;margin-top:9px;font-size:.9rem;color:var(--fg-soft);}
+
+.layers{display:grid;gap:10px;margin:20px 0;}
+.layers .lay{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;background:var(--bg-soft);}
+.layers .lab{flex:none;width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--bg-card);border:1px solid var(--border-strong);color:var(--fg-soft);}
+.layers .txt{flex:1;min-width:0;}
+.layers h4{margin:0 0 2px;}
+.layers p{margin:0;font-size:.9rem;color:var(--fg-soft);}
+.layers .tag{flex:none;font-size:.74rem;font-weight:700;padding:4px 11px;border-radius:999px;background:var(--bg-card);border:1px solid var(--border-strong);color:var(--fg-soft);white-space:nowrap;}
+.layers .lay.core{background:var(--accent-soft);border-color:var(--accent);}
+.layers .lay.core .lab{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
+.layers .lay.core .tag{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
+@media (max-width:560px){.layers .lay{flex-wrap:wrap;}.layers .tag{order:3;}}
+
+.dgm{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-soft);padding:18px 18px 16px;margin:22px 0;}
+.dgm-t{margin:0 0 14px;font-size:.8rem;font-weight:700;letter-spacing:.05em;color:var(--fg-faint);text-transform:uppercase;}
+.dgm-note{margin:15px 0 0;font-size:.9rem;color:var(--fg-soft);}
+.dgm-note:last-child{margin-bottom:0;}
+
+.pipe{display:grid;gap:10px;align-items:center;}
+@media (min-width:660px){.pipe{grid-template-columns:1fr auto 1fr auto 1fr;}}
+.pnode{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px 14px;text-align:center;}
+.pnode .ico{font-size:1.5rem;line-height:1.2;display:block;}
+.pnode b{display:block;margin-top:5px;font-size:.95rem;}
+.pnode small{display:block;margin-top:4px;color:var(--fg-soft);font-size:.82rem;line-height:1.5;}
+.pnode.core{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+.pnode.truth{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));}
+.pstack{display:grid;gap:10px;}
+.parr{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
+.parr .a{font-size:1.2rem;line-height:1;color:var(--accent);font-weight:800;}
+.parr .l{font-size:.74rem;font-weight:700;color:var(--fg-soft);white-space:nowrap;}
+@media (max-width:659px){.parr{flex-direction:row;gap:8px;}.parr .a{transform:rotate(90deg);}}
+
+.fmap{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;}
+.fmap .root{font-weight:700;padding-bottom:11px;border-bottom:1px solid var(--border);}
+.fmap .root small{display:block;font-weight:400;color:var(--fg-soft);margin-top:2px;}
+.fmap ul{list-style:none;margin:0;padding:0;}
+.fmap li{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border);}
+.fmap li:first-child{border-top:0;padding-top:11px;}
+.fmap li.sub{padding-left:24px;}
+.fmap .ic{flex:none;line-height:1.6;}
+.fmap .nm{font-weight:600;overflow-wrap:anywhere;}
+.fmap .tg{font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent-deep);margin-left:7px;white-space:nowrap;}
+.fmap .ds{display:block;font-size:.86rem;color:var(--fg-soft);margin-top:2px;}
+</style>
 </head>
 <body>
 
@@ -71,33 +120,163 @@
   <h2>이 문서에서 알 수 있는 것</h2>
   <ol>
     <li><a href="#나무란">나무가 뭔가요</a></li>
+    <li><a href="#왜">왜 만들었나요</a></li>
+    <li><a href="#어떻게">어떻게 만들었나요</a></li>
     <li><a href="#기억">무엇을 기억하나요</a></li>
-    <li><a href="#네갈래">쓰는 방법은 네 갈래입니다</a></li>
+    <li><a href="#기능">나무는 이런 일을 합니다</a></li>
+    <li><a href="#두부분">나무는 두 부분입니다 — 기억, 그리고 절차</a></li>
+    <li><a href="#붙이는법">붙이는 방법은 두 가지입니다</a></li>
     <li><a href="#고르기">나에게 맞는 것 고르기</a></li>
-    <li><a href="#웹두갈래">웹으로 쓸 때 — 두 갈래의 차이</a></li>
+    <li><a href="#동기화">여러 PC에서 같은 기억 쓰기</a></li>
+    <li><a href="#웹두갈래">MCP 주소는 어디서 얻나</a></li>
     <li><a href="#다음">다음에 읽을 것</a></li>
   </ol>
 </div>
 
 <h2 id="나무란">1. 나무가 뭔가요</h2>
 
+<p class="lead">한 문장으로 — <strong>AI는 갈아 끼워도, 기억은 내가 들고 다닙니다.</strong></p>
+
 <p><strong>AI에게 붙이는 기억 장치입니다.</strong> 지금 쓰는 AI는 대화를 닫는 순간 전부
 잊습니다. 어제 무엇을 정했는지, 왜 그렇게 정했는지, 지난주에 어디서 막혔는지 —
 다음 대화에서 처음부터 다시 설명해야 합니다.</p>
 
-<p>나무는 그것을 파일로 남깁니다. 그리고 다음 대화가 시작될 때 알아서 다시 꺼내 놓습니다.</p>
+<p>나무는 그것을 파일로 남깁니다. 그리고 다음 대화가 시작될 때 알아서 다시 꺼내 놓습니다.
+클로드·제미나이처럼 <strong>여러 AI를 바꿔 가며 부리되, 그러면서 얻은 경험과 교훈은 한곳에
+차곡차곡 쌓아 두는</strong> 개인용 작업 시스템입니다. 핵심은 "어느 AI를 쓰느냐"가 아니라
+"그 기억을 누가 들고 있느냐"입니다.</p>
 
 <div class="tip">
-<p><strong>다른 기억 기능과 무엇이 다른가</strong> — 나무는 결과만이 아니라
-<strong>왜 그렇게 했는지(이유)</strong>를 함께 남깁니다. 이유가 없으면 다음에 같은 논의를
-처음부터 되풀이하게 되기 때문입니다. 그래서 나무의 기억은 한 건마다
-<em>무엇을 · 왜 · 그때 무슨 일이</em> 세 층으로 남습니다.</p>
+<p><strong>💡 이렇게 생각하시면 됩니다</strong> — 보통 AI는 창을 닫으면 나눈 이야기를 다
+잊습니다. <strong>매번 처음 오는 직원</strong>과 같습니다. 나무는 그 직원이 바뀌어도 똑같이
+펼쳐 보는 <strong>공용 업무 노트</strong>를 내가 직접 들고 있는 구조입니다. 직원(AI)은 바뀌어도
+노트(기억)는 그대로라, 새로 온 직원도 노트만 읽으면 하던 일을 바로 이어받습니다.</p>
 </div>
 
-<p>또 하나 — 기억은 <strong>여러분의 파일</strong>로 남습니다. 특정 회사의 서버 안에 갇히지
+<div class="quote">
+<b>“독립성은 화면이 아니라 기억에 있다”</b>
+<span>나무를 만들면서 얻은 가장 중요한 깨달음이고, 이 문서 전체를 관통하는 문장입니다.</span>
+</div>
+
+<p>그래서 기억은 <strong>여러분의 파일</strong>로 남습니다. 특정 회사의 서버 안에 갇히지
 않습니다. AI를 바꿔도 기억은 그대로 따라옵니다.</p>
 
-<h2 id="기억">2. 무엇을 기억하나요</h2>
+<p>다른 AI의 기억 기능과 갈리는 지점도 여기입니다 — 나무는 결과만이 아니라
+<strong>왜 그렇게 했는지</strong>를 함께 남깁니다. 그래야 다음에 같은 논의를 처음부터
+되풀이하지 않기 때문입니다. 왜 그렇게까지 하는지는 바로 다음 장에 있습니다.</p>
+
+<h2 id="왜">2. 왜 만들었나요</h2>
+
+<p class="lead">세 가지 바람에서 출발했고, 먼 미래의 바람이 하나 더 있습니다.</p>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h4>🔓 ① 어느 AI에도 묶이지 않기</h4>
+    <p class="muted">클로드가 막히면 제미나이로, 그것도 안 되면 내 PC에서 도는 모델로.
+    한 회사의 정책·요금·서비스 종료에 휘둘리지 않습니다.</p>
+  </div>
+  <div class="card">
+    <h4>🧠 ② 같은 기억을 나눠 쓰기</h4>
+    <p class="muted">어떤 AI를 쓰든 같은 노트를 봅니다. 노트북에서 하던 일을 집 PC에서
+    이어받아도 기억이 따라옵니다.</p>
+  </div>
+  <div class="card">
+    <h4>📈 ③ 쓸수록 나아지기</h4>
+    <p class="muted">잘됐다·안 됐다만이 아니라 <strong>왜 그렇게 판단했는지</strong>까지
+    쌓습니다. 이게 쌓여야 시스템이 스스로 기준을 만들어 갑니다.</p>
+  </div>
+  <div class="card">
+    <h4>🌍 ④ (먼 미래) 함께 크기</h4>
+    <p class="muted">언젠가는 두루 쓸 만한 교훈만 골라 여럿이 나누는 것도 생각하고 있습니다.
+    지금 쌓이는 기억은 전부 여러분 개인 것입니다.</p>
+  </div>
+</div>
+
+<h3>"이유까지 적는다"가 왜 그렇게 중요한가</h3>
+
+<p>"잘됐다 / 안 됐다"만 적어 두면, 나중에 그 기록을 훑어보고 엉뚱한 규칙을 뽑아냅니다.
+이를테면 <strong>"금요일에 한 작업은 다 실패했네 → 금요일을 피하자"</strong> 같은 헛다리입니다.
+하지만 왜 안 됐는지가 같이 적혀 있으면 <strong>"시험을 안 돌리고 넘어가서 안 된 것"</strong>이라는
+진짜 원인이 잡힙니다.</p>
+
+<div class="tip">
+<p><strong>그래서 나무는 이유 칸을 비우면 기록 자체를 거절합니다.</strong> 기억 한 건은 반드시
+<strong>무엇을 · 왜 · 그때 무슨 일이</strong> 세 층으로 남습니다. 정말 적을 것이 없을 때만
+"생략"이라고 적어 넘어갈 수 있고, 그냥 빈칸으로 두는 것은 안 됩니다.</p>
+</div>
+
+<h2 id="어떻게">3. 어떻게 만들었나요</h2>
+
+<p class="lead">다 직접 만들면 끝이 없습니다. 빌릴 것은 빌리고, 핵심만 직접 만들었습니다.</p>
+
+<p>처음에는 전부 직접 만들려 했습니다. 그러다 AI 작업 시스템을 <strong>세 층</strong>으로 나눠
+놓고 보니, 이미 잘 만들어진 층이 있고 아무도 대신 만들어 주지 않는 층이 있었습니다. 그래서
+있는 것은 가져다 쓰고 <strong>진짜 핵심인 기억 층만 직접 만들기로</strong> 했습니다.</p>
+
+<div class="layers">
+  <div class="lay">
+    <span class="lab">A</span>
+    <div class="txt">
+      <h4>실행 엔진</h4>
+      <p>AI를 부르고, 파일을 고치고, 명령을 돌리는 부분. (Claude Code, agy 같은 것)</p>
+    </div>
+    <span class="tag">빌려 씁니다</span>
+  </div>
+  <div class="lay">
+    <span class="lab">B</span>
+    <div class="txt">
+      <h4>일하는 절차</h4>
+      <p>"작업을 시작하기 전에 지난 기억부터 확인해라" 같은 규칙과 자동화.</p>
+    </div>
+    <span class="tag">직접 만듭니다</span>
+  </div>
+  <div class="lay core">
+    <span class="lab">C</span>
+    <div class="txt">
+      <h4>기억·학습 코어 💚</h4>
+      <p>경험을 쌓고 다시 꺼내 쓰는 부분. <strong>나무의 심장이자 진짜 차별점</strong>입니다.</p>
+    </div>
+    <span class="tag">직접 만듭니다</span>
+  </div>
+</div>
+
+<div class="card card-soft">
+<p><strong>왜 이렇게 나눴나요?</strong> 실행 엔진(A)은 큰 회사들이 몇 해째 다듬고 있는 부분이라
+직접 만들면 시간 낭비입니다. 반면 기억과 학습(C)은 어디서도 대신 주지 않는, 나무만의
+값어치라서 여기에 힘을 모았습니다. 그래서 실행 엔진은 <strong>언제든 갈아 끼울 수 있는
+부품</strong>으로 취급합니다.</p>
+</div>
+
+<h3>기억 코어는 "표준 콘센트" 모양으로 만들었습니다</h3>
+
+<p>기억 코어는 <strong>MCP</strong>라는 규격에 맞춰 만들었습니다. 어려운 말 같지만
+<strong>AI에 갖다 꽂는 표준 콘센트</strong>라고 보시면 됩니다. 콘센트 규격으로 만들어 두면
+클로드든 다른 AI 도구든 똑같이 꽂아서 <strong>같은 기억</strong>을 씁니다. "어느 AI에도 묶이지
+않는다"는 목표를 실제로 이뤄 주는 것이 바로 이 부분입니다.</p>
+
+<div class="dgm">
+  <p class="dgm-t">콘센트 하나에 여러 AI가 꽂힙니다</p>
+  <div class="pipe">
+    <div class="pnode">
+      <span class="ico">🤖</span><b>여러 AI</b>
+      <small>Claude Code · agy · 웹 브라우저의 claude.ai</small>
+    </div>
+    <span class="parr"><span class="a">→</span><span class="l">꽂는다</span></span>
+    <div class="pnode core">
+      <span class="ico">🔌</span><b>표준 콘센트</b>
+      <small>규격만 맞으면 무엇이든 꽂힙니다</small>
+    </div>
+    <span class="parr"><span class="a">→</span><span class="l">바라본다</span></span>
+    <div class="pnode truth">
+      <span class="ico">🧠</span><b>하나의 기억</b>
+      <small>내 컴퓨터 안에 있는 내 파일</small>
+    </div>
+  </div>
+  <p class="dgm-note">그래서 갈아 끼우는 대상은 AI이지 기억이 아닙니다. 쓰던 AI를 그만
+  쓰기로 해도 쌓인 기억은 그대로 남습니다.</p>
+</div>
+
+<h2 id="기억">4. 무엇을 기억하나요</h2>
 
 <p>성격이 다른 기억을 한 통에 담으면 나중에 아무것도 찾을 수 없습니다. 그래서 나무는
 <strong>네 개의 그릇</strong>에 나눠 담습니다.</p>
@@ -118,7 +297,8 @@
   </div>
   <div class="card">
     <h4>🗒️ 쪽지</h4>
-    <p class="muted">쓰고 버리는 메모. 네 그릇 중 유일하게 <strong>뗄 수 있습니다</strong>.</p>
+    <p class="muted">쓰고 버리는 메모. 네 그릇 중 유일하게 <strong>뗄 수 있습니다</strong>.
+    "영화 8시 20분" 같은 한 번 쓰고 마는 것이 갈 곳입니다.</p>
   </div>
 </div>
 
@@ -126,69 +306,303 @@
 쪽지 떼기, 책갈피 꽂기·빼기, 그리고 다른 PC와 맞추기입니다. 여러분이 도구 이름을
 외울 필요는 없습니다. "지난번에 정한 거 뭐였지?"라고 물으면 AI가 알아서 꺼냅니다.</p>
 
-<p class="muted">기억이 어디에 어떻게 쌓이는지 자세히 보려면 →
+<p class="muted">일곱 개가 다 켜지는 것은 플러그인을 깔았을 때입니다. 주소만 붙여 쓰면
+세 개(꺼내기·찾기·남기기)만 켜집니다 — 자세한 것은 <a href="#붙이는법">7장</a>에 있습니다.</p>
+
+<h3>기억은 어떻게 굴러가나</h3>
+
+<p>나무 안에는 성격이 다른 저장소가 <strong>둘</strong> 있습니다 — <strong>진짜 노트</strong>
+하나와 <strong>빠른 찾기 상자</strong> 하나입니다. 둘의 관계가 나무 기억의 뼈대입니다.</p>
+
+<div class="dgm">
+  <p class="dgm-t">기억 한 건이 오가는 길</p>
+  <div class="pipe">
+    <div class="pnode">
+      <span class="ico">💬</span><b>대화</b>
+      <small>AI가 "이건 남길 만하다"고 판단합니다</small>
+    </div>
+    <span class="parr">
+      <span class="a">→</span><span class="l">남긴다</span>
+      <span class="a">←</span><span class="l">꺼내 온다</span>
+    </span>
+    <div class="pnode core">
+      <span class="ico">🧠</span><b>기억 코어</b>
+      <small>표준 콘센트로 꽂혀 있는 부분</small>
+    </div>
+    <span class="parr"><span class="a">→</span></span>
+    <div class="pstack">
+      <div class="pnode truth">
+        <span class="ico">📒</span><b>① 진짜 노트</b>
+        <small>사람이 그냥 읽는 글자 파일. 덧붙이기만 하고 지우지 않습니다.</small>
+      </div>
+      <div class="pnode">
+        <span class="ico">🔍</span><b>② 빠른 찾기 상자</b>
+        <small>교훈을 찾기 좋게 정리해 둔 사본. 깨져도 노트에서 다시 만듭니다.</small>
+      </div>
+    </div>
+  </div>
+  <p class="dgm-note"><strong>순서가 핵심입니다</strong> — 노트에 <strong>먼저</strong> 쓰고,
+  찾기 상자는 <strong>그다음</strong>입니다. 찾기 상자가 깨져도 노트만 멀쩡하면 전부 되살릴 수
+  있기 때문에, 이 순서는 바꾸지 않습니다. 진실의 원천은 언제나 노트 쪽입니다.</p>
+  <p class="dgm-note">찾기 상자를 따로 두는 그릇은 <strong>교훈 하나</strong>입니다.
+  나머지 세 그릇은 파일에서 바로 읽습니다.</p>
+</div>
+
+<h3>어디에 쌓이나</h3>
+
+<p>전부 <strong>내 컴퓨터 안의 폴더 하나</strong>(<code>~/.namu</code>)에 모입니다. AI 회사
+서버가 아닙니다. 그 안에서 다시 두 갈래로 나뉩니다 — 교훈은 프로젝트를 안 가리고 한 칸에,
+작업일지는 프로젝트마다 칸을 나눠서입니다.</p>
+
+<div class="dgm">
+  <p class="dgm-t">내 서랍장 한 채</p>
+  <div class="fmap">
+    <div class="root">🗄️ ~/.namu
+      <small>내 컴퓨터 안의 평범한 폴더입니다. 열어서 눈으로 읽을 수 있습니다.</small>
+    </div>
+    <ul>
+      <li><span class="ic">📚</span><span>
+        <span class="nm">memory/learnings.yaml</span><span class="tg">교훈</span>
+        <span class="ds">어느 프로젝트에서 배웠든 여기 한 칸에 섞여 모입니다.
+        다른 일에도 그대로 써먹을 수 있는 지식이기 때문입니다.</span>
+      </span></li>
+      <li><span class="ic">👤</span><span>
+        <span class="nm">memory/profile.yaml</span><span class="tg">개인 사실</span>
+        <span class="ds">여러분에 대한 사실. 쓰는 기기, 일하는 방식, AI에게 바라는 것.</span>
+      </span></li>
+      <li><span class="ic">🗒️</span><span>
+        <span class="nm">memory/memo.yaml</span><span class="tg">쪽지</span>
+        <span class="ds">떼면 파일에서 사라지는 유일한 칸입니다.</span>
+      </span></li>
+      <li><span class="ic">📋</span><span>
+        <span class="nm">tasks/</span><span class="tg">작업일지</span>
+        <span class="ds">프로젝트마다 칸이 따로입니다 — 그 프로젝트에서만 뜻이 있는
+        기록이라 섞이면 헷갈리기 때문입니다.</span>
+      </span></li>
+      <li class="sub"><span class="ic">└</span><span>
+        <span class="nm">tasks/내프로젝트-가/</span>
+        <span class="ds">목적을 적어 둔 <code>task.md</code>와, 있었던 일을 시간순으로
+        덧붙이는 <code>log.md</code> 두 장.</span>
+      </span></li>
+      <li class="sub"><span class="ic">└</span><span>
+        <span class="nm">tasks/내프로젝트-나/</span>
+        <span class="ds">다른 프로젝트는 다른 칸.</span>
+      </span></li>
+      <li><span class="ic">🔍</span><span>
+        <span class="nm">db/namu.db</span><span class="tg">빠른 찾기 상자</span>
+        <span class="ds">교훈을 찾기 좋게 정리해 둔 사본. 지워도 교훈 노트에서 다시
+        만들어집니다.</span>
+      </span></li>
+    </ul>
+  </div>
+  <p class="dgm-note">작업일지도 프로젝트 폴더가 아니라 이 서랍장 안에 둡니다. 프로젝트 폴더는
+  남에게 공개될 수 있고, 여러 PC 사이 자동 맞춤에 같이 얹기 위해서입니다.</p>
+</div>
+
+<p class="muted">기억이 어떤 모양으로 쌓이는지 더 자세히 보려면 →
 <a href="memory_architecture.html">기억 설계도</a></p>
 
-<h2 id="네갈래">3. 쓰는 방법은 네 갈래입니다</h2>
+<h2 id="기능">5. 나무는 이런 일을 합니다</h2>
 
-<p>나무를 어디에 붙이느냐에 따라 <strong>설치 방법도, 할 수 있는 일도 달라집니다.</strong>
-먼저 전체를 한눈에 보십시오.</p>
+<p>기억을 쌓는 것이 나무의 바닥이라면, 그 위에 <strong>여섯 가지 일</strong>이 얹혀
+있습니다. 다음 장부터 "이건 되고 저건 안 된다"는 이야기가 나오는데, 그때 오르내리는
+이름들이 바로 이것들입니다. 먼저 무엇인지만 보아 두십시오.</p>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h4>🧠 ① 기억을 담고 꺼냅니다</h4>
+    <p class="muted">네 그릇에 담고, 찾고, 다시 꺼냅니다. 4장에서 본 그것입니다.
+    나무의 바닥이자 나머지 전부가 딛고 서는 자리입니다.</p>
+  </div>
+  <div class="card">
+    <h4>📋 ② 작업일지를 씁니다</h4>
+    <p class="muted">무슨 작업이 열려 있고 어디까지 했는지, 그리고 <strong>다음에 어디서부터
+    다시 시작하는지</strong>를 남깁니다. 이어서 할 것 하나에는 <strong>책갈피</strong>를
+    꽂아 맨 위에 세워 둘 수 있습니다.</p>
+  </div>
+  <div class="card">
+    <h4>🌅 ③ 대화를 열면 상황을 먼저 깔아 줍니다</h4>
+    <p class="muted">대화를 새로 시작하는 순간, <strong>묻지 않아도</strong> 붙여 둔 쪽지·
+    최근에 한 일·열려 있는 작업·관련 교훈을 정리해 보여 줍니다. 이것을
+    <strong>브리핑</strong>이라고 부릅니다.</p>
+  </div>
+  <div class="card">
+    <h4>🧭 ④ 여러 단계 작업을 순서대로 몰아 줍니다</h4>
+    <p class="muted">목적과 완료조건을 먼저 정하고 → 만들고 → 검수하고 → 여러분에게
+    묻고 → 기록하는 <strong>정해진 순서</strong>로 진행합니다. 검수에서 걸리면
+    제멋대로 다시 돌리지 않고 반드시 여러분에게 묻습니다.</p>
+  </div>
+  <div class="card">
+    <h4>👷 ⑤ 일꾼 AI를 불러 나눠 맡깁니다</h4>
+    <p class="muted">코드를 짜는 <strong>일꾼</strong>과, 그 결과를 기준 대비로 따지는
+    <strong>검수자</strong>를 따로 불러 씁니다. 만든 쪽과 따지는 쪽을 갈라 놓는 것이
+    이 방식의 핵심입니다.</p>
+  </div>
+  <div class="card">
+    <h4>📊 ⑥ 화면 아래에 한 줄로 상황을 띄웁니다</h4>
+    <p class="muted">나무 버전, 지금 쓰는 AI 모델, 지금 폴더, <strong>진행 중인 작업</strong>,
+    남은 사용량이 화면 맨 아래 한 줄로 늘 보입니다.</p>
+  </div>
+</div>
+
+<div class="tip">
+<p><strong>여기에 하나가 더 붙습니다</strong> — 대화를 <strong>"마무리해"</strong>라고
+끊을 때, 다음에 어디서부터 할지를 안 적었으면 나무가 <strong>한 번 붙잡습니다</strong>.
+안 적고 끝내면 다음 대화의 브리핑이 이미 끝난 일을 남은 일이라고 내놓기 때문입니다.
+실제로 그 사고가 나서 만든 장치입니다.</p>
+</div>
+
+<p>①과 ②는 <strong>기억</strong>입니다. ③④⑤⑥은 기억을 딛고 <strong>일하는 절차</strong>
+입니다. 이 구분이 다음 장의 전부입니다.</p>
+
+<h2 id="두부분">6. 나무는 두 부분입니다 — 기억, 그리고 절차</h2>
+
+<p>여기서부터가 처음 쓰시는 분들이 가장 헷갈려 하는 대목입니다. 먼저 이 한 가지만
+잡고 가시면 나머지가 전부 풀립니다.</p>
+
+<div class="dgm">
+  <p class="dgm-t">나무를 이루는 두 부분</p>
+  <div class="grid grid-2" style="margin:0">
+    <div class="card" style="margin:0">
+      <h4>🧠 기억 — 앞 장의 ①②</h4>
+      <p class="muted">기억을 담고 꺼내기 · 작업일지 쓰기.</p>
+      <p><strong>표준 콘센트(MCP)를 타고 어디로든 갑니다</strong> — 터미널 AI든
+      웹 브라우저 AI든, 주소만 붙이면 붙습니다.</p>
+    </div>
+    <div class="card" style="margin:0">
+      <h4>⚙️ 일하는 절차 — 앞 장의 ③④⑤⑥</h4>
+      <p class="muted">브리핑 · 작업 절차 · 일꾼 AI · 화면 아래 한 줄.</p>
+      <p><strong>콘센트를 타고 가지 못합니다</strong> — AI 프로그램 자체에 끼워 넣는
+      물건이라, <strong>플러그인을 깔아야만</strong> 따라옵니다.</p>
+    </div>
+  </div>
+  <p class="dgm-note">그래서 "웹은 절반만 된다"는 말은 정확히는 <strong>"콘센트는 기억만
+  나른다"</strong>는 뜻입니다. 웹이라서 모자란 것이 아니라, <strong>콘센트로 붙였기
+  때문</strong>입니다.</p>
+</div>
+
+<div class="warnbox">
+<p><strong>그러니 터미널이라고 전부 되는 것도 아닙니다.</strong> 터미널 AI에도 플러그인 없이
+주소만 붙일 수 있는데, 그러면 웹과 똑같이 <strong>기억 3가지만</strong> 됩니다. 실제로 재
+봤습니다 — 브리핑도, 작업 절차도, 일꾼 AI도 하나도 따라오지 않았습니다.</p>
+</div>
+
+<h2 id="붙이는법">7. 붙이는 방법은 두 가지입니다</h2>
+
+<p>그래서 갈래를 가르는 기준은 "어떤 AI를 쓰느냐"가 아니라 <strong>"기억만 붙이느냐,
+절차까지 붙이느냐"</strong>입니다. 아래 표의 ①~⑥은 <a href="#기능">5장에서 본 여섯
+가지 일</a>과 같은 번호입니다.</p>
 
 <div class="cmp">
 <table>
 <thead>
-<tr><th>갈래</th><th>어떤 AI에 붙나</th><th>설치</th><th>되는 것</th><th>안 되는 것</th></tr>
+<tr><th></th><th>① 플러그인을 깝니다<br><small class="muted">권장</small></th><th>② MCP 주소를 붙입니다</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>어떤 AI에 되나</strong></td>
+    <td>터미널 AI만<br><small class="muted">Claude Code · agy</small></td>
+    <td><strong>아무 AI나</strong><br><small class="muted">웹 브라우저 AI, 터미널 AI 둘 다</small></td></tr>
+<tr><td><strong>① 기억 담고 꺼내기</strong><br><small class="muted">네 그릇 전부</small></td><td>됩니다</td><td>됩니다</td></tr>
+<tr><td>└ 기억 다루는 도구</td><td><strong>7가지</strong></td><td><strong>3가지</strong><br><small class="muted">꺼내기·찾기·남기기</small></td></tr>
+<tr><td>└ 쪽지 떼기</td><td>됩니다</td><td class="no">안 됩니다</td></tr>
+<tr><td><strong>② 작업일지 쓰기</strong></td><td>됩니다</td><td>됩니다</td></tr>
+<tr><td>└ 책갈피 꽂기·빼기</td><td>됩니다</td><td class="no">안 됩니다</td></tr>
+<tr><td><strong>③ 대화 열면 상황 깔아주기</strong><br><small class="muted">브리핑</small></td><td>됩니다</td><td class="no">안 됩니다<br><small class="muted">"이어서 하자"고 말해야 꺼내 줍니다</small></td></tr>
+<tr><td><strong>④ 여러 단계 작업 몰아주기</strong></td><td>됩니다</td><td class="no">안 됩니다</td></tr>
+<tr><td><strong>⑤ 일꾼 AI 부르기</strong><br><small class="muted">일꾼 · 검수자</small></td><td>됩니다</td><td class="no">안 됩니다</td></tr>
+<tr><td><strong>⑥ 화면 아래 한 줄</strong></td><td>됩니다</td><td class="no">안 됩니다</td></tr>
+<tr><td>마무리할 때 붙잡아 주기</td><td>됩니다</td><td class="no">안 됩니다</td></tr>
+<tr><td><strong>설치</strong></td><td>명령 두 줄</td><td><strong>설치 없음</strong> — 주소만</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="btn-note">표의 "됩니다 / 안 됩니다"는 짐작이 아니라, 같은 폴더에서 두 상태를
+실제로 띄워 나란히 잰 결과입니다.</p>
+
+<h3 id="지원현황">지금 어떤 AI에서 쓸 수 있나</h3>
+
+<p>아래 <strong>세 곳</strong>이 지금 나무를 쓸 수 있는 자리입니다.</p>
+
+<div class="cmp">
+<table>
+<thead>
+<tr><th>AI</th><th>붙이는 법</th><th>🧠 기억</th><th>⚙️ 일하는 절차</th><th></th></tr>
 </thead>
 <tbody>
 <tr>
-  <td><strong>① 터미널 설치형</strong><br><small class="muted">가장 많이 쓰는 방법</small></td>
-  <td>Claude Code · agy<br><small class="muted">(검은 화면에서 쓰는 AI)</small></td>
-  <td>플러그인 설치<br><small class="muted">명령 두 줄</small></td>
-  <td><strong>나무 전부</strong></td>
+  <td><strong>Claude Code</strong><br><small class="muted">터미널</small></td>
+  <td>플러그인</td>
+  <td><strong>전부</strong></td>
+  <td><strong>전부</strong></td>
+  <td><span class="pill">지원</span></td>
+</tr>
+<tr>
+  <td><strong>agy</strong><br><small class="muted">터미널 · 안티그래비티</small></td>
+  <td>플러그인</td>
+  <td><strong>전부</strong></td>
+  <td>거의 전부<br><small class="muted">실수 막기 2가지만 빠집니다</small></td>
+  <td><span class="pill">지원</span></td>
+</tr>
+<tr>
+  <td><strong>claude.ai</strong><br><small class="muted">웹 브라우저</small></td>
+  <td>MCP 주소</td>
+  <td><strong>전부</strong><br><small class="muted">네 그릇 + 작업일지</small></td>
+  <td class="no">아직</td>
+  <td><span class="pill">지원</span></td>
+</tr>
+<tr>
+  <td class="no">ChatGPT · 제미나이(웹) ·<br>Copilot · Cursor 등</td>
   <td class="no">—</td>
-</tr>
-<tr>
-  <td><strong>② 개발형</strong><br><small class="muted">나무 자체를 고칠 때</small></td>
-  <td>Claude Code · agy</td>
-  <td>저장소를 통째로 내려받기</td>
-  <td>나무 전부 + 코드 수정이 바로 반영</td>
-  <td class="no">—</td>
-</tr>
-<tr>
-  <td><strong>③ 웹 · 나무 클라우드</strong><br><small class="muted">가장 쉬운 방법</small></td>
-  <td>claude.ai 등 브라우저에서 쓰는 AI</td>
-  <td><strong>설치 없음</strong><br><small class="muted">GitHub 로그인만</small></td>
-  <td>기억 꺼내기·찾기·남기기<br>작업일지 보기·쓰기</td>
-  <td class="no">대화 시작 브리핑<br>작업 절차<br>일꾼 AI 부르기</td>
-</tr>
-<tr>
-  <td><strong>④ 웹 · 직접 서버 돌리기</strong><br><small class="muted">남에게 안 맡길 때</small></td>
-  <td>claude.ai 등 브라우저에서 쓰는 AI</td>
-  <td>내 PC나 서버에서 직접 띄움</td>
-  <td>③과 같음</td>
-  <td class="no">③과 같음</td>
+  <td class="no">아직</td>
+  <td class="no">아직</td>
+  <td class="no">준비 안 됨</td>
 </tr>
 </tbody>
 </table>
 </div>
 
-<div class="warnbox">
-<p><strong>왜 웹에서는 절반만 되나요?</strong> 나무는 두 부분으로 되어 있습니다 —
-<strong>기억</strong>과 <strong>일하는 절차</strong>입니다. 웹으로 연결하면 넘어가는 것은
-기억뿐입니다. 대화를 시작할 때 지난 상황을 알아서 보여주는 브리핑, 여러 단계 작업을
-순서대로 돌리는 절차, 일꾼 AI를 불러 코드를 맡기는 기능 — 이것들은 터미널 쪽에만
-들어 있습니다.</p>
+<div class="tip">
+<p><strong>"아직"은 그 AI가 못 한다는 뜻이 아닙니다.</strong> <strong>나무 쪽이 아직 그 자리를
+잡지 않았다</strong>는 뜻입니다. 기억은 주소만 받아 주면 원리상 어디든 붙고, 절차는 그 AI에
+맞는 꾸러미를 따로 만들어야 하는데 지금 만들어져 있는 것이 Claude Code와 agy 둘뿐입니다.
+늘어날 수 있는 자리입니다.</p>
 </div>
 
-<h2 id="고르기">4. 나에게 맞는 것 고르기</h2>
+<p class="btn-note">Claude Code 줄은 이번에 직접 재 본 값이고, agy 줄은 플러그인에 무엇이
+동봉돼 있는지로 확인한 값입니다. claude.ai는 실제로 붙여 쓰고 있는 자리입니다.</p>
+
+<h3>① 플러그인을 깝니다 — 터미널을 쓰신다면 이쪽을 권합니다</h3>
+
+<p>터미널에서 AI를 쓰신다면 <strong>플러그인 설치 + GitHub 기억 동기화</strong> 조합을
+권합니다. 나무의 기능이 하나도 빠짐없이 켜지고, 기억이 여러 PC를 따라다닙니다. 대부분의
+분이 여기에 해당합니다.</p>
+
+<ul>
+  <li><strong>보통 설치</strong> — 명령 두 줄이면 끝입니다. → <a href="install_guide.html">설치하기</a></li>
+  <li><strong>개발형</strong> — 나무 자체를 고쳐 볼 때. 저장소를 통째로 내려받아 그 안에서
+  돌리면 코드를 고치는 즉시 반영됩니다. 되는 일은 보통 설치와 같습니다.
+  → <a href="install_guide.html#개발형">개발형</a></li>
+</ul>
+
+<p>동기화를 켜는 방법은 <a href="#동기화">9장</a>에 있습니다.</p>
+
+<h3>② MCP 주소를 붙입니다 — 설치가 어려운 자리에서</h3>
+
+<p>웹 브라우저에서 AI를 쓰시거나, 프로그램을 설치할 수 없는 컴퓨터라면 이쪽입니다.
+주소 하나만 붙이면 <strong>기억 네 그릇을 그대로</strong> 읽고 씁니다. 그 주소를 어디서
+얻는지는 <a href="#웹두갈래">10장</a>에 있습니다.</p>
+
+<h2 id="고르기">8. 나에게 맞는 것 고르기</h2>
 
 <ul class="steps">
   <li>
     <span class="num">1</span>
     <div class="txt">
       <h4>검은 화면(터미널)에서 AI를 쓰시나요?</h4>
-      <p><strong>예</strong> → <a href="install_guide.html">① 터미널 설치형</a>으로 가십시오.
-      나무의 모든 기능이 켜집니다. 대부분의 분이 여기에 해당합니다.</p>
+      <p><strong>예</strong> → <a href="install_guide.html">플러그인을 까십시오.</a>
+      그리고 <a href="#동기화">기억 동기화</a>까지 켜시면 권장 구성이 완성됩니다.
+      나무의 모든 기능이 켜집니다.</p>
       <p><strong>아니오</strong> → 다음 질문으로.</p>
     </div>
   </li>
@@ -197,31 +611,78 @@
     <div class="txt">
       <h4>서버를 직접 돌릴 생각이 있으신가요?</h4>
       <p><strong>아니오, 그냥 쓰고 싶다</strong> →
-      <a href="https://namu-cloud.onnamu.kr/">③ 나무 클라우드</a>. GitHub 계정만 있으면
-      됩니다. 설치도, 카드 등록도 없습니다.</p>
+      <a href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>에서 주소를 받으십시오.
+      GitHub 계정만 있으면 됩니다. 설치도, 카드 등록도 없습니다.</p>
       <p><strong>예, 내 손으로 돌리겠다</strong> →
-      <a href="remote_mcp_guide.html">④ 직접 서버 돌리기</a>.</p>
+      <a href="remote_mcp_guide.html">직접 서버를 돌려</a> 주소를 만드십시오.</p>
     </div>
   </li>
   <li>
     <span class="num">3</span>
     <div class="txt">
       <h4>나무 자체를 고쳐 보고 싶으신가요?</h4>
-      <p>→ <a href="install_guide.html#개발형">② 개발형</a>. 저장소를 내려받아 그 안에서
+      <p>→ <a href="install_guide.html#개발형">개발형</a>. 저장소를 내려받아 그 안에서
       돌리면, 코드를 고치는 즉시 반영됩니다.</p>
     </div>
   </li>
 </ul>
 
-<h2 id="웹두갈래">5. 웹으로 쓸 때 — 두 갈래의 차이</h2>
+<h2 id="동기화">9. 여러 PC에서 같은 기억 쓰기</h2>
 
-<p>웹에서 쓰는 방법이 둘인데, 되는 일은 똑같습니다. 다른 것은 <strong>누가 서버를
+<p>기억은 <a href="#기억">4장</a>에서 본 대로 <strong>내 컴퓨터 안의 폴더</strong>에
+쌓입니다. 그러니 그대로 두면 그 컴퓨터에만 남습니다. 회사 노트북에서 하던 일을 집 PC에서
+이어받으려면 <strong>기억 동기화</strong>를 한 번 켜 두어야 합니다.</p>
+
+<div class="dgm">
+  <p class="dgm-t">한 번 켜 두면 그다음은 자동입니다</p>
+  <div class="pipe">
+    <div class="pnode">
+      <span class="ico">💻</span><b>회사 노트북</b>
+      <small>기억을 남길 때마다 저절로 올라갑니다</small>
+    </div>
+    <span class="parr"><span class="a">→</span></span>
+    <div class="pnode core">
+      <span class="ico">🔒</span><b>내 비공개 저장소</b>
+      <small>GitHub에 만든 나만 보는 저장소 하나</small>
+    </div>
+    <span class="parr"><span class="a">→</span></span>
+    <div class="pnode">
+      <span class="ico">🏠</span><b>집 PC</b>
+      <small>대화를 열 때마다 저절로 받아 옵니다</small>
+    </div>
+  </div>
+  <p class="dgm-note">기억 원본은 계속 <strong>여러분 것</strong>입니다. 저장소도 여러분
+  계정에 있고, 나무 쪽은 들여다보지 않습니다.</p>
+</div>
+
+<h3>준비물은 비공개 저장소 하나입니다</h3>
+
+<p>GitHub에 <strong>비어 있는 비공개 저장소</strong>를 하나 만들면 됩니다(비공개도
+무료입니다). 이름은 자유지만 <code>namu-memory</code>를 많이 씁니다.</p>
+
+<div class="tip">
+<p><strong>만들기 귀찮으시면</strong> — <a href="https://namu-cloud.onnamu.kr/">나무
+클라우드</a>에 GitHub로 로그인하면, 이름(<code>namu-memory</code>)과 <strong>비공개</strong>가
+미리 채워진 생성 화면으로 안내해 줍니다. 여러분은 <strong>만들기 버튼 한 번</strong>만
+누르면 됩니다.</p>
+</div>
+
+<p>저장소를 만든 뒤에는 AI에게 <strong>"기억 동기화를 이 주소로 켜 줘"</strong>라고 한 번만
+말하면 끝입니다. 그다음부터는 기억을 남길 때마다 저절로 올라가고, 새 대화를 열 때마다
+저절로 받아 옵니다. 두 번째 PC에서도 같은 말 한 번이면 기존 기억과 알아서 합쳐집니다.</p>
+
+<p class="muted">자세한 절차는 → <a href="install_guide.html#동기화">설치하기 — 여러 PC에서
+같은 기억 쓰기</a></p>
+
+<h2 id="웹두갈래">10. MCP 주소는 어디서 얻나</h2>
+
+<p>주소를 얻는 길이 둘인데, 되는 일은 똑같습니다. 다른 것은 <strong>누가 서버를
 돌리느냐</strong>와 <strong>기억의 원본이 어디에 남느냐</strong>입니다.</p>
 
 <div class="cmp">
 <table>
 <thead>
-<tr><th></th><th>③ 나무 클라우드</th><th>④ 직접 서버 돌리기</th></tr>
+<tr><th></th><th>나무 클라우드</th><th>직접 서버 돌리기</th></tr>
 </thead>
 <tbody>
 <tr><td>서버는 누가 돌리나</td><td>나무 쪽에서 대신 돌립니다</td><td>여러분이 직접 돌립니다</td></tr>
@@ -235,12 +696,15 @@
 
 <h3>나무 클라우드</h3>
 
-<p>서버를 직접 돌리지 않고 웹 AI에 기억을 붙이는 가장 쉬운 길입니다. <strong>GitHub 계정만
-있으면 되고, 카드 등록은 없습니다.</strong> 로그인하면 여러분 계정에 비공개 저장소 하나를
-마련하고, 나만의 접속 주소를 하나 받습니다. 그 주소를 쓰는 AI에 붙이면 끝입니다.</p>
+<p>서버를 직접 돌리지 않고 주소를 얻는 가장 쉬운 길입니다. <strong>GitHub 계정만 있으면
+되고, 카드 등록은 없습니다.</strong> 로그인하면 ①여러분 계정에 비공개 저장소를 만들도록
+안내하고(이름과 비공개가 미리 채워져 있어 <strong>버튼 한 번</strong>입니다) ②나만의 접속
+주소를 하나 내줍니다. 그 주소를 쓰는 AI에 붙이면 끝입니다.</p>
 
-<p>기억의 원본은 <strong>여러분 저장소</strong>에 남습니다. 그만두고 싶으면 주소를 폐기하고
-저장소를 가져가면 됩니다.</p>
+<p>기억의 원본은 <strong>여러분 저장소</strong>에 남습니다. 그만두고 싶으면
+<strong>주소를 폐기</strong>하면 됩니다(원하시면 GitHub 설정에서 나무 앱의 권한까지
+회수하십시오). <strong>저장소는 원래부터 여러분 계정에 있으니 그대로 남습니다</strong> —
+옮기거나 내려받을 것이 없습니다.</p>
 
 <div class="btn-row">
   <a class="btn btn-primary btn-lg" href="https://namu-cloud.onnamu.kr/">나무 클라우드 시작하기 →</a>
@@ -255,7 +719,7 @@
 <p><strong>이 과정은 AI에게 맡길 수 있습니다.</strong> 자세한 것은
 <a href="remote_mcp_guide.html">웹에서 직접 서버 돌리기</a>를 보십시오.</p>
 
-<h2 id="다음">6. 다음에 읽을 것</h2>
+<h2 id="다음">11. 다음에 읽을 것</h2>
 
 <div class="grid grid-3">
   <div class="card">

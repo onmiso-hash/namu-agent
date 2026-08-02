@@ -632,7 +632,7 @@ flowchart TB
     <div class="card">
       <span class="tag">경로 A · 원본</span>
       <h4>원본은 사용자 저장소에</h4>
-      <p>기억의 원천은 <b>사용자 본인의 GitHub 비공개 저장소</b>이고, 서버가 갖는 것은 그 사본뿐입니다. 그만두면 저장소를 그대로 가져갑니다. <code>?client=</code>(어느 AI가 남겼나)는 신원과 별개 축이라 그대로 유지됩니다.</p>
+      <p>기억의 원천은 <b>사용자 본인의 GitHub 비공개 저장소</b>이고, 서버가 갖는 것은 그 사본뿐입니다. 그만둘 때는 주소만 폐기하면 되고, 저장소는 원래부터 사용자 계정에 있으므로 그대로 남습니다. <code>?client=</code>(어느 AI가 남겼나)는 신원과 별개 축이라 그대로 유지됩니다.</p>
     </div>
   </div>
   <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 <code>recall·record·search</code> 3종만</b> 노출됩니다 — <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단합니다.</p>

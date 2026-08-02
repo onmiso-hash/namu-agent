@@ -35,7 +35,7 @@
 붙이는 방식이라 절차가 완전히 다릅니다 →
 <a href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>(가장 쉬움) 또는
 <a href="remote_mcp_guide.html">직접 서버 돌리기</a>.
-두 방법의 차이는 <a href="index.html#웹두갈래">안내서 5장</a>에 있습니다.</p>
+두 방법의 차이는 <a href="index.html#웹두갈래">안내서 10장</a>에 있습니다.</p>
 </div>
 
 <div class="toc">
@@ -47,7 +47,7 @@
     <li><a href="#개발형">개발형 — 나무 자체를 고칠 때</a></li>
     <li><a href="#확인">잘 설치됐는지 확인하기</a></li>
     <li><a href="#첫하루">첫 하루 — 실제로 써 보기</a></li>
-    <li><a href="#동기화">여러 PC에서 같은 기억 쓰기 (선택)</a></li>
+    <li><a href="#동기화">여러 PC에서 같은 기억 쓰기 (권장)</a></li>
     <li><a href="#업데이트">업데이트</a></li>
     <li><a href="#삭제">삭제</a></li>
     <li><a href="#막혔을때">막혔을 때</a></li>
@@ -216,10 +216,13 @@ claude plugin install namu@namu-marketplace</code></pre>
 붙여둔 쪽지, 열려 있는 작업, 최근 교훈입니다. 지금 대화에는 안 나타나고 다음 대화부터
 보입니다.</p>
 
-<h2 id="동기화">7. 여러 PC에서 같은 기억 쓰기 (선택)</h2>
+<h2 id="동기화">7. 여러 PC에서 같은 기억 쓰기 (권장)</h2>
 
-<p>그냥 두면 기억은 <strong>그 PC 안에만</strong> 쌓입니다. 디스크가 죽으면 같이 사라지고,
-PC 두 대를 쓰면 따로 쌓여 합쳐지지 않습니다.</p>
+<p><strong>플러그인 설치 + 이 동기화</strong>가 터미널에서 나무를 쓰는 권장 구성입니다.
+여기까지 켜 두시면 더 하실 일이 없습니다.</p>
+
+<p>켜지 않고 그냥 두면 기억은 <strong>그 PC 안에만</strong> 쌓입니다. 디스크가 죽으면 같이
+사라지고, PC 두 대를 쓰면 따로 쌓여 합쳐지지 않습니다.</p>
 
 <p>이것을 없애려면 여러분의 비공개 저장소에 기억을 자동으로 올리고 내리게 하면 됩니다.
 <strong>한 번만 켜면 그다음부터는 손댈 일이 없습니다.</strong></p>
@@ -229,7 +232,10 @@ PC 두 대를 쓰면 따로 쌓여 합쳐지지 않습니다.</p>
     <p>GitHub에서 New repository → 이름은 자유(예: <code>namu-memory</code>) →
     <strong>Private</strong>을 고르고, 초기 파일 없이 빈 상태로 만듭니다.</p>
     <p><strong>반드시 비공개여야 합니다.</strong> 교훈에는 여러분이 한 작업의 내용과 판단이
-    그대로 담기기 때문입니다. GitHub은 비공개 저장소도 무료입니다.</p></div></li>
+    그대로 담기기 때문입니다. GitHub은 비공개 저장소도 무료입니다.</p>
+    <p class="muted">직접 만들기 번거로우시면 <a href="https://namu-cloud.onnamu.kr/">나무
+    클라우드</a>에 GitHub로 로그인해 보십시오 — 이름(<code>namu-memory</code>)과 비공개가
+    미리 채워진 생성 화면으로 안내해 주므로 버튼 한 번이면 만들어집니다.</p></div></li>
   <li><span class="num">2</span><div class="txt"><h4>그 PC에서 git 로그인을 해 둡니다</h4>
     <p><code>gh auth login</code>이 가장 간단합니다. 그 PC에서 이미 저장소에 올려 본 적이
     있다면 대개 이미 되어 있습니다.</p></div></li>

@@ -39,6 +39,34 @@ flowchart LR
     D --> A
 ```
 
+## Support status — where you can use NAMU today
+
+NAMU is two halves — **memory** (4 bowls + task journals) and **the working
+procedure** (session briefing, `/namu-task`, workers, statusLine, guard hooks).
+Memory attaches anywhere that accepts an MCP address; the procedure needs a
+**host-specific plugin envelope** built for it.
+
+| Client | How it attaches | 🧠 Memory | ⚙️ Working procedure | |
+|---|---|---|---|---|
+| **Claude Code** (terminal) | plugin | full (7 tools) | full | ✅ supported |
+| **agy** (terminal, Antigravity CLI) | plugin | full (7 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
+| **claude.ai** (web) | MCP address | full (4 bowls + journals) | not yet | ✅ supported |
+| ChatGPT · Gemini (web) · Copilot · Cursor, etc. | — | not yet | not yet | ⏳ not wired up |
+
+- **"Not yet" does not mean the client can't do it — it means NAMU hasn't taken
+  that seat yet.** Memory works in principle with any client that can add a remote
+  MCP server (claude.ai is the one we've confirmed); the procedure needs a per-host
+  envelope, and so far only Claude Code and agy have one.
+- **Guard hooks** = blocking a close-out that forgot the `[다음]` line (Stop) +
+  re-injecting standing reminders (UserPromptSubmit). agy has no matching events,
+  so only these two are missing (namu-62). Its session briefing ships separately
+  as a PreInvocation hook and does work.
+- Over an MCP address the exposed tools are `namu_recall`/`namu_record`/`namu_search`.
+  Removing sticky notes, bookmarks, and sync setup are plugin-only — but all four
+  bowls and the task journals are fully readable and writable.
+- The Claude Code row was measured directly (same folder, plugin on vs. off);
+  the agy row reflects what the plugin ships.
+
 ## ⚡ 30-second start
 
 ```
