@@ -1,5 +1,11 @@
 # NAMU MCP 메모리 서버 설계 메모
 
+> ⚠️ **이 문서는 설계 이력이다 — 현행 구조 설명서가 아니다.**
+> 지금의 기록 구조(네 그릇 · 3층 · 칸 정의)는 [`memory_schema_v2.md`](memory_schema_v2.md)를 보라.
+> 본문에 남은 "두 그릇"·`kind` 라우팅 서술은 namu-65 이전 시점의 것이며, 당시 판단 근거를
+> 남겨두기 위해 고치지 않았다. 전체 그림은
+> [기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) 참고.
+
 > 📅 작성: 2026-06-24 | 갱신: 2026-06-24 (db.py 읽기계열 recall/search 구현 완료) | 갱신: 2026-07-18 (#49 2그릇 메모리 — profile.yaml + kind 라우팅 반영) | 구현용 청사진
 > 목표: NAMU의 메모리/학습 코어(C층)를 MCP 서버로 노출 → 어떤 AI(Claude Code/agy/Cursor)든 같은 기억 공유
 

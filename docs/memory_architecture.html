@@ -182,11 +182,10 @@
 <body>
 
 <nav class="namu-docnav">
-  <a href="namu_guide.html">🌳 안내서</a>
-  <a href="namu_quickstart.html">🚀 빠른 시작</a>
-  <a href="install_guide.html">🔧 설치 가이드</a>
+  <a href="index.html">🌳 안내서</a>
+  <a href="install_guide.html">🔧 설치</a>
   <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
-  <a href="namu_cloud_guide.html">☁️ 공용 클라우드</a>
+  <a href="https://namu-cloud.onnamu.kr/" target="_blank" rel="noopener">☁️ 나무 클라우드</a>
   <a href="memory_architecture.html" class="is-current">📐 기억 설계도</a>
   <a href="https://github.com/onmiso-hash/namu-agent" target="_blank" rel="noopener">💻 GitHub</a>
 </nav>
@@ -208,13 +207,15 @@
 </header>
 
 <div class="hero"><div class="wrap">
-  <div class="eyebrow">Memory Architecture · 코드 기준 2026-07</div>
+  <div class="eyebrow">Memory Architecture · 코드 기준 2026-08</div>
   <h1>기억은 하나, 실행 엔진은 빌려 쓴다</h1>
   <p class="lede">NAMU의 기억은 <strong>머신마다</strong>, <strong>AI마다</strong>, 그리고 <strong>기억의 종류마다</strong> 남기는 방법과 사는 곳이 다릅니다. 이 문서는 그 전체 구성을 다이어그램으로 한 장에 펼쳐, 매번 다시 묻지 않아도 되게 만든 설계도입니다.</p>
+  <p class="lede" style="font-size:.95em"><b>처음이시라면</b> <a href="index.html">나무 안내서</a>부터 보십시오 — 이 문서는 설계를 이미 궁금해하는 분을 위한 것입니다. 설치는 <a href="install_guide.html">설치하기</a>, 웹 연결은 <a href="remote_mcp_guide.html">웹에서 직접 서버 돌리기</a>·<a href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>에 있습니다.</p>
   <div class="metarow">
     <span class="chip">데이터 루트 <b>~/.namu</b> (고정)</span>
-    <span class="chip">진실의 원천 <b>learnings.yaml · profile.yaml</b></span>
-    <span class="chip">인터페이스 <b>MCP · 도구 4종</b></span>
+    <span class="chip">그릇 <b>교훈 · 개인 사실 · 작업일지 · 쪽지</b></span>
+    <span class="chip">인터페이스 <b>MCP · 도구 7종</b> (웹은 3종)</span>
+    <span class="chip">기록 <b>3층 — 무엇을 · 왜 · 그때</b></span>
     <span class="chip">동기화 <b>Git (선택)</b></span>
   </div>
 </div></div>
@@ -320,69 +321,93 @@ flowchart LR
 
 <section id="bowls"><div class="wrap">
   <div class="kicker"><span class="num">03</span> 그릇 (Axis A 상세)</div>
-  <h2>지금은 두 그릇, 곧 세 그릇</h2>
-  <p><code>namu_record</code>는 <strong>도구 하나</strong>지만 <code>kind</code> 파라미터로 서로 다른 그릇에 라우팅합니다. 웹 커넥터의 3-도구 제약 때문에 도구 수를 늘리지 않고, 라우팅으로 그릇을 나눈 설계입니다.</p>
+  <h2>네 그릇 — 성격이 다른 기억은 따로 담는다</h2>
+  <p><code>namu_record</code>는 <strong>도구 하나</strong>지만 <code>bowl</code> 인자로 서로 다른 그릇에 라우팅합니다. 웹 커넥터의 3-도구 제약 때문에 도구 수를 늘리지 않고, 라우팅으로 그릇을 나눈 설계입니다. <code>bowl</code>은 <b>생략할 수 없습니다</b> — 안 적으면 저장하지 않고 네 그릇을 안내합니다(어느 그릇인지 모른 채 쌓이는 것이 가장 큰 오염원이기 때문).</p>
   <div class="sheet">
-    <div class="sheet-cap">kind 라우팅 — 하나의 record, 갈라지는 저장소</div>
+    <div class="sheet-cap">bowl 라우팅 — 하나의 record, 갈라지는 저장소</div>
     <pre class="mermaid">
 %%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
 flowchart TB
-  rec["namu_record( kind )"]
-  rec --&gt;|"lesson · note"| ly["learnings.yaml&lt;br/&gt;교훈 + 정제된 대화기록"]
-  rec --&gt;|"fact"| py["profile.yaml&lt;br/&gt;사실 · 선호"]
-  rec -.-&gt;|"scrapbook / memo (예정)"| sb["scrapbook.yaml&lt;br/&gt;일회성 일상 메모"]
+  rec["namu_record( bowl )"]
+  rec --&gt;|"learnings"| ly["learnings.yaml&lt;br/&gt;교훈"]
+  rec --&gt;|"profile"| py["profile.yaml&lt;br/&gt;개인 사실"]
+  rec --&gt;|"tasks"| tk["tasks/&lt;프로젝트&gt;/log.md&lt;br/&gt;작업일지"]
+  rec --&gt;|"memo"| mo["memo.yaml&lt;br/&gt;쪽지 · 유일하게 지워짐"]
   ly --&gt;|INSERT + 트리거| fts["SQLite FTS5&lt;br/&gt;trigram 검색 캐시"]
   py --&gt; nocache["캐시 없음 · 통째 로딩"]
-  sb -.-&gt; future["재생성 로직도 함께 예정"]
+  tk --&gt; nocache2["캐시 없음 · 파일에서 직접 읽음"]
+  mo --&gt; noidx["색인 안 함 — 지식베이스 오염 0이 존재 이유"]
 
   classDef truth fill:#E7F1EA,stroke:#2E6E4E,color:#14301F,stroke-width:1.5px;
   classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
   classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
-  classDef plan fill:#F1EEE7,stroke:#8A7F6A,color:#4A4436,stroke-width:1.3px,stroke-dasharray:5 4;
   class rec net;
-  class ly,py truth;
-  class fts,nocache cache;
-  class sb,future plan;
+  class ly,py,tk,mo truth;
+  class fts,nocache,nocache2,noidx cache;
     </pre>
   </div>
   <div class="tablewrap">
   <table>
-    <thead><tr><th>그릇</th><th>kind</th><th>담는 것</th><th>접근 패턴</th><th>SQLite 캐시</th><th>정정 방식</th></tr></thead>
+    <thead><tr><th>그릇</th><th>bowl</th><th>담는 것</th><th>접근 패턴</th><th>SQLite 캐시</th><th>정정 방식</th><th>웹 노출</th></tr></thead>
     <tbody>
       <tr>
         <td><span class="pill truth">learnings.yaml</span></td>
-        <td><code>lesson</code> / <code>note</code></td>
-        <td>일반화할 교훈 + 정제된 대화기록</td>
+        <td><code>learnings</code></td>
+        <td>다시 쓸 배움 — 교훈</td>
         <td>검색 컬렉션 — FTS로 관련도순/최신순 일부만</td>
         <td>있음 <span style="color:var(--ink-faint)">(namu.db, 재생성)</span></td>
         <td>append-only. 각 항목이 독립 사실</td>
+        <td>○</td>
       </tr>
       <tr>
         <td><span class="pill truth">profile.yaml</span></td>
-        <td><code>fact</code></td>
+        <td><code>profile</code></td>
         <td>사용자·환경에 관한 사실·선호</td>
         <td>통째 로딩 — 활성 항목 전체 반환</td>
         <td><b>없음</b> <span style="color:var(--ink-faint)">(작아서)</span></td>
         <td>append + <code>supersedes</code> 포워드 포인터</td>
+        <td>○</td>
       </tr>
-      <tr style="opacity:.85">
-        <td><span class="pill plan">scrapbook.yaml</span></td>
-        <td><code>scrapbook</code>/<code>memo</code></td>
-        <td>영화 시간표 같은 일회성 일상 메모</td>
-        <td>(설계 진행 중)</td>
-        <td>(예정)</td>
-        <td><span style="color:var(--c-plan)">namu-56 · 미구현</span></td>
+      <tr>
+        <td><span class="pill truth">tasks/…/log.md</span></td>
+        <td><code>tasks</code></td>
+        <td>작업 진행 기록. 프로젝트별로 갈림</td>
+        <td>프로젝트 단위 조회 — 열린 작업·최근 활동</td>
+        <td><b>없음</b> <span style="color:var(--ink-faint)">(파일에서 직접)</span></td>
+        <td>append-only. 닫는 말은 <code>[완료]</code>·<code>[중단]</code> 둘뿐</td>
+        <td>○</td>
+      </tr>
+      <tr>
+        <td><span class="pill truth">memo.yaml</span></td>
+        <td><code>memo</code></td>
+        <td>영화 시간표 같은 쓰고 버릴 메모</td>
+        <td>붙여둔 것 전부 — 브리핑 맨 앞에 나옴</td>
+        <td><b>없음</b> <span style="color:var(--ink-faint)">(일부러 색인 안 함)</span></td>
+        <td><b>유일하게 지워짐</b> — <code>namu_memo_remove</code></td>
+        <td>○ <small>(붙이기만 — 떼는 도구는 웹에 없음)</small></td>
       </tr>
     </tbody>
   </table>
   </div>
-  <div class="note warn"><span class="ic">⚑</span><p><strong>왜 세 번째 그릇이 필요한가:</strong> "영화 시간표"처럼 일회성 정보를 저장하라고 지시하면, 지금은 마땅한 그릇이 없어 <code>learnings.yaml</code>(엔지니어링 지식베이스)이 오염됩니다. 이를 막기 위한 전용 서랍이 <strong>namu-56</strong>으로 등록돼 있습니다. — <em>진행 중, 아직 코드로는 존재하지 않습니다.</em></p></div>
+  <div class="note"><span class="ic">i</span><p><strong>왜 쪽지 그릇이 따로 있나:</strong> "영화 8시 20분" 같은 일회성 정보를 저장하라고 하면, 갈 곳이 없어 <code>learnings.yaml</code>(엔지니어링 지식베이스)로 밀려들어와 검색 품질을 떨어뜨렸습니다. namu-56에서 전용 서랍을 냈고, 이 그릇만 <b>append-only가 아닙니다</b> — 떼면 파일에서 사라집니다. Git 병합도 줄 단위(union)가 아니라 파일 단위입니다. 줄 단위로 합치면 한쪽에서 뗀 메모가 다른 쪽 파일에서 되살아나기 때문입니다.</p></div>
+
+  <h3>기록은 세 층으로 남는다 (namu-65)</h3>
+  <p>네 그릇 <b>모두</b> 같은 3층 구조를 갖습니다. 셋 다 필수이고, 적을 것이 없으면 <code>생략</code> 한 단어를 넣습니다.</p>
+  <ul class="clean">
+    <li><b>summary</b> — 한 줄 요약(무엇을). 브리핑·목록 화면에 실리는 유일한 칸이라, 일을 한 AI가 저장 시점에 <b>한 번 쓰고 고정</b>합니다. 나중 세션이 볼 때마다 요약을 새로 지어내 매번 달라지던 문제를 여기서 끊습니다.</li>
+    <li><b>reason</b> — 왜 그런가 / 어떻게 알았나. 결론만 남기면 다음 세션이 판단 근거를 몰라 같은 논의를 되풀이합니다.</li>
+    <li><b>body</b> — 그때 무슨 일이 있었나. 원문·경위 전부, 길이 제한 없음. 이 칸이 없어서 웹에서 저장한 조사 원문이 통째로 사라진 적이 있습니다.</li>
+  </ul>
 
   <h3>recall vs search — 같은 query, 다른 목적</h3>
   <ul class="clean">
-    <li><b>recall</b> = 작업 <b>시작 전 맥락 로딩</b>. "뭐라도 준다" — 매칭이 약하면 최신순으로 폴백. <code>profile</code> 전체 + <code>learnings</code> 검색결과를 <code>{profile, learnings}</code> 한 dict로 반환.</li>
-    <li><b>search</b> = 판단 중 <b>패턴 분석</b>. 정확히 매칭되는 것만, 없으면 빈 결과 + 항상 <code>{success, failure, partial}</code> 경향 요약 첨부. (learnings 전용 — profile은 검색 대상이 아님)</li>
+    <li><b>recall</b> = 작업 <b>시작 전 맥락 로딩</b>. "뭐라도 준다" — 매칭이 약하면 최신순으로 폴백. 붙여둔 쪽지 + <code>profile</code> 전체 + <code>learnings</code> 검색결과 + 열린 작업을 한 번에 반환.</li>
+    <li><b>search</b> = 판단 중 <b>패턴 분석</b>. 정확히 매칭되는 것만, 없으면 빈 결과 + 항상 <code>{success, failure, partial}</code> 경향 요약 첨부.</li>
   </ul>
+
+  <h3>도구는 일곱 개</h3>
+  <p>기억을 다루는 도구는 <code>namu_recall</code> · <code>namu_search</code> · <code>namu_record</code> · <code>namu_memo_remove</code> · <code>namu_task_pin</code> · <code>namu_task_unpin</code> · <code>namu_sync_setup</code> 일곱입니다. 이 중 <b>웹으로 나가는 것은 앞의 셋뿐</b>입니다(아래 07절).</p>
+  <div class="note"><span class="ic">i</span><p><strong>책갈피가 기록이 아닌 이유(namu-70):</strong> "다음엔 이것부터"는 <code>log.md</code>가 아니라 별도 파일 한 장(<code>.pin.&lt;기기&gt;</code>)에 적습니다. log에 적으면 ① append-only라 뗐다 붙였다를 표현할 수 없고 ② 그 작업의 최종 시각이 갱신돼 <b>화면 순서가 두 경로로 흔들립니다</b>. 파일을 기기마다 가르는 것이 Git 충돌 0의 근거입니다 — 각 기기는 제 파일에만 씁니다.</p></div>
 </div></section>
 
 <section id="map"><div class="wrap">
@@ -469,7 +494,7 @@ flowchart LR
 
   <h3>② 조회 흐름 — <code>namu_recall</code></h3>
   <div class="sheet">
-    <div class="sheet-cap">recall — 두 그릇을 합쳐 맥락으로 반환</div>
+    <div class="sheet-cap">recall — 여러 그릇을 합쳐 맥락으로 반환</div>
     <pre class="mermaid">
 %%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C'}}}%%
 flowchart LR
@@ -559,7 +584,7 @@ flowchart TB
 <section id="remote"><div class="wrap">
   <div class="kicker"><span class="num">07</span> 원격 MCP — 개인 · 공용</div>
   <h2>기억을 네트워크 너머로 여는 두 경로</h2>
-  <p>stdio 로컬 서버가 기본이지만, 웹 Claude(claude.ai) 같은 원격 클라이언트를 붙이려면 HTTP로도 서빙해야 합니다. 여기에 두 갈래가 있습니다 — <strong>경로 B(개인 셀프호스팅)</strong>는 구현·라이브, <strong>경로 A(공용 멀티유저)</strong>는 라우팅까지 라이브·인증은 미완입니다.</p>
+  <p>stdio 로컬 서버가 기본이지만, 웹 Claude(claude.ai) 같은 원격 클라이언트를 붙이려면 HTTP로도 서빙해야 합니다. 여기에 두 갈래가 있고 <strong>둘 다 라이브</strong>입니다 — <strong>경로 B(개인 셀프호스팅)</strong>는 사용자가 직접 띄우고, <strong>경로 A(나무 클라우드)</strong>는 중앙에서 호스팅하며 <a href="https://namu-cloud.onnamu.kr/">전용 사이트</a>에서 GitHub 로그인으로 가입합니다.</p>
   <div class="sheet">
     <div class="sheet-cap">원격 위상 — 경로 B(개인) / 경로 A(공용)</div>
     <pre class="mermaid">
@@ -600,17 +625,18 @@ flowchart TB
       <p><b>①</b> 자기 PC 상시구동 + 터널(cloudflared)로 공개 HTTPS — 지금 쓰는 그 <code>~/.namu</code> 그대로. <b>②</b> 클라우드 컨테이너(Railway 등) — 부팅 시 GitHub에서 clone. 인증은 토큰 헤더 또는 시크릿 경로.</p>
     </div>
     <div class="card">
-      <span class="tag">경로 A · 공용</span>
-      <h4>지금은 "협조적 격리"</h4>
-      <p><code>?user=키</code>로 <code>users/[키]/</code> 서랍에 라우팅. 다만 <code>?user=</code>는 <b>인증이 아니라 위조 가능한 라벨</b> — 공유 시크릿을 아는 사람은 남의 키도 지정 가능. 일반 공개엔 부족합니다.</p>
+      <span class="tag">경로 A · 나무 클라우드</span>
+      <h4>주소에 실린 개인 열쇠로 가른다</h4>
+      <p><code>?user=열쇠</code>로 <code>users/[열쇠]/</code> 서랍에 라우팅합니다. 사이트가 발급하는 열쇠는 <b>추측하기 어려운 긴 무작위 값</b>(<code>token_urlsafe(32)</code>)이라 <b>주소를 아는 것이 곧 신분</b>입니다 — 그래서 주소를 남에게 보이면 안 되고, 새면 내 페이지에서 폐기·재발급합니다.</p>
     </div>
     <div class="card">
-      <span class="tag">미래</span>
-      <h4>신원을 URL → 토큰으로</h4>
-      <p>OAuth 2.1 도입 시 신원이 URL에서 빠지고 사용자별 <code>Bearer</code> 토큰으로 이동 → 남의 서랍 접근이 구조적으로 차단. <code>?client=</code>(어느 AI)는 별개 축이라 그대로 유지.</p>
+      <span class="tag">경로 A · 원본</span>
+      <h4>원본은 사용자 저장소에</h4>
+      <p>기억의 원천은 <b>사용자 본인의 GitHub 비공개 저장소</b>이고, 서버가 갖는 것은 그 사본뿐입니다. 그만두면 저장소를 그대로 가져갑니다. <code>?client=</code>(어느 AI가 남겼나)는 신원과 별개 축이라 그대로 유지됩니다.</p>
     </div>
   </div>
-  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code 전용 글루라 웹에서 동작하지 않습니다. tasks 도구도 웹엔 노출하지 않습니다 — 웹 노출은 <code>recall·record·search</code> 3종뿐.</p></div>
+  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 <code>recall·record·search</code> 3종만</b> 노출됩니다 — <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단합니다.</p>
+  <p style="margin-top:.6em"><strong>작업일지는 웹에서도 됩니다.</strong> 도구가 3종이라는 것과 담을 수 있는 그릇이 무엇이냐는 별개입니다 — <code>record</code>·<code>recall</code>을 통해 작업일지를 <b>쓰고 읽을 수 있습니다</b>. 다만 기록할 때는 <b>어느 프로젝트인지 반드시 적어야</b> 합니다. 터미널은 현재 폴더가 곧 프로젝트지만 웹에는 그 개념이 없기 때문입니다(조회는 생략 시 전체를 합칩니다).</p></div>
 </div></section>
 
 <section id="principles"><div class="wrap">

@@ -2,71 +2,58 @@
 
 NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code / agy 플러그인으로 패키징한 것.
 
+> **설치하려는 분은 이 문서가 아닙니다** → [설치하기](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html).
+> 이 문서는 이 폴더의 코드를 고치는 사람을 위한 구성 설명이다.
+
 ## 구성물
 
 | 파일 | 역할 |
 |------|------|
-| `mcp_server.py` | FastMCP 메모리 서버. MCP 도구 `namu_recall`/`namu_search`/`namu_record`/`namu_sync_setup` 노출, stdio 전송 |
+| `mcp_server.py` | FastMCP 메모리 서버. MCP 도구 7종(`namu_recall`/`namu_search`/`namu_record`/`namu_memo_remove`/`namu_task_pin`/`namu_task_unpin`/`namu_sync_setup`) 노출, stdio 전송 |
+| `http_server.py` | 셀프호스팅용 HTTP 서버. 같은 코어를 원격에 노출하되 도구를 3종(`recall`/`record`/`search`)으로 제한한다(`HTTP_EXPOSED_TOOLS`) |
 | `db.py` | `~/.namu/memory/learnings.yaml` ↔ SQLite 코어. 읽기(recall/search)는 conn 인자를 받고, 쓰기(record/init_db/rebuild)는 함수 내부에서 conn을 열고 닫는다 |
-| `config.py` | 경로·`NAMU_MACHINE` 일원화. 데이터 루트는 고정 상수 `NAMU_DATA_ROOT`(`Path.home() / ".namu"`, namu-35로 환경변수 분기 폐지) 하나뿐이며 learnings/db/tasks 경로가 여기서 산출된다, `load_dotenv` 호출 |
-| `memory_sync.py` | `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작 |
-| `task_resolve.py` | stdlib-only 활성 task 탐색(`log.md` 타임스탬프 기준 단일 출처). `scripts/namu_statusline.py`와 `session_context.py`가 공용으로 import |
-| `session_context.py` | 세션 컨텍스트 마크다운 빌더(교훈 + 활성 task). SessionStart/PreInvocation 훅이 재사용 |
-| `hooks/session_recall.py` | Claude Code SessionStart 훅 — 세션 시작 시 교훈+활성 task를 모델 컨텍스트로 자동 주입 |
-| `hooks/hooks.json` | Claude Code SessionStart 훅 등록(`${CLAUDE_PLUGIN_ROOT}` 절대경로) |
-| `hooks.json` (루트) | agy PreInvocation 훅 등록 — `session_inject.py` 호출, `namu` 네임스페이스로 래핑 |
-| `hooks/session_inject.py` | agy PreInvocation 훅 — Claude Code 쪽과 동일 내용을 agy 방식(ephemeralMessage)으로 주입 |
-| `skills/namu-task/SKILL.md` | `/namu-task` 오케스트레이션 스킬. 엔진별 워커 호출 방식을 분기한다(Claude Code=Agent 도구, agy=`invoke_subagent`/`send_message` 비동기 대기) |
-| `.mcp.json` | Claude Code용 MCP 서버 자동 등록(`${CLAUDE_PLUGIN_ROOT}` 절대경로 봉투) |
-| `mcp_config.json` | agy용 MCP 서버 등록(워크스페이스 상대경로 봉투) |
-| `plugin.json` | 플러그인 메타데이터(name/version/description/repository) |
-| `.claude-plugin/marketplace.json` | Claude Code 마켓플레이스 매니페스트(name/owner/plugins 필수) |
-| `test_cache_stale.py` / `test_session_context.py` / `test_task_resolve.py` | pytest 단위 테스트 |
+| `config.py` | 경로·`NAMU_MACHINE`·그릇 레지스트리(`BOWLS`)·기록 칸 정의(`FIELDS`) 일원화. 데이터 루트는 고정 상수 `NAMU_DATA_ROOT`(`~/.namu`, namu-35로 환경변수 분기 폐지). 기록 시각은 반드시 `cfg.now()` |
+| `memo.py` | 쪽지 그릇(namu-56). 유일한 mutable 저장소이며 SQLite 색인을 하지 않는다 |
+| `profile.py` | 개인 사실 그릇. `상시` 태그가 붙은 항목은 매 입력마다 재주입된다 |
+| `memory_sync.py` | `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작. `.gitattributes` union 라인은 `config.BOWLS`에서 파생된다 |
+| `task_resolve.py` | stdlib-only 활성 task 탐색(`log.md` 타임스탬프 기준 단일 출처). statusLine과 `session_context.py`가 공용으로 import |
+| `record_input.py` | `namu_record`의 입력 정규화·검증과 도구 설명문 생성(`tool_description()`) |
+| `session_context.py` | 세션 브리핑 마크다운 빌더(쪽지 + 열린 작업 + 최근 교훈). SessionStart/PreInvocation 훅이 재사용 |
+| `hooks/session_recall.py` | Claude Code SessionStart 훅 — 세션 브리핑 주입 |
+| `hooks/closing_guard.py` | Stop 훅 — "마무리해"인데 이번 세션에 `[다음]` 줄이 없으면 한 번 막는다(namu-62) |
+| `hooks/prompt_reminder.py` | UserPromptSubmit 훅 — `상시` 태그가 붙은 개인 사실을 매 입력에 재주입 |
+| `hooks/session_inject.py` | agy PreInvocation 훅 — 같은 내용을 agy 방식(ephemeralMessage)으로 주입 |
+| `hooks/hooks.json` · `hooks.json`(루트) | 훅 등록 봉투 (Claude Code용 / agy용) |
+| `skills/` | `namu-task`(오케스트레이션) · `namu-update`(원클릭 업데이트) · `statusline-setup`(하단 한 줄 연결) |
+| `.mcp.json` · `mcp_config.json` | MCP 서버 등록 봉투 (Claude Code 절대경로 / agy 워크스페이스 상대경로) |
+| `plugin.json` · `.claude-plugin/marketplace.json` | 플러그인 메타데이터 · 마켓플레이스 매니페스트 |
+| `test_*.py` | pytest 단위 테스트 |
+
+**훅 3종은 기록하지 않는다** — 알리고 막을 뿐이며, 판단과 `namu_record` 호출은 AI 몫이다.
 
 ## 필요 조건
 
 - [uv](https://docs.astral.sh/uv/) — PEP 723 inline 메타데이터로 `mcp_server.py`가 의존성을 자급자족한다
-- 데이터(learnings/db) 루트는 namu-35로 고정 상수(`~/.namu`, `config.NAMU_DATA_ROOT`)가 됐다 — 지정할 환경변수가 없다.
-- `NAMU_MACHINE` 환경변수 — 현재 PC 식별자(미설정 시 호스트명, 그마저 없으면 `unknown` 폴백, 상태 파일 매칭이 깨질 수 있어 명시 설정 권장)
+- 데이터 루트는 고정 상수(`~/.namu`, `config.NAMU_DATA_ROOT`)다 — 지정할 환경변수가 없다
+- `NAMU_MACHINE` — 현재 PC 식별자(미설정 시 호스트명, 그마저 없으면 `unknown`). 여러 PC를 쓴다면 명시 설정을 권장
 
-환경변수 설정 방법은 루트 [`README.md`](../README.md#환경변수)를 참고할 것.
+## 개발용 설치
 
-## 설치 절차 (실측, 로컬 개발용)
-
-아래는 **이 repo를 clone해 이 폴더 자체를 수정·검증하는 개발자용** 절차다. 일반 사용자는 이 절차 대신
-GitHub 원격 마켓플레이스로 설치한다 — Claude Code는 `claude plugin marketplace add onmiso-hash/namu-agent` →
-`claude plugin install namu@namu-marketplace`, agy는 `agy plugin install https://github.com/onmiso-hash/namu-agent.git`
-한 줄이면 끝난다. 사용자용 설치 절차는 [설치형 사용설명서](../docs/install_guide.md)를 참고할 것.
-
-### Claude Code
-
-repo를 clone한 로컬 경로 기준으로 등록한다:
+이 폴더 자체를 수정·검증할 때 쓰는 절차다. 로컬 경로를 마켓플레이스로 등록한다.
 
 ```
-/plugin marketplace add /path/to/namu-agent/namu-plugin
-/plugin marketplace update
-/reload-plugins
+claude plugin marketplace add /path/to/namu-agent/namu-plugin
+claude plugin install namu@namu-marketplace
 ```
 
-코드 수정 후 재적용(설치 스코프가 local이므로 `--scope local`을 맞춘다):
+agy는 `agy plugin install ./namu-plugin`. 설치 로그의
+`agents: skipped (not found)`는 정상이다 — 워커 정의는 플러그인 봉투가 아니라
+워크스페이스(`.claude/agents/`·`.agents/agents/`)에 두기로 했기 때문이다.
 
-```
-claude plugin update namu@namu-marketplace --scope local
-```
+**설치본은 복사본이다.** GitHub 원격으로 설치한 상태라면 이 폴더를 고쳐도 반영되지
+않는다 — 로컬 경로로 등록했을 때만 즉시 반영된다.
 
-### agy
-
-```
-agy plugin install ./namu-plugin
-```
-
-설치 로그에 `agents: skipped (not found)`가 뜨는 것은 정상이다 — 플러그인 봉투에 agents 카테고리를 넣지 않기로 결정했기 때문이다(워커 정의는 워크스페이스 `.claude/agents/`/`.agents/agents/`에 따로 둔다. 이유는 루트 README [폴더 구조](../README.md#폴더-구조) 참고).
-
-### 설치본은 복사본 — 재설치 필요
-
-Claude Code·agy 모두 설치 시 이 폴더의 파일을 **별도 위치로 복사**한다. `namu-plugin/` 안의 코드를 고쳐도 재설치·업데이트하기 전까지는 옛 코드가 계속 실행되니 주의할 것. 상세는 루트 README [셋업 함정](../README.md#셋업-함정) 4번 참고.
-
-### MCP 서버 수동 실행 (디버그용)
+MCP 서버 수동 실행(디버그용):
 
 ```bash
 uv run --script mcp_server.py
@@ -74,4 +61,6 @@ uv run --script mcp_server.py
 
 ## 함께 볼 것
 
-플랫폼별 인코딩(cp949)·터미널 렌더·agy 상대경로 등 실제로 부딪힌 함정은 루트 [`README.md`](../README.md#셋업-함정)의 셋업 함정 섹션에 정리돼 있다.
+- [기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) — 네 그릇·3층 기록·원격 두 경로
+- [`docs/memory_schema_v2.md`](../docs/memory_schema_v2.md) — 현행 기록 구조 설명서. **기록 관련 작업 전 반드시 읽을 것**
+- [루트 README](../README.ko.md) — 폴더 구조·개발용 셋업·버전 bump 규율
