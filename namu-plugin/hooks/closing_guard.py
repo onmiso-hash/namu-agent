@@ -179,14 +179,21 @@ def main() -> None:
         import task_resolve
 
         project_dir = data.get("cwd") or os.getcwd()
-        project = os.path.basename(str(project_dir).rstrip("/\\"))
-        tasks_root = task_resolve.tasks_root_for(project_dir)
+        # 방 이름은 basename이 아니라 project_key_for로 정한다 — cwd가 하위 폴더면
+        # basename이 방 이름과 달라진다(namu-73과 같은 규칙, 특례 0).
+        project = task_resolve.project_key_for(project_dir)
 
         since_ts = _session_start_ts(entries, cfg)
         if since_ts is None:
             sys.exit(0)  # 시각을 모르면 판정하지 않는다(오작동보다 침묵이 낫다)
 
-        touched, satisfied = _lines_since(tasks_root, since_ts)
+        # journal에는 **방 이름**을 넘긴다. tasks_root_for()가 만든 풀 경로
+        # (`~/.namu/tasks/<방>`)를 넘기면 안 된다 — journal은 받은 값을 다시
+        # project_key_for로 해석하는데, 그 함수는 뿌리 표식(.git)을 찾아 위로
+        # 거슬러 오르므로 개인 풀이 git 저장소일 때(=동기화를 켠 모든 사용자)
+        # `.namu`가 방 이름으로 잡혀 `~/.namu/tasks/.namu`를 뒤진다. 그 폴더는
+        # 없으니 **무엇을 기록해도 0줄**로 보이고, 이 훅은 항상 막는다(실측 재현).
+        touched, satisfied = _lines_since(project, since_ts)
         if satisfied:
             sys.exit(0)
 

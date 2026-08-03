@@ -167,6 +167,34 @@ def test_hook_passes_when_next_line_written_this_session(tmp_path):
     assert result.stdout.strip() == ""
 
 
+def test_hook_passes_when_personal_pool_is_a_git_repo(tmp_path):
+    """개인 풀(`~/.namu`)이 git 저장소여도 이번 세션 기록을 찾아야 한다.
+
+    실물 사고(2026-08-03): 훅이 journal에 방 이름이 아니라 풀 경로
+    `~/.namu/tasks/<방>`을 넘기고 있었다. journal은 받은 값을 project_key_for로
+    다시 해석하는데, 그 함수는 `.git`을 찾아 위로 거슬러 오르므로 동기화를 켠
+    사용자(=풀이 git 저장소)에게는 `.namu`가 방 이름으로 잡혀
+    `~/.namu/tasks/.namu`를 뒤졌다. 그 폴더는 없으니 **무엇을 기록해도 0줄**이 되어
+    훅이 항상 막았다. 기존 테스트는 임시 HOME에 `.git`이 없어 이 경로를 못 밟았다.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".namu").mkdir()
+    (home / ".namu" / ".git").mkdir()  # 동기화를 켠 상태
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)  # = 09:00 KST
+    _make_task(
+        home,
+        "proj-a",
+        "namu-1",
+        "# log\n[다음] 2026-07-27 09:40:00 test · 여기서부터 이어서\n",
+    )
+    transcript = _write_transcript(tmp_path, "마무리해", started)
+
+    result = _run_hook(home, _payload(tmp_path, home, transcript))
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
 def test_hook_blocks_when_next_line_is_from_a_previous_session(tmp_path):
     """대조군 — 지난 세션의 [다음]은 이번 마무리를 면제하지 않는다(사고의 정확한 모양)."""
     home = tmp_path / "home"
