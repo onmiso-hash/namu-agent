@@ -26,6 +26,7 @@
 - `docs/plan.md` — NAMU 전체 계획·결정 이력·로드맵
 - `docs/mcp_memory_design.md` — MCP 메모리 서버 상세 설계 (스키마, SQLite 테이블, 도구 명세)
 - `docs/memory_schema_v2.md` — **기억 구조 v2 (namu-65, 2026-07-31 완료 · v0.1.43)**. 네 그릇 공통 3층(`summary`/`reason`/`body`), 입력 항목 19개→13개 통일. **현행 구조 설명서**이며 4장의 칸 표는 `config.FIELDS`에서 자동 생성된다(`python scripts/gen_field_docs.py`, 손으로 고치면 `test_field_docs.py` 실패) — 기록 관련 작업 전 반드시 읽을 것
+- `docs/search_index_unify.md` — **검색 통일 (2026-08-03 설계 확정 · 구현 미착수)**. 네 그릇을 모두 SQLite 색인으로 모으는 6단계 계획. 앞선 웹 설계문서의 전제 반증 근거, 두 글자 우회가 필수인 이유, 착수 전 확인된 파일·줄번호 표를 담았다 — 검색 관련 작업 전 반드시 읽을 것
 
 구현 작업 시 위 문서를 먼저 참조할 것.
 
