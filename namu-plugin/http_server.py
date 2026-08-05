@@ -44,6 +44,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 import config as cfg
 import memory_sync
+import record_input  # 순수 함수만 든 모듈이라 ~/.namu를 건드리지 않는다(지연 import 불필요)
 
 logger = logging.getLogger("namu.http_server")
 
@@ -236,6 +237,23 @@ def resolve_streamable_path(settings: dict) -> str:
     return "/mcp"
 
 
+def set_instructions(mcp_instance, allowed: frozenset[str]) -> None:
+    """소개문(서버가 붙는 AI에게 한 번 건네는 자기소개)을 `allowed`에 맞춰 다시 만든다.
+
+    왜 필요한가: restrict_tools가 도구를 3종으로 걸러도 소개문은 mcp_server가 만들어
+    둔 7종짜리 그대로였다. 붙은 AI는 없는 도구 4개(쪽지 떼기·책갈피 꽂기·빼기·동기화
+    설정)를 있다고 믿고 부르다 실패한다 — 2026-08-05 실측으로 확인한 갭이다.
+
+    mcp 1.28.1 SDK 소스 확인: `FastMCP.instructions`는 읽기 전용 property지만 실제
+    값은 lowlevel `Server`가 `self.instructions = instructions`로 들고 있는 평범한
+    속성이라 대입으로 바꿀 수 있다. 공개 setter가 없어 여기만 `_mcp_server`를 거친다.
+    initialize 응답은 요청이 올 때 이 값을 읽으므로 build_app() 시점 대입으로 충분하다.
+
+    stdio 경로는 이 함수를 부르지 않으므로 소개문이 7종 그대로다(도구도 안 거른다).
+    """
+    mcp_instance._mcp_server.instructions = record_input.server_instructions(allowed)
+
+
 def configure_mcp_for_http(mcp_instance, settings: dict) -> None:
     """FastMCP 인스턴스에 HTTP 서빙에 필요한 settings(경로/stateless/transport_security)를
     적용한다.
@@ -273,6 +291,7 @@ def build_app(settings: dict):
     import mcp_server  # 지연 import: 여기서 실제 ~/.namu 부팅 로직(_ensure_db 등)이 실행됨
 
     restrict_tools(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 설계 §8: sync_setup 등 원격 미노출
+    set_instructions(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 거른 목록 그대로 소개문에
 
     configure_mcp_for_http(mcp_server.mcp, settings)
 

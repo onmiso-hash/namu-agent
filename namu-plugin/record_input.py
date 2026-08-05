@@ -11,6 +11,7 @@
 **거절하고 갈 곳을 알려준다.** 거절 메시지는 무엇이 잘못됐고 어떻게 고치는지를
 한 문장으로 말한다(완료조건 8).
 """
+from collections.abc import Iterable
 from dataclasses import dataclass, field as _dc_field
 
 import config as cfg
@@ -299,9 +300,21 @@ _TOOL_LINES = (
 )
 
 
-def server_instructions() -> str:
-    """MCP 서버 소개문. 그릇 설명과 기록 규칙을 도구 설명문과 같은 표에서 만든다."""
+def server_instructions(exposed: "Iterable[str] | None" = None) -> str:
+    """MCP 서버 소개문. 그릇 설명과 기록 규칙을 도구 설명문과 같은 표에서 만든다.
+
+    `exposed`에 **실제로 내주는 도구 이름**을 넘기면 그만큼만 소개한다. 생략하면
+    전부(stdio 경로 — 도구를 거르지 않으므로 지금까지와 같다).
+
+    왜 인자를 받나: 웹으로 여는 경로는 도구를 걸러 3종만 내주는데(셀프호스팅의
+    `http_server.HTTP_EXPOSED_TOOLS`, 클라우드는 자기 쪽에서 3종만 정의) 소개문은
+    거르지 않아 **없는 도구 4개를 있다고 소개**하고 있었다(2026-08-05 실측:
+    소개 7종 / 노출 3종). 붙은 AI가 없는 도구를 부르면 실패한다. 거르는 목록과
+    소개문을 같은 인자에서 만들면 둘이 다시 갈라지지 않는다.
+    """
     bowl_field = cfg.field_by_name("bowl")
+    shown = [(n, d) for n, d in _TOOL_LINES if exposed is None or n in set(exposed)]
+    hidden = [n for n, _ in _TOOL_LINES if exposed is not None and n not in set(exposed)]
     lines = [
         "NAMU 기억 서버 — 대화가 끝나도 남는 기억을 네 그릇에 나눠 담고 다시 꺼낸다.",
         "",
@@ -311,7 +324,16 @@ def server_instructions() -> str:
         "",
         "도구:",
     ]
-    lines += [f"- {name} — {desc}" for name, desc in _TOOL_LINES]
+    lines += [f"- {name} — {desc}" for name, desc in shown]
+    if hidden:
+        # 없는 도구를 왜 못 쓰는지 한 줄로 알려 준다. 이유를 안 적으면 AI가
+        # "이 서버는 고장났나" 하고 없는 이름을 계속 시도한다.
+        lines += [
+            "",
+            "이 연결에서는 위 도구만 쓸 수 있다. 나머지("
+            + " · ".join(hidden)
+            + ")는 나무를 플러그인으로 설치했을 때만 온다 — 없는 이름을 부르지 말 것.",
+        ]
     lines += ["", "── 기록 규칙(namu_record) ──", "", tool_description()]
     return "\n".join(lines)
 
