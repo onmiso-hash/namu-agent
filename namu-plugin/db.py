@@ -509,6 +509,7 @@ def search_bowl(
     outcome_filter: str | None = None,
     task_type: str | None = None,
     limit: int = 10,
+    paths: "cfg.DataPaths | None" = None,
 ) -> dict:
     """learnings/tasks/profile 3그릇을 같은 축 집합(query/project/task/machine/via/
     since/until/…)으로 조회하는 단일 분기 진입점(namu-57 2단계 1단위).
@@ -575,7 +576,9 @@ def search_bowl(
         # **learnings 검색 인덱스에 섞이면 안 되는 것**이 그릇의 존재 이유이기
         # 때문이다. 붙인 순서(오래된 것 먼저)가 스틱노트의 자연스러운 순서라
         # 다른 그릇과 달리 시간 역순으로 뒤집지 않는다.
-        memos = _memo.load_all()
+        # paths를 그대로 넘긴다 — 클라우드는 요청마다 사용자 폴더가 다르다.
+        # 안 넘기면 이 서버 자신의 홈(~/.namu)을 읽어 **남의 기억을 돌려준다**.
+        memos = _memo.load_all(paths)
         if machine is not None:
             memos = [m for m in memos if m.get("machine") == machine]
         if via is not None:
@@ -604,7 +607,8 @@ def search_bowl(
         return {"bowl": bowl, "results": memos, "count": len(memos)}
 
     # bowl == "profile"
-    docs = _profile.active()
+    # 위 memo와 같은 이유로 paths를 넘긴다(사용자별 폴더).
+    docs = _profile.active(paths=paths)
     if machine is not None:
         docs = [d for d in docs if d.get("machine") == machine]
     if via is not None:
