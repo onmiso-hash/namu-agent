@@ -17,6 +17,7 @@ Just click — no code reading required. The guides are written in Korean.
 | [☁️ **NAMU Cloud**](https://namu-cloud.onnamu.kr/) | Attach memory to a browser AI — no install, just a GitHub login |
 | [🌐 Self-host it on the web](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | Browser route, but you run the server yourself |
 | [📐 Memory architecture](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) | Where memory lives and what shape it takes |
+| [⚙️ Workflow architecture](https://onmiso-hash.github.io/namu-agent/docs/workflow_architecture.html) | The other half — how work is ordered, and where it stops for you |
 
 ## What NAMU actually does
 

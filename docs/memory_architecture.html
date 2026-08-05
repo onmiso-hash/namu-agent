@@ -72,8 +72,10 @@
   }
   img { max-width: 100%; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  /* 이 문서 안 목차 줄. 사이트 상단 메뉴(.topbar, 높이 58px) 바로 아래에 붙는다
+     — 둘 다 top:0으로 두면 겹쳐서 하나가 가려진다. */
   header.top {
-    position: sticky; top: 0; z-index: 20;
+    position: sticky; top: 58px; z-index: 20;
     background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
   }
@@ -161,35 +163,93 @@
   footer { padding: 40px 0 70px; border-top: 1px solid var(--border); color: var(--ink-faint); font-size: 12.5px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
   footer code { color: var(--ink-soft); }
-  :target { scroll-margin-top: 72px; }
+  /* 두 줄(사이트 메뉴 58px + 문서 목차 56px)에 가리지 않도록 넉넉히 띄운다. */
+  :target { scroll-margin-top: 128px; }
   a:focus-visible, nav.toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-  /* ---------- DOC NAV (가이드 HTML과 동일) ---------- */
-  .namu-docnav{
-    display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
-    background:#2c5a39;padding:10px 16px;
+  /* ---------- 사이트 상단 메뉴 ----------
+     안내 문서 5종이 같은 줄을 쓴다. 이 문서만 옛 초록 알약 줄(.namu-docnav)을
+     쓰고 있어 혼자 다른 사이트처럼 보였다. 규칙은 assets/namu-docs.css의
+     topbar와 같게 두되, 이 문서는 그 공용 파일을 읽지 않으므로(자기 색 체계를
+     따로 갖는다) 여기에 같은 값으로 적는다. 색만 `.topbar` 안으로 가둬
+     본문 색 체계와 섞이지 않게 했다. */
+  .topbar{
+    --tb-bg:#ffffff; --tb-border:#e2ebe9; --tb-fg:#132320; --tb-fg-soft:#5a6b68;
+    --tb-soft:#f4f8f8; --tb-accent:#0f766e; --tb-accent-deep:#0b5750;
+    --tb-accent-soft:#e4f4f1; --tb-on-accent:#ffffff; --tb-border-strong:#cddedb;
+    position:sticky; top:0; z-index:21;
+    background:color-mix(in srgb, var(--tb-bg) 88%, transparent);
+    backdrop-filter:saturate(180%) blur(12px);
+    border-bottom:1px solid var(--tb-border);
   }
-  .namu-docnav a{
-    display:inline-block;text-decoration:none;color:#e8f3ea;
-    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
-    padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;
-    transition:.15s;
+  @media (prefers-color-scheme:dark){
+    .topbar{
+      --tb-bg:#0e1513; --tb-border:#243330; --tb-fg:#e8f0ed; --tb-fg-soft:#a3b4b0;
+      --tb-soft:#131c19; --tb-accent:#4fd6c6; --tb-accent-deep:#7be6d8;
+      --tb-accent-soft:#17322e; --tb-on-accent:#07211d; --tb-border-strong:#31443f;
+    }
   }
-  .namu-docnav a:hover{background:rgba(255,255,255,.2);}
-  .namu-docnav a.is-current{background:#e0a93b;color:#3f3325;border-color:#e0a93b;}
+  :root[data-theme="dark"] .topbar{
+    --tb-bg:#0e1513; --tb-border:#243330; --tb-fg:#e8f0ed; --tb-fg-soft:#a3b4b0;
+    --tb-soft:#131c19; --tb-accent:#4fd6c6; --tb-accent-deep:#7be6d8;
+    --tb-accent-soft:#17322e; --tb-on-accent:#07211d; --tb-border-strong:#31443f;
+  }
+  :root[data-theme="light"] .topbar{
+    --tb-bg:#ffffff; --tb-border:#e2ebe9; --tb-fg:#132320; --tb-fg-soft:#5a6b68;
+    --tb-soft:#f4f8f8; --tb-accent:#0f766e; --tb-accent-deep:#0b5750;
+    --tb-accent-soft:#e4f4f1; --tb-on-accent:#ffffff; --tb-border-strong:#cddedb;
+  }
+  .topbar-in{
+    max-width:1040px; margin:0 auto; padding:0 20px;
+    display:flex; align-items:center; gap:18px; min-height:58px;
+  }
+  .topbar .brand{
+    display:inline-flex; align-items:center; gap:7px; font-weight:800;
+    color:var(--tb-fg); text-decoration:none; font-size:1.02rem;
+    letter-spacing:-.02em; white-space:nowrap;
+  }
+  .topbar .brand .leaf{ font-size:1.15em; }
+  .topbar .menu{
+    display:flex; gap:2px; list-style:none; margin:0; padding:0; flex:1;
+    overflow-x:auto; scrollbar-width:none;
+  }
+  .topbar .menu::-webkit-scrollbar{ display:none; }
+  .topbar .menu a{
+    display:inline-block; padding:7px 11px; border-radius:8px; text-decoration:none;
+    color:var(--tb-fg-soft); font-size:.92rem; font-weight:600; white-space:nowrap;
+  }
+  .topbar .menu a:hover{ background:var(--tb-soft); color:var(--tb-fg); }
+  .topbar .menu a.on{ color:var(--tb-accent-deep); background:var(--tb-accent-soft); }
+  .topbar .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    padding:7px 14px; font-size:.9rem; line-height:1.35; border-radius:11px;
+    border:1px solid var(--tb-accent); background:var(--tb-accent);
+    color:var(--tb-on-accent); text-decoration:none; font-weight:700;
+    white-space:nowrap;
+  }
+  .topbar .btn:hover{ background:var(--tb-accent-deep); border-color:var(--tb-accent-deep); }
+  @media (max-width:720px){
+    .topbar-in{ flex-wrap:wrap; gap:8px; padding:8px 16px; }
+    .topbar .menu{ order:3; width:100%; flex:none; margin:0 -16px; padding:0 16px 6px; }
+    .topbar .brand{ flex:1; }
+  }
 </style>
 </head>
 <body>
 
-<nav class="namu-docnav">
-  <a href="index.html">🌳 안내서</a>
-  <a href="install_guide.html">🔧 설치</a>
-  <a href="remote_mcp_guide.html">🌐 웹에서 쓰기</a>
-  <a href="https://namu-cloud.onnamu.kr/" target="_blank" rel="noopener">☁️ 나무 클라우드</a>
-  <a href="memory_architecture.html" class="is-current">📐 기억 설계도</a>
-  <a href="workflow_architecture.html">⚙️ 절차 설계도</a>
-  <a href="https://github.com/onmiso-hash/namu-agent" target="_blank" rel="noopener">💻 GitHub</a>
-</nav>
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="index.html"><span class="leaf">🌳</span> 나무 안내서</a>
+    <ul class="menu">
+      <li><a href="index.html">시작하기</a></li>
+      <li><a href="install_guide.html">설치</a></li>
+      <li><a href="remote_mcp_guide.html">웹에서 쓰기</a></li>
+      <li><a class="on" href="memory_architecture.html">기억 설계도</a></li>
+      <li><a href="workflow_architecture.html">절차 설계도</a></li>
+    </ul>
+    <a class="btn" href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>
+  </div>
+</header>
 
 <header class="top">
   <div class="wrap">
@@ -657,6 +717,10 @@ flowchart TB
   <span>🌳 <b>NAMU 기억 시스템 설계도</b></span>
   <span>근거: <code>config.py</code> · <code>memory_sync.py</code> · <code>db.py</code> · <code>docs/mcp_memory_design.md</code> · <code>docs/remote_mcp_design.md</code></span>
   <span>코드 기준 시점 2026-07 · 예정 항목(scrapbook)은 namu-56 진행 중</span>
+  <span>더 볼 것 —
+    <a href="index.html">나무 안내서</a> ·
+    <a href="workflow_architecture.html">절차 설계도</a> ·
+    <a href="https://github.com/onmiso-hash/namu-agent">GitHub 저장소</a></span>
 </div></footer>
 
 <script type="module">
