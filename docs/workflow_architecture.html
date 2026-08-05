@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>⚙️ 나무 절차 설계도 — 나무는 일을 어떤 순서로 시키나</title>
+<meta name="description" content="나무의 절반은 기억이고 나머지 절반은 절차입니다. 브리핑·작업 절차·일꾼과 검수자·화면 아래 한 줄이 어떤 순서로 맞물려 도는지, 왜 그렇게 짰는지를 한 장에 펼친 설계도입니다.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+<link rel="stylesheet" href="assets/namu-docs.css">
+<style>
+/* ── 이 문서 전용 부품 (공용 CSS는 assets/namu-docs.css — 손대지 말 것) ── */
+
+/* 도면 시트 — 그림은 라이트/다크 어디서 보든 같게 보이도록 고정 배경 위에 그린다 */
+.sheet{background:#FBFAF5;border:1px solid #C6CDC1;border-radius:var(--radius);
+  padding:20px 18px 16px;margin:22px 0;overflow-x:auto;
+  box-shadow:0 1px 0 rgba(0,0,0,.04),0 14px 34px -22px rgba(0,0,0,.35);}
+.sheet-cap{font-size:.78rem;font-weight:700;letter-spacing:.04em;color:#55605a;
+  text-transform:uppercase;margin:2px 2px 14px;display:flex;align-items:center;gap:8px;}
+.sheet-cap::before{content:'◇';color:#0f766e;}
+.mermaid{display:block;text-align:center;color:#1A211C;}
+.mermaid svg{max-width:none;height:auto;}
+
+/* 원칙 카드 */
+.prs{display:grid;gap:12px;margin:22px 0;}
+@media (min-width:640px){.prs{grid-template-columns:repeat(2,1fr);}}
+@media (min-width:960px){.prs{grid-template-columns:repeat(3,1fr);}}
+.pr{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:17px 18px;}
+.pr .n{font-size:.74rem;font-weight:800;letter-spacing:.08em;color:var(--accent-deep);
+  background:var(--accent-soft);display:inline-block;padding:3px 9px;border-radius:999px;margin-bottom:9px;}
+.pr h4{margin:0 0 5px;}
+.pr p{margin:0;font-size:.9rem;color:var(--fg-soft);}
+
+/* 두 줄 대비 (이렇게 짰다 / 이렇게 안 짰다) */
+.vs{display:grid;gap:12px;margin:20px 0;}
+@media (min-width:700px){.vs{grid-template-columns:1fr 1fr;}}
+.vs .v{border:1px solid var(--border);border-radius:var(--radius);padding:17px 19px;background:var(--bg-card);}
+.vs .v.bad{border-color:color-mix(in srgb,var(--danger) 35%,var(--border));background:var(--bg-soft);}
+.vs .v.good{border-color:var(--accent);background:var(--accent-soft);}
+.vs .v h4{margin:0 0 6px;}
+.vs .v p{margin:0;font-size:.92rem;color:var(--fg-soft);}
+.vs .v.good p{color:var(--fg);}
+
+/* 세션 타임라인 */
+.tl{list-style:none;margin:22px 0;padding:0;position:relative;}
+.tl>li{display:flex;gap:15px;padding:0 0 20px;position:relative;}
+.tl>li:last-child{padding-bottom:0;}
+.tl>li::before{content:'';position:absolute;left:17px;top:36px;bottom:0;width:2px;background:var(--border);}
+.tl>li:last-child::before{display:none;}
+.tl .when{flex:none;width:36px;height:36px;border-radius:50%;background:var(--bg-card);
+  border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;
+  font-size:1rem;box-shadow:0 0 0 4px var(--bg);z-index:1;}
+.tl .txt{flex:1;min-width:0;padding-top:4px;}
+.tl .txt h4{margin:0 0 3px;}
+.tl .txt p{margin:0 0 .35em;font-size:.93rem;color:var(--fg-soft);}
+.tl .txt p:last-child{margin-bottom:0;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="index.html"><span class="leaf">🌳</span> 나무 안내서</a>
+    <ul class="menu">
+      <li><a href="index.html">시작하기</a></li>
+      <li><a href="install_guide.html">설치</a></li>
+      <li><a href="remote_mcp_guide.html">웹에서 쓰기</a></li>
+      <li><a href="memory_architecture.html">기억 설계도</a></li>
+      <li><a class="on" href="workflow_architecture.html">절차 설계도</a></li>
+    </ul>
+    <a class="btn btn-primary" href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+<span class="eyebrow">⚙️ 절차 설계도</span>
+<h1>나무는 일을 어떤 순서로 시키나</h1>
+<p class="lead">나무는 두 부분입니다. <a href="memory_architecture.html">기억</a>이 절반이고,
+나머지 절반이 <strong>절차</strong>입니다. 이 문서는 그 나머지 절반 —
+대화를 열 때 상황이 깔리는 것부터, 일을 쪼개 맡기고, 따로 검수하고, 여러분 앞에서
+멈춰 서고, 다음 사람에게 넘길 한 줄을 남기기까지 — 가 어떤 순서로 맞물려 도는지,
+그리고 <strong>왜 그렇게 짰는지</strong>를 펼쳐 놓은 설계도입니다.</p>
+
+<div class="tip">
+<p><strong>처음이시라면 여기가 아닙니다.</strong> <a href="index.html">나무 안내서</a>를
+먼저 보십시오 — 이 문서는 "나무가 왜 이런 순서로 움직이는가"가 이미 궁금해진 분을
+위한 것입니다. 설치는 <a href="install_guide.html">설치하기</a>에 있습니다.</p>
+</div>
+
+<div class="toc">
+  <h2>차례</h2>
+  <ol>
+    <li><a href="#절차란">절차는 무엇이고, 왜 콘센트를 못 타나</a></li>
+    <li><a href="#한바퀴">작업 한 바퀴 — <code>/namu-task</code>가 도는 길</a></li>
+    <li><a href="#게이트">멈춰 서는 자리 — 승인 게이트</a></li>
+    <li><a href="#일꾼">일꾼과 검수자를 굳이 가르는 이유</a></li>
+    <li><a href="#기록">기록의 뼈대 — 두 파일, 그리고 한 줄</a></li>
+    <li><a href="#훅">알아서 끼어드는 세 자리</a></li>
+    <li><a href="#한줄">화면 맨 아래 한 줄</a></li>
+    <li><a href="#원칙">이 절차가 지키는 여섯 가지</a></li>
+  </ol>
+</div>
+
+<h2 id="절차란">1. 절차는 무엇이고, 왜 콘센트를 못 타나</h2>
+
+<p>나무의 기억은 <strong>표준 콘센트(MCP)</strong>에 실려 어디로든 갑니다. 브라우저에서
+쓰는 AI든 터미널에서 쓰는 AI든, 주소만 붙이면 같은 기억을 봅니다.</p>
+
+<p>절차는 다릅니다. 절차는 <strong>기억을 주고받는 일이 아니라, AI가 움직이는 방식
+자체를 바꾸는 일</strong>입니다. "대화가 열리는 순간 끼어들어라", "이 판단은 사람에게
+물어라", "이 작업은 다른 AI에게 넘겨라" 같은 것은 오가는 물건이 아니라 <strong>그 AI
+프로그램 안에 끼워 넣는 부품</strong>입니다. 그래서 콘센트를 타고 가지 못하고,
+<strong>플러그인을 깔아야만</strong> 따라옵니다.</p>
+
+<div class="sheet">
+<div class="sheet-cap">콘센트를 타는 것과, 프로그램에 박히는 것</div>
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#F1EFE8','clusterBorder':'#C6CDC1'}}}%%
+flowchart LR
+  subgraph MEM["기억 — 콘센트를 탄다"]
+    direction TB
+    m1["기억 담기 · 꺼내기 · 찾기"]
+    m2["작업일지 쓰기"]
+  end
+  subgraph PROC["절차 — 프로그램에 박힌다"]
+    direction TB
+    p1["브리핑<br/>대화가 열리는 순간"]
+    p2["작업 절차<br/>/namu-task"]
+    p3["일꾼 · 검수자<br/>따로 부르기"]
+    p4["화면 아래 한 줄"]
+  end
+  MEM -->|"주소만 붙이면 감"| WEB["브라우저 AI<br/>· 주소만 붙인 터미널 AI"]
+  PROC -->|"설치해야 감"| CLI["플러그인을 깐 터미널 AI<br/>Claude Code · agy"]
+  MEM --> CLI
+  style MEM fill:#E7F1EA,stroke:#2E6E4E
+  style PROC fill:#F1EEE7,stroke:#8A7F6A
+  style WEB fill:#E9EBEF,stroke:#586171
+  style CLI fill:#E4EBF5,stroke:#3B679C
+</pre>
+</div>
+
+<p>이 그림의 결론은 하나입니다 — <strong>"웹은 절반만 된다"는 말은 웹이 모자라서가
+아니라, 콘센트가 기억만 나르기 때문</strong>입니다. 터미널 AI라도 플러그인 없이 주소만
+붙이면 똑같이 기억만 됩니다.</p>
+
+<div class="cmp">
+<table>
+<thead><tr><th>절차 쪽 부품</th><th>무엇을 하나</th><th>어디에 들어 있나</th></tr></thead>
+<tbody>
+<tr><td>🌅 <strong>브리핑</strong></td>
+    <td>대화가 열리는 순간, 묻지 않아도 지난 상황을 깔아 준다</td>
+    <td>훅 <code>session_recall.py</code></td></tr>
+<tr><td>🧭 <strong>작업 절차</strong></td>
+    <td>여러 단계 작업을 정해진 순서로 몰아간다</td>
+    <td>스킬 <code>skills/namu-task/</code></td></tr>
+<tr><td>👷 <strong>일꾼 · 검수자</strong></td>
+    <td>만드는 AI와 따지는 AI를 따로 부른다</td>
+    <td><code>cc-agents/</code>(Claude Code) · <code>agents/</code>(agy)</td></tr>
+<tr><td>📊 <strong>화면 아래 한 줄</strong></td>
+    <td>버전·모델·폴더·진행 작업·남은 사용량을 늘 띄운다</td>
+    <td><code>scripts/namu_statusline.py</code></td></tr>
+<tr><td>⛔ <strong>마무리 검사</strong></td>
+    <td>"다음에 어디서부터"를 안 적고 끝내려 하면 한 번 붙잡는다</td>
+    <td>훅 <code>closing_guard.py</code></td></tr>
+<tr><td>🔁 <strong>상시 재알림</strong></td>
+    <td>꼭 지켜야 할 사실을 매 입력마다 다시 올린다</td>
+    <td>훅 <code>prompt_reminder.py</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="한바퀴">2. 작업 한 바퀴 — <code>/namu-task</code>가 도는 길</h2>
+
+<p>여러 단계가 필요한 일은 <code>/namu-task</code>로 시작합니다. 겉으로 보이는 것은
+다섯 걸음이지만, 안에서는 <strong>먼저 갈림길 하나</strong>를 지납니다 — 이 작업이
+<strong>처음인지, 이어 하는 것인지</strong>입니다.</p>
+
+<div class="sheet">
+<div class="sheet-cap">작업 한 바퀴 — 갈림길에서 마무리까지</div>
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontSize':'13px','lineColor':'#8A948C','primaryTextColor':'#1A211C','clusterBkg':'#F1EFE8','clusterBorder':'#C6CDC1'}}}%%
+flowchart TB
+  S(["/namu-task"]) --> Q{"이 작업 폴더가<br/>이미 있나?"}
+  Q -->|"없다 · 새 작업"| N1["목적과 완료조건을 묻는다<br/>→ 확인받고 확정"]
+  N1 --> N2["파일 두 장 만들기<br/>task.md · log.md"]
+  N2 --> N3["시작 줄 + 다음 줄을<br/>바로 남긴다"]
+  N3 --> R["지난 기억 꺼내 보기"]
+  Q -->|"있다 · 이어 하기"| E1{"다른 PC가 나중에<br/>손댄 흔적이 있나?"}
+  E1 -->|"있다"| STOP(["멈춘다 —<br/>먼저 맞추라고 알린다"])
+  E1 -->|"없다"| E2["마지막 '다음' 줄에서<br/>이어 붙는다"]
+  E2 --> R
+  R --> D["할 일을 맡길 단위로 쪼갠다"]
+  D --> G1{"게이트 ① 일꾼을<br/>불러도 될까요?"}
+  G1 -->|"예"| W["일꾼 AI가 만든다"]
+  W --> V["검수자 AI가 따진다"]
+  V --> G2{"게이트 ② 통과했나?"}
+  G2 -->|"통과"| REC["기록 남기기<br/>· 교훈 · 진행 줄"]
+  G2 -->|"실패"| ASK(["여러분께 묻는다<br/>다시 / 넘어가기 / 그만"])
+  ASK -.->|"다시 · 횟수를 받아서"| W
+  REC --> FIN["다음 줄 갱신<br/>또는 완료 · 중단으로 닫기"]
+  style G1 fill:#F5EAD5,stroke:#A9711F
+  style G2 fill:#F5EAD5,stroke:#A9711F
+  style ASK fill:#F5EAD5,stroke:#A9711F
+  style STOP fill:#F1EEE7,stroke:#8A7F6A
+  style FIN fill:#E7F1EA,stroke:#2E6E4E
+  style REC fill:#E7F1EA,stroke:#2E6E4E
+</pre>
+</div>
+
+<h3>왜 갈림길이 맨 앞에 있나</h3>
+
+<p>이어 하는 작업에서 가장 흔한 사고는 <strong>다른 PC에서 이미 해 둔 일을 모르고 다시
+하는 것</strong>입니다. 그래서 이어 하는 쪽 길의 첫 관문은 "다른 기기 도장이 찍힌 줄이
+내 마지막 줄보다 나중인가"를 보는 자리이고, 그렇다면 <strong>진행하지 않고 멈춥니다</strong>.
+자동으로 맞춰 버리지 않는 이유는, 맞추는 과정에서 무엇이 덮이는지는 사람이 봐야 하는
+판단이기 때문입니다.</p>
+
+<h3>"이어서 하자"고만 했을 때</h3>
+
+<p>대상을 안 짚고 "이어서 하자"고만 하면 나무는 <strong>되묻지 않습니다</strong>.
+책갈피가 꽂힌 작업, 없으면 가장 최근에 움직인 열린 작업의 마지막 <strong>다음 줄</strong>부터
+바로 착수하고, 첫 마디로 <strong>무엇을 이어받았는지 한 줄로 밝힙니다</strong>.
+되묻는 것은 이미 기록에 적혀 있는 답을 사람에게 두 번 말하게 하는 일이고, 한 줄로
+밝히면 잘못 짚었을 때 그 자리에서 바로잡을 수 있기 때문입니다.</p>
+
+<h2 id="게이트">3. 멈춰 서는 자리 — 승인 게이트</h2>
+
+<p>절차 전체에서 나무가 <strong>스스로 결정하지 않고 반드시 멈추는 자리</strong>가 둘
+있습니다. 이 둘은 기능이 아니라 <strong>안전장치</strong>입니다.</p>
+
+<div class="grid grid-2">
+  <div class="card card-accent">
+    <h4>게이트 ① — 일꾼을 부르기 전</h4>
+    <p class="muted">다른 AI를 불러 실제로 파일을 고치기 시작하면 되돌리는 값이 커집니다.
+    부르기 전에 한 번 여쭙니다.</p>
+  </div>
+  <div class="card card-accent">
+    <h4>게이트 ② — 검수에서 걸렸을 때</h4>
+    <p class="muted">실패해도 <strong>혼자 다시 돌리지 않습니다</strong>. 판정 이유를
+    그대로 보여 드리고 <strong>다시 / 넘어가기 / 그만</strong> 중에서 고르시게 합니다.
+    "다시"를 고르면 <strong>몇 번까지</strong> 돌릴지도 여러분이 정합니다.</p>
+  </div>
+</div>
+
+<div class="vs">
+  <div class="v bad">
+    <h4>이렇게 짜지 않았습니다</h4>
+    <p>검수에서 걸리면 알아서 고쳐 다시 돌리고, 통과할 때까지 반복한다.
+    사람은 결과만 본다.</p>
+  </div>
+  <div class="v good">
+    <h4>이렇게 짰습니다</h4>
+    <p>걸리면 멈추고, 무엇이 왜 걸렸는지 보여 주고, 다음 수를 사람이 고른다.
+    <strong>몇 번 돌릴지까지</strong> 사람이 정한다.</p>
+  </div>
+</div>
+
+<p>자동 재실행을 막은 이유는 단순합니다. AI가 스스로 판정하고 스스로 다시 도는 고리는
+<strong>틀린 방향으로도 똑같이 열심히 돕니다</strong>. 한 바퀴가 아니라 열 바퀴를 돌고
+나서야 사람이 보게 되면, 그때는 무엇이 어디서 어긋났는지 되짚기가 훨씬 어렵습니다.
+멈춰 서는 값이 그 위험보다 쌉니다.</p>
+
+<h2 id="일꾼">4. 일꾼과 검수자를 굳이 가르는 이유</h2>
+
+<p>나무는 코드를 짜는 <strong>일꾼</strong>과, 그 결과를 기준 대비로 따지는
+<strong>검수자</strong>를 <strong>따로</strong> 부릅니다. 한 AI에게 "만들고 나서 스스로
+점검해라"라고 시키지 않습니다.</p>
+
+<p>만든 쪽이 스스로 채점하면 <strong>"됐다고 생각한 근거"와 "됐는지 따지는 기준"이
+같아집니다</strong>. 그러면 점검은 통과할 수밖에 없습니다. 그래서 나무는 두 역할에게
+서로 다른 규칙을 주고, 서로 다른 도구만 쥐여 줍니다.</p>
+
+<div class="cmp">
+<table>
+<thead><tr><th></th><th>👷 일꾼</th><th>🔍 검수자</th></tr></thead>
+<tbody>
+<tr><td><strong>할 일</strong></td>
+    <td>받은 단위를 실제로 구현한다</td>
+    <td>코드를 <strong>고치지 않고</strong> 기준 대비로 따진다</td></tr>
+<tr><td><strong>쥐는 도구</strong></td>
+    <td>읽기 · 쓰기 · 고치기 · 실행 · 찾기</td>
+    <td>읽기 · 실행 · 찾기 <span class="muted">— 쓰기·고치기가 없다</span></td></tr>
+<tr><td><strong>내야 하는 것</strong></td>
+    <td>바꾼 파일 목록과 <strong>실제로 돌린 명령의 출력</strong>.
+        못 돌렸으면 "미실행"이라고 적는다</td>
+    <td>통과/실패와 <strong>근거</strong> — 어느 파일 몇 번째 줄인지까지</td></tr>
+<tr><td><strong>금지</strong></td>
+    <td>겉만 그럴싸한 빈 껍데기 코드. 몰래 넣은 가짜 데이터.
+        <strong>배정받은 단위 밖의 파일 건드리기</strong></td>
+    <td>눈으로만 읽고 통과시키기.
+        실패인데 증상만 적고 <strong>고칠 지점을 안 적기</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>가짜로 채운 자리는 숨기지 말고 드러낸다</h3>
+
+<p>일꾼에게는 규칙이 하나 더 있습니다 — 바깥 시스템이 아직 없어서 <strong>부득이 가짜
+데이터를 써야 한다면, 숨기지 말고 이름과 주석으로 드러내라</strong>는 것입니다. 검수자
+쪽에는 그 짝이 되는 규칙이 있습니다 — <strong>표시 없이 몰래 넣은 가짜가 나오면
+그 자리에서 실패</strong>입니다.</p>
+
+<p>둘이 짝을 이루는 이유는, "일단 돌아가게 해 두고 나중에 고치자"가 <strong>나중에
+아무도 못 찾는 자리</strong>가 되는 것이 이런 작업에서 가장 흔한 사고이기 때문입니다.
+드러내면 미완성이고, 숨기면 완성처럼 보입니다. 그 차이를 규칙으로 못 박았습니다.</p>
+
+<div class="tip">
+<p><strong>일꾼은 기억에 직접 쓰지 않습니다.</strong> 기억을 꺼내고 남기는 것은 작업을
+몰아가는 쪽 하나만 합니다. 여러 일꾼이 저마다 기억에 쓰기 시작하면 무엇이 판단이고
+무엇이 부산물인지 구분되지 않기 때문입니다.</p>
+</div>
+
+<h2 id="기록">5. 기록의 뼈대 — 두 파일, 그리고 한 줄</h2>
+
+<p>작업 하나는 파일 <strong>두 장</strong>으로 남습니다. 여러분 컴퓨터의
+<code>~/.namu/tasks/&lt;프로젝트 폴더 이름&gt;/&lt;작업 이름&gt;/</code> 아래입니다.</p>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h4>📄 <code>task.md</code> — 거의 안 바뀝니다</h4>
+    <p class="muted">이 작업을 <strong>왜</strong> 하는지, 무엇이 되면 <strong>끝난</strong>
+    것인지. 처음에 한 번 정하고 그대로 둡니다.</p>
+  </div>
+  <div class="card">
+    <h4>📜 <code>log.md</code> — 계속 쌓입니다</h4>
+    <p class="muted"><strong>덧붙이기만</strong> 합니다. 고치지도 지우지도 않습니다.
+    이 파일이 그 작업의 <strong>유일한 권위 있는 기록</strong>입니다.</p>
+  </div>
+</div>
+
+<p>기록은 줄 단위이고, 줄마다 <strong>언제 · 어느 기기가 · 무엇을</strong>이 박힙니다.
+앞의 대괄호가 그 줄의 성격입니다.</p>
+
+<div class="cmp">
+<table>
+<thead><tr><th>꼬리표</th><th>언제 쓰나</th></tr></thead>
+<tbody>
+<tr><td><code>[시작]</code></td><td>작업을 만들 때, 그리고 다시 손댈 때</td></tr>
+<tr><td><code>[결정]</code></td><td>방향이나 설계를 정했을 때</td></tr>
+<tr><td><code>[분담]</code></td><td>일꾼에게 넘겼을 때</td></tr>
+<tr><td><code>[막힘]</code></td><td>가로막혔을 때</td></tr>
+<tr><td><code>[단계]</code></td><td>중간 고비를 하나 넘겼을 때
+    <span class="muted">— 여기에 <code>[완료]</code>를 쓰면 안 됩니다</span></td></tr>
+<tr><td><code>[다음]</code></td><td><strong>대화를 끊기 전에 반드시</strong> — 다음에 어디서부터 시작하는지</td></tr>
+<tr><td><code>[완료]</code> <code>[중단]</code></td><td>작업 <strong>전체</strong>가 진짜로 끝났을 때</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>마무리란 교훈을 적는 것이 아니라, 다음 줄을 갱신하는 것이다</h3>
+
+<p>이 문서에서 가장 중요한 한 줄이 <code>[다음]</code>입니다. 브리핑은 각 작업의
+<strong>마지막 <code>[다음]</code> 줄</strong>을 "다음 할 일"로 읽습니다.</p>
+
+<div class="warnbox">
+<p><strong>실제로 난 사고입니다.</strong> 교훈은 길게 적고 <code>[다음]</code>은 옛날 것을
+그대로 둔 채 대화를 닫았습니다. 다음 대화의 브리핑은 <strong>이미 끝난 일을 남은
+일이라고</strong> 내놓았고, 브리핑을 읽은 쪽은 그 출처를 의심하지 않았기 때문에
+<strong>틀린 지시를 확신을 갖고 실행</strong>했습니다. 그래서 "마무리해"라고 했는데
+<code>[다음]</code>이 없으면 나무가 한 번 붙잡습니다.</p>
+</div>
+
+<h3>닫는 말은 둘뿐입니다</h3>
+
+<p>작업을 닫는 말은 <code>[완료]</code>와 <code>[중단]</code> 둘뿐입니다.
+<code>[종료]</code>·<code>[마무리]</code> 같은 비슷한 말은 <strong>저장을 거절</strong>합니다.
+비슷한 말을 그냥 받아 주면 사람 눈에는 닫힌 것처럼 보이는데 기록상으로는 열린 채로
+남아, 몇 달 뒤 열린 작업 목록에 유령처럼 서 있게 되기 때문입니다. 실제로 그렇게
+남은 작업이 있었습니다.</p>
+
+<h3>"다음엔 이것부터"는 기록에 적지 않습니다</h3>
+
+<p>이어서 할 작업 하나를 맨 위에 세워 두는 것이 <strong>책갈피</strong>입니다. 책갈피는
+<code>log.md</code>에 적히지 않고 <strong>따로 한 장</strong>(<code>.pin.&lt;기기 이름&gt;</code>)에
+적힙니다. 이유가 둘입니다.</p>
+
+<ul>
+  <li>기록은 덧붙이기만 하는 파일이라, <strong>꽂았다 뺐다</strong>를 표현할 수 없습니다.</li>
+  <li>기록에 적으면 그 작업의 최근 시각이 갱신돼 <strong>목록 순서까지 같이 움직입니다</strong> —
+      화면 순서를 바꾸려고 기록을 건드리는 셈이 되는데, 책갈피는 바로 그것을 없애려고
+      만든 것입니다.</li>
+</ul>
+
+<p>파일을 <strong>기기마다 따로</strong> 두는 것이 핵심입니다. 각 기기는 자기 파일에만
+쓰므로, 여러 PC를 오가도 부딪칠 일이 없습니다. 닫힌 작업을 가리키는 책갈피는 파일을
+지우지 않아도 화면에서 저절로 사라집니다.</p>
+
+<h2 id="훅">6. 알아서 끼어드는 세 자리</h2>
+
+<p>절차 중 셋은 여러분이 부르지 않아도 <strong>정해진 순간에 저절로</strong> 끼어듭니다.
+대화가 열릴 때, 입력을 넣을 때마다, 그리고 대화를 닫으려 할 때입니다.</p>
+
+<ul class="tl">
+  <li><span class="when">🌅</span><div class="txt">
+    <h4>대화가 열리는 순간 — 브리핑</h4>
+    <p>붙여 둔 쪽지, 최근에 한 일, 열려 있는 작업(이 방과 다른 방), 관련 교훈을
+    한꺼번에 깔아 줍니다. 여러분은 아무것도 묻지 않았습니다.</p>
+    <p class="muted">맨 위 📌는 책갈피입니다 — "이어서 하자"의 목적지가 여기입니다.</p>
+  </div></li>
+  <li><span class="when">🔁</span><div class="txt">
+    <h4>입력을 넣을 때마다 — 상시 재알림</h4>
+    <p>개인 사실 중 <strong>'상시'</strong> 표를 붙여 둔 것만 골라 매번 다시 올립니다.
+    대화가 길어지면 앞쪽에서 한 약속이 뒤로 밀려 잊히기 때문입니다.</p>
+  </div></li>
+  <li><span class="when">⛔</span><div class="txt">
+    <h4>닫으려 할 때 — 마무리 검사</h4>
+    <p>"마무리해"·"오늘은 여기까지" 같은 말이 나왔는데 이번 대화에서
+    <code>[다음]</code>(또는 작업을 닫는 <code>[완료]</code>·<code>[중단]</code>) 줄을
+    한 번도 안 남겼으면 <strong>딱 한 번</strong> 붙잡습니다.</p>
+    <p class="muted">한 번만 붙잡는 것은 안전장치입니다 — 계속 붙잡으면 대화를 닫을 수
+    없게 됩니다.</p>
+  </div></li>
+</ul>
+
+<div class="card card-soft">
+<p><strong>셋 다 스스로 기록하지 않습니다.</strong> 알려 주고, 붙잡을 뿐입니다.
+무엇을 남길지 판단하고 실제로 남기는 것은 <strong>끝까지 AI의 몫</strong>입니다.</p>
+<p class="muted" style="margin-bottom:0">자동으로 기록하게 만들지 않은 이유 — 기계가 보기에
+"작업이 끝난 순간"은 항상 모호합니다. 그 모호한 지점마다 자동으로 남기면 <strong>쓸모없는
+기록이 쌓이고</strong>, 무엇보다 <strong>"왜 그렇게 했는지"가 빠진 기록</strong>만 남습니다.
+이유 없는 기록은 나중에 아무 도움이 안 됩니다.</p>
+</div>
+
+<h2 id="한줄">7. 화면 맨 아래 한 줄</h2>
+
+<p>지금 무엇을 하고 있는지가 화면 맨 아래에 늘 한 줄로 떠 있습니다.</p>
+
+<pre><code>[Namu 0.1.48] [Opus 5] my-project | 📌 정산화면개편 — 월말 정산 화면 다시 짜기 | 34% · 5h 12%(2h41m) · 7d 38%</code></pre>
+
+<div class="cmp">
+<table>
+<thead><tr><th>토막</th><th>뜻</th><th>안 뜰 때</th></tr></thead>
+<tbody>
+<tr><td><code>[Namu 0.1.48]</code></td><td>깔려 있는 나무 버전</td>
+    <td>버전을 못 읽으면 이 토막만 빠집니다</td></tr>
+<tr><td><code>[Opus 5]</code></td><td>지금 말 걸고 있는 AI 모델</td><td><code>?</code></td></tr>
+<tr><td><code>my-project</code></td><td>지금 있는 폴더</td><td><code>?</code></td></tr>
+<tr><td><code>📌 정산화면개편 — …</code></td><td>진행 중인 작업</td>
+    <td>없으면 <code>진행 task 없음</code>,
+        읽다 실패하면 <code>⚠ task 조회 오류</code></td></tr>
+<tr><td><code>34%</code></td><td>지금 대화가 기억할 수 있는 분량을 얼마나 썼는지</td><td><code>?</code></td></tr>
+<tr><td><code>5h 12%(2h41m)</code> <code>7d 38%</code></td>
+    <td>5시간·7일 사용량과 다시 채워질 때까지</td>
+    <td>쓰는 AI가 안 보내 주면 <strong>조용히 생략</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>여기에도 설계가 하나 박혀 있습니다 — <strong>실패를 "없음"으로 위장하지 않습니다</strong>.
+진행 중인 작업이 없는 것과, 읽으려다 실패한 것은 화면에서 다르게 보입니다.
+둘을 같게 보이게 하면 고장이 조용히 묻히기 때문입니다.</p>
+
+<h2 id="원칙">8. 이 절차가 지키는 여섯 가지</h2>
+
+<div class="prs">
+  <div class="pr"><span class="n">01</span>
+    <h4>사람 앞에서 멈춘다</h4>
+    <p>일꾼을 부르기 전, 검수에 걸린 뒤. 되돌리기 어려운 자리에서는 반드시 묻는다.</p></div>
+  <div class="pr"><span class="n">02</span>
+    <h4>자동으로 다시 돌지 않는다</h4>
+    <p>검수 실패는 스스로 고치는 신호가 아니라 <strong>멈추는 신호</strong>다.
+    몇 번 돌릴지는 사람이 정한다.</p></div>
+  <div class="pr"><span class="n">03</span>
+    <h4>만든 쪽과 따지는 쪽을 가른다</h4>
+    <p>검수자에게는 고칠 도구를 주지 않는다. 채점자가 답안을 고칠 수 있으면 채점이 아니다.</p></div>
+  <div class="pr"><span class="n">04</span>
+    <h4>기록은 덧붙이기만 한다</h4>
+    <p><code>log.md</code>는 고치지도 지우지도 않는다. 틀린 것은 새 줄로 바로잡는다.</p></div>
+  <div class="pr"><span class="n">05</span>
+    <h4>다음 줄이 마무리다</h4>
+    <p>교훈을 아무리 길게 적어도 <code>[다음]</code>이 낡으면 다음 사람이 틀린 곳으로 간다.</p></div>
+  <div class="pr"><span class="n">06</span>
+    <h4>남길지는 사람 몫으로 둔다</h4>
+    <p>끼어드는 장치들은 알리고 붙잡을 뿐, 스스로 기록하지 않는다.
+    이유 없는 자동 기록은 쓰레기가 된다.</p></div>
+</div>
+
+<div class="grid grid-3">
+  <div class="card">
+    <h4><a href="index.html">🌳 나무 안내서</a></h4>
+    <p class="muted">나무가 무엇이고 어떻게 붙이는지 — 처음이라면 여기부터.</p>
+  </div>
+  <div class="card">
+    <h4><a href="memory_architecture.html">📐 기억 설계도</a></h4>
+    <p class="muted">나머지 절반. 기억이 어디에 어떤 모양으로 쌓이는지.</p>
+  </div>
+  <div class="card">
+    <h4><a href="install_guide.html">🔧 설치하기</a></h4>
+    <p class="muted">이 절차를 실제로 켜려면 플러그인을 깔아야 합니다.</p>
+  </div>
+</div>
+
+<p class="docfoot">
+근거 — <code>skills/namu-task/SKILL.md</code> · <code>cc-agents/</code> ·
+<code>hooks/</code> · <code>scripts/namu_statusline.py</code> ·
+<code>mcp_server.py</code>(책갈피).
+<a href="https://github.com/onmiso-hash/namu-agent">GitHub 저장소</a> ·
+<a href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>
+</p>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    securityLevel: 'loose',
+    fontFamily: '"Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif',
+    flowchart: { htmlLabels: true, useMaxWidth: false, padding: 10, nodeSpacing: 45, rankSpacing: 50 }
+  });
+</script>
+</body>
+</html>

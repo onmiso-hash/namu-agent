@@ -67,6 +67,7 @@
       <li><a href="install_guide.html">설치</a></li>
       <li><a href="remote_mcp_guide.html">웹에서 쓰기</a></li>
       <li><a href="memory_architecture.html">기억 설계도</a></li>
+      <li><a href="workflow_architecture.html">절차 설계도</a></li>
     </ul>
     <a class="btn btn-primary" href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>
   </div>
@@ -402,6 +403,47 @@
 <p class="muted">기억이 어떤 모양으로 쌓이는지 더 자세히 보려면 →
 <a href="memory_architecture.html">기억 설계도</a></p>
 
+<h3>여기까지 나온 말 한눈에</h3>
+
+<p>3~4장에서 새 낱말이 한꺼번에 나왔습니다. 다음 장으로 넘어가기 전에 한 번만 짚고
+갑니다. 이 다섯 개만 잡고 계시면 뒤는 다 읽힙니다.</p>
+
+<div class="card card-soft">
+<div class="cmp">
+<table>
+<thead><tr><th>나온 말</th><th>쉽게 말하면</th><th>기억할 점</th></tr></thead>
+<tbody>
+<tr>
+  <td>🔌 <strong>표준 콘센트</strong><br><small class="muted">MCP</small></td>
+  <td>AI에 갖다 꽂는 규격</td>
+  <td>규격만 맞으면 어떤 AI를 꽂아도 <strong>바라보는 기억은 하나</strong>입니다</td>
+</tr>
+<tr>
+  <td>🍱 <strong>네 그릇</strong></td>
+  <td>교훈 · 개인 사실 · 작업일지 · 쪽지</td>
+  <td>성격이 다른 기억을 한 통에 담지 않으려고 나눈 것입니다.
+      이 중 <strong>쪽지만 뗄 수 있습니다</strong></td>
+</tr>
+<tr>
+  <td>📒 <strong>진짜 노트</strong></td>
+  <td>사람이 그냥 열어 읽는 글자 파일</td>
+  <td>여기가 <strong>원본</strong>입니다. 덧붙이기만 하고 지우지 않습니다</td>
+</tr>
+<tr>
+  <td>🔍 <strong>빠른 찾기 상자</strong></td>
+  <td>찾기 좋게 정리해 둔 사본</td>
+  <td>깨져도 괜찮습니다 — 노트에서 다시 만듭니다</td>
+</tr>
+<tr>
+  <td>🗄️ <strong>서랍장</strong><br><small class="muted"><code>~/.namu</code></small></td>
+  <td>이 전부가 모여 사는 내 컴퓨터 안 폴더 한 곳</td>
+  <td>AI 회사 서버가 아니라 <strong>내 컴퓨터</strong>입니다</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
 <h2 id="기능">5. 나무는 이런 일을 합니다</h2>
 
 <p>기억을 쌓는 것이 나무의 바닥이라면, 그 위에 <strong>여섯 가지 일</strong>이 얹혀
@@ -452,6 +494,66 @@
 실제로 그 사고가 나서 만든 장치입니다.</p>
 </div>
 
+<h3>실제로는 이렇게 보입니다</h3>
+
+<p>여섯 가지 중 말로만 들으면 잘 안 잡히는 둘 — <strong>③ 브리핑</strong>과
+<strong>⑥ 화면 아래 한 줄</strong>이 실제로 어떻게 생겼는지 보여 드립니다.
+<span class="muted">아래는 실제 화면의 짜임새 그대로이고, 안에 든 내용만 예시로
+바꾼 것입니다.</span></p>
+
+<p><strong>③ 대화를 새로 열면, 묻지 않아도 맨 앞에 이것이 뜹니다</strong></p>
+
+<pre><code>🌳 NAMU — 세션 컨텍스트 자동 로딩
+
+📌 붙여둔 메모 2장
+- 병원 예약 목요일 오전 10시  (2026-08-04 09:12 hp · id 01KZ55FJ)
+- 정산 화면 문의 답변 초안  (2026-08-04 14:03 hp · id 01KZ5QZX)
+※ 다 쓴 메모는 namu_memo_remove로 떼세요(떼면 파일에서 사라집니다).
+
+🕘 최근 활동 (시간순, task 무관)
+- 08-04 hp · 정산화면개편 [다음] 합계가 안 맞는 원인부터 — 반올림을 어디서 하는지 확인
+- 08-04 hp · 정산화면개편 [결정] 통화는 원 단위로 고정하기로 함
+- 08-03 hp · 로그인오류추적 [단계] 재현 절차 확보
+
+📂 열린 task — 이 방 2개 · 다른 방 1개
+
+**이 방** (my-project)
+
+📌 정산화면개편 — 월말 정산 화면 다시 짜기   08-04  hp가 꽂음
+  - 다음: 합계가 안 맞는 원인부터 — 반올림을 어디서 하는지 확인
+- 로그인오류추적 — 가끔 로그인이 튕기는 문제   08-03
+  - 다음: 재현된 기록을 시간순으로 늘어놓기
+
+💡 관련 교훈
+- [실패] 정산화면개편: 반올림을 화면에서 하면 합계와 항목이 어긋난다 —
+  계산 단계에서 한 번만 반올림할 것</code></pre>
+
+<p>여러분은 아무것도 안 물었습니다. <strong>떠 있던 쪽지, 어제 어디서 멈췄는지, 열려
+있는 작업, 예전에 같은 자리에서 데인 교훈</strong>이 한꺼번에 깔린 상태에서 대화가
+시작됩니다. 맨 위 📌은 "다음엔 이것부터"라고 꽂아 둔 <strong>책갈피</strong>입니다 —
+"이어서 하자"고만 해도 AI가 되묻지 않고 그 줄부터 갑니다.</p>
+
+<p><strong>⑥ 그리고 화면 맨 아래에는 이 한 줄이 늘 떠 있습니다</strong></p>
+
+<pre><code>[Namu 0.1.48] [Opus 5] my-project | 📌 정산화면개편 — 월말 정산 화면 다시 짜기 | 34% · 5h 12%(2h41m) · 7d 38%</code></pre>
+
+<div class="cmp">
+<table>
+<thead><tr><th>토막</th><th>뜻</th></tr></thead>
+<tbody>
+<tr><td><code>[Namu 0.1.48]</code></td><td>지금 깔려 있는 나무 버전</td></tr>
+<tr><td><code>[Opus 5]</code></td><td>지금 말 걸고 있는 AI 모델</td></tr>
+<tr><td><code>my-project</code></td><td>지금 있는 폴더</td></tr>
+<tr><td><code>📌 정산화면개편 — …</code></td><td>지금 진행 중인 작업.
+    열린 작업이 없으면 <code>진행 task 없음</code>으로 뜹니다</td></tr>
+<tr><td><code>34%</code></td><td>지금 대화가 기억할 수 있는 분량을 얼마나 썼는지</td></tr>
+<tr><td><code>5h 12%(2h41m)</code><br><code>7d 38%</code></td>
+    <td>5시간·7일 사용량을 얼마나 썼는지, 그리고 언제 다시 채워지는지.
+    <span class="muted">쓰는 AI가 이 값을 안 보내 주면 조용히 생략됩니다</span></td></tr>
+</tbody>
+</table>
+</div>
+
 <p>①과 ②는 <strong>기억</strong>입니다. ③④⑤⑥은 기억을 딛고 <strong>일하는 절차</strong>
 입니다. 이 구분이 다음 장의 전부입니다.</p>
 
@@ -474,6 +576,8 @@
       <p class="muted">브리핑 · 작업 절차 · 일꾼 AI · 화면 아래 한 줄.</p>
       <p><strong>콘센트를 타고 가지 못합니다</strong> — AI 프로그램 자체에 끼워 넣는
       물건이라, <strong>플러그인을 깔아야만</strong> 따라옵니다.</p>
+      <p class="muted">이 절반이 어떤 순서로 도는지는
+      <a href="workflow_architecture.html">절차 설계도</a>에 펼쳐 두었습니다.</p>
     </div>
   </div>
   <p class="dgm-note">그래서 "웹은 절반만 된다"는 말은 정확히는 <strong>"콘센트는 기억만
@@ -721,7 +825,7 @@
 
 <h2 id="다음">11. 다음에 읽을 것</h2>
 
-<div class="grid grid-3">
+<div class="grid grid-4">
   <div class="card">
     <h4><a href="install_guide.html">🔧 설치하기</a></h4>
     <p class="muted">터미널 AI에 나무를 붙이는 법. 설치 · 확인 · 첫 작업 · 업데이트 · 삭제까지.</p>
@@ -733,6 +837,10 @@
   <div class="card">
     <h4><a href="memory_architecture.html">📐 기억 설계도</a></h4>
     <p class="muted">기억이 어디에 어떤 모양으로 쌓이는지, 그림으로.</p>
+  </div>
+  <div class="card">
+    <h4><a href="workflow_architecture.html">⚙️ 절차 설계도</a></h4>
+    <p class="muted">나머지 절반. 일을 어떤 순서로 시키고, 어디서 멈춰 서는지.</p>
   </div>
 </div>
 
