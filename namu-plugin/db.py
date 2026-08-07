@@ -786,9 +786,34 @@ def _axis_conds(
     return conds, params
 
 
-def _query_tokens(query: "str | None") -> list[str]:
-    """검색어를 낱말로 쪼갠다. 다섯 그릇이 같은 규칙을 쓰기 위한 단일 지점."""
+def query_tokens(query: "str | None") -> list[str]:
+    """검색어를 낱말로 쪼갠다. 다섯 그릇이 같은 규칙을 쓰기 위한 단일 지점.
+
+    **공개 함수인 이유**: 색인을 못 타는 조회 경로도 같은 규칙을 써야 하기 때문이다.
+    클라우드 라우팅의 작업일지 조회가 그렇다 — 그쪽은 회원별 폴더를 훑느라 코어의
+    `search_bowl`을 못 부르고, 그래서 거르는 규칙을 **자기 파일에 베껴 두었다가**
+    낱말 AND 개선이 거기만 안 들어가는 일이 실제로 벌어졌다. 규칙을 부를 수 있게
+    열어 두는 것이 베끼기를 막는 유일한 방법이다(`matches_all_tokens`와 짝).
+    """
     return (query or "").strip().split()
+
+
+# 옛 이름(내부 호출용). 이 모듈 안에서는 그대로 쓰던 이름이 많아 별칭으로 남긴다.
+_query_tokens = query_tokens
+
+
+def matches_all_tokens(query: "str | None", *fields) -> bool:
+    """검색어의 낱말이 **전부** 주어진 칸 어딘가에 있으면 True(대소문자 무시).
+
+    색인을 타는 경로(`_search_index`)의 AND 규칙과 같은 뜻을 파이썬 쪽에 그대로
+    둔 것이다. 색인을 못 쓰는 조회가 이걸 부르면 두 경로가 갈라지지 않는다.
+    검색어가 비면 True(=거르지 않음) — 축만으로 묻는 질의를 막지 않기 위해서다.
+    """
+    tokens = query_tokens(query)
+    if not tokens:
+        return True
+    haystack = " ".join(str(f) for f in fields if f).lower()
+    return all(token.lower() in haystack for token in tokens)
 
 
 def _use_index(tokens: list[str]) -> bool:

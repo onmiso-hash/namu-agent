@@ -322,5 +322,38 @@ def test_every_declared_bowl_is_cached(paths):
     assert {b.name for b in cfg.BOWLS if b.cached} == indexed
 
 
+# ---------------------------------------------------------------------------
+# 색인을 못 타는 조회도 같은 낱말 규칙을 쓴다
+# ---------------------------------------------------------------------------
+
+def test_matches_all_tokens_is_the_shared_word_rule():
+    """색인을 못 쓰는 조회(클라우드의 회원별 작업일지)가 부르는 공용 규칙.
+
+    이 함수가 없던 동안 그쪽은 거르는 규칙을 자기 파일에 베껴 두었고, 그래서
+    낱말 AND 개선이 거기만 안 들어갔다. 여기서 규칙을 못 박아 두면 두 경로가
+    갈라졌을 때 시험이 먼저 잡는다.
+    """
+    assert _db.matches_all_tokens("설계 문서", "검색 인덱스 설계 문서") is True
+    assert _db.matches_all_tokens("문서 설계", "검색 인덱스 설계 문서") is True
+    assert _db.matches_all_tokens("설계 첨부", "검색 인덱스 설계 문서") is False
+    # 여러 칸에 흩어져 있어도 전부 있으면 걸린다.
+    assert _db.matches_all_tokens("요약 상세", "요약줄", None, "상세줄") is True
+    # 대소문자 무시.
+    assert _db.matches_all_tokens("fts5", "FTS5 트리거") is True
+    # 검색어가 없으면 거르지 않는다(축만으로 묻는 질의를 막지 않는다).
+    assert _db.matches_all_tokens(None, "아무거나") is True
+    assert _db.matches_all_tokens("   ", "아무거나") is True
+
+
+def test_index_path_and_python_path_agree(paths):
+    """같은 자료에 대해 색인 경로와 파이썬 경로의 판정이 같아야 한다."""
+    _memo.add(summary="검색 인덱스", reason="설계 문서", body="원문", paths=paths)
+    entry = _memo.load_all(paths)[0]
+    for q in ("인덱스 문서", "문서 인덱스", "설계 인덱스", "없는말 인덱스"):
+        by_index = search(paths, "memo", query=q)["count"] == 1
+        by_python = _db.matches_all_tokens(q, *_memo.layers(entry))
+        assert by_index == by_python, q
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
