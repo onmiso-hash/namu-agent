@@ -30,6 +30,21 @@ def paths(tmp_path):
     return cfg.data_paths_for(tmp_path)
 
 
+def _search(paths, **kwargs):
+    """첨부 기록 검색 한 번. 이 그릇도 SQLite 색인을 타므로 연결이 필요하다.
+
+    fts5-memo-tasks-index 전에는 `conn=None`으로 불렀다 — 그때는 검색이 yaml을
+    질의마다 통째로 읽었기 때문이다. 색인 통일(설계서 9장)로 다섯 그릇이 모두
+    SQLite를 타면서, 연결 없이 조회되는 것이 더 이상 정상이 아니다.
+    """
+    import sqlite3
+    from contextlib import closing
+
+    paths.db_path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(paths.db_path)) as conn:
+        return db.search_bowl(conn, bowl="attachments", paths=paths, **kwargs)
+
+
 def _record(paths, **kwargs):
     base = dict(
         path=f"{cfg.ATTACH_DIR_NAME}/설계.pdf",
@@ -177,7 +192,7 @@ def test_search_bowl_reads_attachments(paths):
     _record(paths, path=f"{cfg.ATTACH_DIR_NAME}/검색설계.pdf", topic="fts5")
     _record(paths, path=f"{cfg.ATTACH_DIR_NAME}/발표자료.pdf", topic="namu-70")
 
-    result = db.search_bowl(None, bowl="attachments", query="검색설계", paths=paths)
+    result = _search(paths, query="검색설계")
     assert result["bowl"] == "attachments"
     assert result["count"] == 1
     # 파일 이름으로 찾을 수 있어야 한다 — 다시 꺼낼 때 사람이 기억하는 것은
@@ -189,7 +204,7 @@ def test_search_bowl_filters_attachments_by_project(paths):
     _record(paths, path=f"{cfg.ATTACH_DIR_NAME}/a.pdf", project="namu-agent")
     _record(paths, path=f"{cfg.ATTACH_DIR_NAME}/b.pdf", project="다른방")
 
-    result = db.search_bowl(None, bowl="attachments", project="namu-agent", paths=paths)
+    result = _search(paths, project="namu-agent")
     assert [e["path"] for e in result["results"]] == [f"{cfg.ATTACH_DIR_NAME}/a.pdf"]
 
 
@@ -200,11 +215,25 @@ def test_search_bowl_still_rejects_project_on_learnings():
         db.search_bowl(None, bowl="learnings", project="namu-agent")
 
 
-def test_attachments_are_not_indexed_in_sqlite(paths):
-    # cached=False — 검색 색인에 넣을지는 이 작업의 범위 밖이다. SQLite 연결 없이
-    # (conn=None) 조회가 되는 것이 곧 색인을 타지 않는다는 증거다.
+def test_attachments_are_indexed_in_sqlite(paths):
+    """이 그릇도 SQLite 색인을 탄다(fts5-memo-tasks-index, 설계서 9장).
+
+    namu-file-upload-download는 색인 여부를 자기 범위 밖으로 미뤄 `cached=False`로
+    두었고, 그때 이 자리에는 "연결 없이 조회되는 것이 색인을 타지 않는다는 증거"라는
+    반대 방향의 시험이 있었다. 그 미결을 검색 통일 작업이 넘겨받아 뒤집었다.
+
+    색인 표에 행이 실제로 들어갔는지까지 본다 — 검색 결과만 보면 색인을 타든 파일을
+    읽든 구분이 안 되기 때문이다.
+    """
+    import sqlite3
+    from contextlib import closing
+
     _record(paths)
-    assert db.search_bowl(None, bowl="attachments", paths=paths)["count"] == 1
+    assert _search(paths)["count"] == 1
+
+    with closing(sqlite3.connect(paths.db_path)) as conn:
+        rows = conn.execute("SELECT COUNT(*) FROM bowl_attachments").fetchone()[0]
+    assert rows == 1
 
 
 # ---------------------------------------------------------------------------

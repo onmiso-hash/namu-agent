@@ -1,0 +1,326 @@
+"""그릇 검색 색인 테스트 (fts5-memo-tasks-index — docs/search_index_unify.md).
+
+이 작업이 지켜야 하는 것은 넷이다.
+
+1. **색인은 사본이다.** 원본 파일이 진실이고, 색인은 지워도 다시 만들어져야 한다
+   (개발 원칙 2). 그래서 결과가 옛 경로와 **글자 그대로** 같아야 한다.
+2. **두 글자 검색이 살아 있어야 한다.** trigram 색인은 세 글자씩 겹쳐 잘라 담으므로
+   두 글자는 원리상 0건이 된다. 우리말 기술용어는 두 글자가 가장 흔해서(설계·검색·
+   기억·작업) 우회가 없으면 검색 품질이 색인 도입으로 **나빠진다**.
+3. **원본이 바뀌면 색인도 따라와야 한다.** 특히 쪽지는 유일하게 항목이 사라지는
+   그릇이라, 뗀 메모가 색인에 남아 있으면 없는 것이 검색된다.
+4. **첨부 기록의 색인은 저장소를 건드리지 않는다.** 파일 목록이나 크기를 저장소에
+   물으면 git이 빠진 몸통을 전부 내려받아 격리가 되돌릴 수 없이 뚫린다
+   (2026-08-07 실측: 파일 2,548개에 7분 넘게 안 끝나 중단).
+"""
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import attachments as _attachments  # noqa: E402
+import config as cfg  # noqa: E402
+import db as _db  # noqa: E402
+import memo as _memo  # noqa: E402
+import profile as _profile  # noqa: E402
+import task_resolve  # noqa: E402
+
+
+@pytest.fixture()
+def paths(tmp_path):
+    """사용자 폴더를 tmp로 갈아끼운 DataPaths. 실제 ~/.namu를 건드리지 않는다."""
+    p = cfg.data_paths_for(tmp_path)
+    p.db_path.parent.mkdir(parents=True, exist_ok=True)
+    p.learnings_yaml.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def search(paths, bowl, **kwargs):
+    with closing(sqlite3.connect(paths.db_path)) as conn:
+        return _db.search_bowl(conn, bowl=bowl, paths=paths, **kwargs)
+
+
+def rows_in(paths, bowl):
+    with closing(sqlite3.connect(paths.db_path)) as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM {_db._bowl_table(bowl)}").fetchone()[0]
+
+
+# ---------------------------------------------------------------------------
+# 색인은 사본 — 지워도 다시 만들어지고, 원본은 손대지 않는다
+# ---------------------------------------------------------------------------
+
+def test_index_is_a_rebuildable_copy(paths):
+    _memo.add(summary="딸기우유", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query="딸기우유")["count"] == 1
+
+    # 색인 표를 통째로 지워도 다음 검색에서 다시 만들어진다.
+    with closing(sqlite3.connect(paths.db_path)) as conn:
+        conn.executescript("DROP TABLE bowl_memo_fts; DROP TABLE bowl_memo;")
+    assert search(paths, "memo", query="딸기우유")["count"] == 1
+
+    # 원본 파일은 그대로다 — 색인이 원본을 고치지 않는다.
+    assert len(_memo.load_all(paths)) == 1
+
+
+def test_results_are_the_original_records_unchanged(paths):
+    _profile.record_fact(subject="시험", statement="딸기우유를 좋아한다",
+                         summary="딸기우유", reason="시험", body="원문", paths=paths)
+    got = search(paths, "profile", query="딸기우유")["results"][0]
+    original = _profile.active(paths=paths)[0]
+    assert got == original
+
+
+# ---------------------------------------------------------------------------
+# 두 글자 우회 — 없으면 색인 도입이 곧 검색 퇴행이다
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("query", ["설계", "검색", "기억"])
+def test_two_letter_query_still_finds(paths, query):
+    _memo.add(summary=f"{query} 문서", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query=query)["count"] == 1
+
+
+def test_two_letter_query_matches_inside_a_word(paths):
+    """조사·어미가 붙어도 걸린다 — 옛 경로(파이썬 부분일치)와 같은 성질."""
+    _memo.add(summary="재생성되는 캐시로 취급", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query="생성")["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 낱말 AND — 띄어 쓴 낱말은 순서와 무관해야 한다
+# ---------------------------------------------------------------------------
+
+def test_multi_word_query_ignores_word_order(paths):
+    _memo.add(summary="검색 인덱스 설계 문서", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query="설계 문서")["count"] == 1
+    assert search(paths, "memo", query="문서 설계")["count"] == 1
+
+
+def test_multi_word_query_requires_all_words(paths):
+    _memo.add(summary="검색 인덱스", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query="검색 인덱스")["count"] == 1
+    assert search(paths, "memo", query="검색 첨부")["count"] == 0
+
+
+def test_multi_word_query_works_across_layers(paths):
+    """요약에 있는 낱말과 원문에 있는 낱말을 함께 줘도 걸린다(3층 전부가 검색 대상)."""
+    _memo.add(summary="첫째줄", reason="둘째줄", body="셋째줄", paths=paths)
+    assert search(paths, "memo", query="첫째줄 셋째줄")["count"] == 1
+
+
+def test_word_order_is_irrelevant_on_both_paths(paths):
+    """긴 낱말만 준 질의(색인 경로)와 짧은 낱말이 섞인 질의(LIKE 경로) **양쪽** 모두.
+
+    두 경로가 따로 있으므로 한쪽만 고치면 나머지에서 같은 결함이 남는다.
+    """
+    _memo.add(summary="인덱스 재생성 설계", reason="시험", body="원문", paths=paths)
+
+    assert _db._use_index(["인덱스", "재생성"]) is True
+    assert search(paths, "memo", query="인덱스 재생성")["count"] == 1
+    assert search(paths, "memo", query="재생성 인덱스")["count"] == 1
+
+    assert _db._use_index(["설계", "인덱스"]) is False
+    assert search(paths, "memo", query="설계 인덱스")["count"] == 1
+    assert search(paths, "memo", query="인덱스 설계")["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 원본이 바뀌면 색인도 따라온다
+# ---------------------------------------------------------------------------
+
+def test_new_record_is_searchable_immediately(paths):
+    _memo.add(summary="첫 메모", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query="첫 메모")["count"] == 1
+
+    _memo.add(summary="둘째 메모", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo", query="둘째 메모")["count"] == 1
+
+
+def test_removed_memo_disappears_from_the_index(paths):
+    """쪽지는 유일하게 **떼면 사라지는** 그릇이다.
+
+    건수 비교만으로 낡음을 판정하면 "건수가 같은 채 내용만 바뀐" 경우를 못 잡는데,
+    없는 메모가 검색되는 것은 있는 메모가 안 나오는 것보다 더 나쁘다.
+    """
+    kept = _memo.add(summary="남길 메모", reason="시험", body="원문", paths=paths)
+    doomed = _memo.add(summary="뗄 메모", reason="시험", body="원문", paths=paths)
+    assert search(paths, "memo")["count"] == 2
+
+    _memo.remove(doomed, paths=paths)
+    assert search(paths, "memo", query="뗄 메모")["count"] == 0
+    assert [m["id"] for m in search(paths, "memo")["results"]] == [kept]
+
+
+def test_superseded_fact_leaves_the_index(paths):
+    old_id = _profile.record_fact(subject="시험", statement="옛 사실",
+                                  summary="옛 사실", reason="시험", body="원문",
+                                  paths=paths)
+    _profile.record_fact(subject="시험", statement="새 사실",
+                         summary="새 사실", reason="시험", body="원문",
+                         supersedes=old_id, paths=paths)
+    ids = [d["id"] for d in search(paths, "profile")["results"]]
+    assert old_id not in ids
+
+
+# ---------------------------------------------------------------------------
+# 첨부 기록 — 파일 이름으로 찾고, 지운 파일의 기록도 남는다
+# ---------------------------------------------------------------------------
+
+def _attach(paths, path, status=_attachments.STATUS_UPLOADED, **kw):
+    return _attachments.record_attachment(
+        path=path, bytes_=kw.pop("bytes_", 1234), status=status,
+        summary=kw.pop("summary", "요약"), reason=kw.pop("reason", "이유"),
+        body=kw.pop("body", "원문"), paths=paths, **kw,
+    )
+
+
+def test_attachment_is_found_by_file_name(paths):
+    _attach(paths, f"{cfg.ATTACH_DIR_NAME}/검색인덱스설계.pdf")
+    _attach(paths, f"{cfg.ATTACH_DIR_NAME}/발표자료.pdf")
+    got = search(paths, "attachments", query="검색인덱스설계")
+    assert got["count"] == 1
+    assert got["results"][0]["path"].endswith("검색인덱스설계.pdf")
+
+
+def test_removed_attachment_history_stays_searchable(paths):
+    """지운 파일의 기록과 그 이유는 검색에서 사라지면 안 된다(설계서 9.4 ②).
+
+    색인 행의 단위가 "파일"이 아니라 "기록"이어야 하는 이유다 — 최신 한 줄만 담으면
+    "그 자료 어디 갔지"에 답할 수 없게 된다.
+    """
+    name = f"{cfg.ATTACH_DIR_NAME}/한물간자료.pdf"
+    _attach(paths, name, summary="한물간 자료")
+    _attach(paths, name, status=_attachments.STATUS_REMOVED,
+            summary="한물간 자료", reason="새 판이 나와서 뺐다")
+
+    got = search(paths, "attachments", query="한물간자료")
+    assert got["count"] == 2
+    assert {a["status"] for a in got["results"]} == {
+        _attachments.STATUS_UPLOADED, _attachments.STATUS_REMOVED,
+    }
+    assert search(paths, "attachments", query="새 판이 나와서")["count"] == 1
+
+
+def test_attachment_index_reads_only_the_yaml(paths):
+    """색인의 입력원은 attachments.yaml 하나뿐이다 — 저장소를 건드리지 않는다.
+
+    이걸 못 박는 이유: 크기를 알아내려고 저장소에 물으면 git이 빠진 파일 몸통을
+    전부 내려받는다. "색인 다시 만들기" 한 번으로 그 일이 벌어지면 되돌릴 수 없다
+    (한 번 받은 파일은 설정을 바꿔도 안 사라진다).
+    """
+    sources = _db._bowl_source_files("attachments", paths)
+    assert sources == [paths.attachments_yaml]
+    assert cfg.ATTACH_DIR_NAME not in str(sources[0])
+
+
+# ---------------------------------------------------------------------------
+# 작업일지 — 파일이 여럿인 유일한 그릇
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def tasks_home(tmp_path, monkeypatch):
+    """작업일지 개인 풀을 tmp로 격리한다(실제 ~/.namu/tasks를 건드리지 않는다)."""
+    home = tmp_path / "fake_home"
+    (home / ".namu" / "tasks").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    return home / ".namu" / "tasks"
+
+
+def _log(tasks_home, project, slug, lines):
+    d = tasks_home / project / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "log.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_tasks_index_covers_every_log_file(paths, tasks_home):
+    _log(tasks_home, "namu-agent", "namu-57-refactor",
+         ["[기록] 2026-08-01 10:00:00 hp · 그릇 레지스트리를 만들었다"])
+    _log(tasks_home, "namu-agent", "namu-70-cloud",
+         ["[기록] 2026-08-02 10:00:00 hp · 클라우드 화면을 고쳤다"])
+    _log(tasks_home, "다른방", "무언가",
+         ["[기록] 2026-08-03 10:00:00 samsung · 남의 방 기록"])
+
+    assert search(paths, "tasks")["count"] == 3
+    assert search(paths, "tasks", project="namu-agent")["count"] == 2
+    assert search(paths, "tasks", query="레지스트리")["count"] == 1
+    assert search(paths, "tasks", machine="samsung")["count"] == 1
+
+
+def test_tasks_index_notices_a_new_log_file(paths, tasks_home):
+    """파일이 **늘어난 것**도 낡음으로 잡아야 한다 — 한 파일만 보면 못 잡는다."""
+    _log(tasks_home, "namu-agent", "첫작업",
+         ["[기록] 2026-08-01 10:00:00 hp · 첫 줄"])
+    assert search(paths, "tasks")["count"] == 1
+
+    _log(tasks_home, "namu-agent", "새작업",
+         ["[기록] 2026-08-02 10:00:00 hp · 새 작업의 첫 줄"])
+    assert search(paths, "tasks")["count"] == 2
+
+
+def test_tasks_task_axis_matches_slug_prefix(paths, tasks_home):
+    """`namu-57`처럼 앞부분만 지목해도 걸린다(옛 `_task_matches`와 같은 규칙)."""
+    _log(tasks_home, "namu-agent", "namu-57-refactor",
+         ["[기록] 2026-08-01 10:00:00 hp · 가"])
+    _log(tasks_home, "namu-agent", "namu-570-other",
+         ["[기록] 2026-08-01 11:00:00 hp · 나"])
+
+    got = search(paths, "tasks", task="namu-57")
+    assert [e["task_slug"] for e in got["results"]] == ["namu-57-refactor"]
+
+
+def test_tasks_search_looks_into_the_detail_lines(paths, tasks_home):
+    """화면에서 뺀 '왜/상세'도 검색 대상이다 — 안 그러면 요약만 보이게 만든 것이
+    곧 "그 내용은 검색으로도 못 찾는다"가 된다(namu-65 완료조건 11)."""
+    _log(tasks_home, "namu-agent", "어떤작업", [
+        "[기록] 2026-08-01 10:00:00 hp · 한 줄 요약",
+        "    왜: 숨은낱말 때문에 그랬다",
+    ])
+    assert search(paths, "tasks", query="숨은낱말")["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 낡음 판정
+# ---------------------------------------------------------------------------
+
+def test_index_is_stale_before_it_is_built(paths):
+    for bowl in _db._INDEXED_BOWLS:
+        assert _db.bowl_index_is_stale(bowl, paths) is True
+
+
+def test_ensure_indexes_covers_every_bowl(paths):
+    """부르는 쪽이 그릇 목록을 알 필요가 없어야 여섯 번째 그릇이 생겨도 배선이 안 샌다."""
+    built = _db.ensure_indexes(paths)
+    assert set(built) == {"learnings", *_db._INDEXED_BOWLS}
+    assert all(_db.bowl_index_is_stale(b, paths) is False for b in _db._INDEXED_BOWLS)
+
+    # 두 번째 호출은 아무것도 다시 만들지 않는다.
+    assert _db.ensure_indexes(paths) == {k: False for k in built}
+
+
+def test_schema_version_bump_forces_a_rebuild(paths, monkeypatch):
+    """표 모양이 바뀌면 원본이 그대로여도 다시 만들어야 한다.
+
+    옛 스키마 db를 방치해 `no such column`으로 깨진 0.1.26 사고와 같은 경로를
+    미리 막는 장치다.
+    """
+    _memo.add(summary="메모", reason="시험", body="원문", paths=paths)
+    _db.ensure_indexes(paths)
+    assert _db.bowl_index_is_stale("memo", paths) is False
+
+    monkeypatch.setattr(_db, "_INDEX_SCHEMA_VERSION", _db._INDEX_SCHEMA_VERSION + 1)
+    assert _db.bowl_index_is_stale("memo", paths) is True
+
+
+def test_every_declared_bowl_is_cached(paths):
+    """레지스트리의 `cached`와 실제 색인 대상이 어긋나지 않는지."""
+    indexed = {"learnings", *_db._INDEXED_BOWLS}
+    assert {b.name for b in cfg.BOWLS if b.cached} == indexed
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

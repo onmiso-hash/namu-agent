@@ -85,9 +85,9 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 
 | 항목 | 내용 |
 |------|------|
-| 입력 | `bowl`(str, 기본 `learnings`): `learnings`\|`tasks`\|`profile` / `query`(str, **선택** — 생략하면 축만으로 필터링, 예: "어제 hp에서 뭐 했지"=`bowl='tasks', machine='hp', since=...`) / `project`(str, **tasks 전용**): 프로젝트 폴더명 — 생략 시 stdio는 "현재 프로젝트", 웹은 "전체 프로젝트 합침"(cwd 개념이 없음), `'*'`는 양쪽 모두 명시적 전체 조회 / `task`(str): learnings는 부분일치, tasks는 슬러그 완전/접두일치 / `machine`/`via`(str, 정확 일치) / `since`/`until`(str, 날짜 또는 날짜+시각, until은 날짜만 주면 그날 포함) / `outcome_filter`(str, learnings 전용) / `limit`(int, 기본 10) |
+| 입력 | `bowl`(str, 기본 `learnings`): `learnings`\|`tasks`\|`profile`\|`memo`\|`attachments` / `query`(str, **선택** — 생략하면 축만으로 필터링, 예: "어제 hp에서 뭐 했지"=`bowl='tasks', machine='hp', since=...`) / `project`(str, **tasks 전용**): 프로젝트 폴더명 — 생략 시 stdio는 "현재 프로젝트", 웹은 "전체 프로젝트 합침"(cwd 개념이 없음), `'*'`는 양쪽 모두 명시적 전체 조회 / `task`(str): learnings는 부분일치, tasks는 슬러그 완전/접두일치 / `machine`/`via`(str, 정확 일치) / `since`/`until`(str, 날짜 또는 날짜+시각, until은 날짜만 주면 그날 포함) / `outcome_filter`(str, learnings 전용) / `limit`(int, 기본 10) |
 | 출력 | `{"bowl", "results": [...], "count": N}` — learnings만 `"summary": {success: N, failure: M, partial: K}` 추가 |
-| 동작 | learnings: query 3자+ → FTS5 MATCH+bm25 / 2자 이하 `LIKE` 폴백, 매칭 없으면 빈 결과(폴백 없음). tasks: `task_resolve.journal()`로 여러 프로젝트/task의 `log.md`를 시간순 병합(SQLite 인덱싱 없음 — log.md가 권위), query는 text/tag/task_slug 부분일치를 limit 적용 **전**에 거른다. profile: `profile.active()`(supersede 제외) 로드 후 파이썬 필터 |
+| 동작 | **다섯 그릇 모두 SQLite 색인 질의**(fts5-memo-tasks-index). 검색어는 낱말별 **AND**로 나눠 던지고(순서 무관), 낱말이 전부 3자 이상이면 FTS5 trigram MATCH, 하나라도 2자 이하면 색인을 건너뛰고 `LIKE` 전수 조회로 폴백한다(trigram은 두 글자를 원리상 못 찾는다). learnings는 자기 표(`learnings_fts`, bm25 정렬 + outcome 추세 요약), 나머지 넷은 같은 모양의 표 `bowl_<이름>`/`bowl_<이름>_fts`를 쓴다. 원본은 파일 그대로이고 색인은 재생성 가능한 사본이라, 질의 직전에 원본의 크기·수정시각 서명을 보고 바뀐 그릇만 다시 만든다(`db.ensure_bowl_index`) |
 | ⚠️ | tasks·memo의 `timestamp`는 기준 시간대(`NAMU_TZ`, 기본 Asia/Seoul) 벽시계, learnings·profile은 UTC ISO다 — 그릇 간 `since`/`until` 값을 그대로 재사용하면 9시간 어긋난다. (namu-57 5단계 전에는 tasks가 **호스트마다 다른** 현지시각이라 같은 그릇 안에서도 비교가 깨졌다 — 그건 해소됐고, 그릇 간 형식 통일은 여전히 범위 밖) |
 
 ### 4. `namu_memo_remove` — 스틱노트 떼기 (namu-56, 유일한 삭제 도구)
@@ -128,7 +128,7 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 | | **memo.yaml** | 나머지 3그릇 |
 |---|---|---|
 | 수명 | 떼면 사라진다(mutable, tombstone 없음) | append-only, 지우지 않는다 |
-| 검색 인덱스 | SQLite에 넣지 않는다 | learnings만 FTS 인덱싱 |
+| 검색 인덱스 | **자기 표**(`bowl_memo`)를 갖는다 — 교훈 색인에 섞지 않는 것이 요점이지 색인을 안 갖는 것이 아니다 | 그릇마다 자기 표 |
 | git 병합 | `merge="file"` — union 라인을 만들지 **않는다** | `merge=union` |
 | 노출 | `namu_recall` 반환의 `memo` 키 + 로컬 세션 브리핑 맨 앞 | 각 그릇별 |
 
@@ -157,7 +157,7 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 |---|---|---|
 | 담는 것 | 교훈(`kind=lesson`) + 대화기록(`kind=note`) | 사실·선호(fact) |
 | 접근 패턴 | 검색 컬렉션 — query로 FTS 매칭해 관련도순/최신순으로 일부만 꺼냄 | 통째 로딩 — 항상 활성 항목 전체를 반환 |
-| SQLite 캐시 | 있음 (`~/.namu/db/namu.db`, git pull 후 카운트 불일치 시 자동 재생성) | **없음** — 파일이 작아 인덱싱 이득보다 별도 캐시 유지 비용이 큼 |
+| SQLite 캐시 | 있음 (`~/.namu/db/namu.db`, git pull 후 카운트 불일치 시 자동 재생성) | 있음 (`bowl_profile`, fts5-memo-tasks-index로 추가 — 성능이 아니라 조회 경로 통일이 근거) |
 | 정정 방식 | append-only. 옛 항목은 그대로 두고 새 항목만 쌓임(수정할 개념 자체가 없음 — 각 lesson/note는 독립 사실) | append-only + **`supersedes` forward pointer**. 사실이 바뀌면 옛 레코드를 고치지 않고 새 항목이 `supersedes: <옛 id>`를 달고 append됨 |
 | "활성" 판정 | 없음(모든 항목이 대등) | **다른 어떤 항목의 `supersedes` 대상으로도 지목되지 않은 것**만 활성 — `recall`이 이 집합을 계산해 반환(`profile.active()`) |
 
@@ -185,8 +185,8 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 ```
 
 - **learnings.yaml** = source of truth (lesson/note), git으로 PC간 공유
-- **SQLite** = learnings.yaml를 인덱싱한 로컬 캐시. git pull 후 자동 재생성. **profile.yaml은 이 캐시 대상이 아니다**
-- **profile.yaml** = source of truth (fact), git으로 PC간 공유. 작아서 캐시 없이 매 호출 통째 로딩 + `supersedes` 기반 활성 필터링
+- **SQLite** = **다섯 그릇 전부**를 인덱싱한 로컬 캐시. 지워도 원본에서 다시 만들어진다(fts5-memo-tasks-index)
+- **profile.yaml** = source of truth (fact), git으로 PC간 공유. `recall`의 통째 로딩 경로는 종전대로 파일을 읽고(`profile.active()` + `supersedes` 기반 활성 필터링), **검색(`namu_search`)만** 색인을 탄다
 
 ---
 
@@ -249,7 +249,7 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 - `id`/`timestamp`/`machine` = learnings와 동일하게 서버가 자동 채움 — 호출자가 넘기지 않는다
 - `source`가 필수인 이유 = learnings의 `reason`과 같은 역할. 근거 없는 fact는 나중에 "이거 왜 저장했지?"를 답할 수 없어 신뢰도 판단이 불가능해진다
 - `supersedes` = append-only 원칙 아래 "사실은 시간이 지나면 바뀐다"를 표현하는 유일한 수단. 옛 항목을 고치거나 지우지 않고, 새 항목이 옛 id를 가리키는 forward pointer로 append된다
-- SQLite 캐시가 없는 이유 = 두 그릇 구조 절 참고 — 파일이 작아 통째 로딩 비용이 인덱싱 이득보다 낮다고 판단
+- SQLite 캐시 = 처음에는 두지 않았다(파일이 작아 통째 로딩이 싸다는 판단). fts5-memo-tasks-index에서 검색 경로만 색인으로 옮겼다 — 근거는 성능이 아니라 **조회 경로 통일**이다(그릇마다 다른 경로면 같은 결함을 다섯 번 고쳐야 한다). 통째 로딩이 필요한 `recall`은 종전대로 파일을 읽는다
 
 ---
 

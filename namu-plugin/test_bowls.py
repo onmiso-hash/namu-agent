@@ -74,12 +74,11 @@ def test_bowls_field_values_match_spec():
     assert by_name["memo"].mutable is True
     assert by_name["memo"].merge == "file"
 
-    assert by_name["learnings"].cached is True
-    assert by_name["tasks"].cached is False
-    assert by_name["profile"].cached is False
-    assert by_name["memo"].cached is False
-    # 첨부 기록을 검색 색인에 넣을지는 이 작업의 범위 밖으로 사용자가 정했다.
-    assert by_name["attachments"].cached is False
+    # fts5-memo-tasks-index — 다섯 그릇 전부 SQLite 검색 색인을 탄다. 교훈만
+    # 색인을 타고 나머지는 질의마다 파일을 통째로 읽던 구조를 하나로 모았다
+    # (판단 근거는 성능이 아니라 통일성 — docs/search_index_unify.md 2장).
+    for bowl in cfg.BOWLS:
+        assert bowl.cached is True, bowl.name
 
 
 def test_bowl_is_frozen():
