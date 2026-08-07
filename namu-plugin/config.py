@@ -82,6 +82,21 @@ MEMO_YAML_PATH = NAMU_DATA_ROOT / "memory" / "memo.yaml"
 # DB
 NAMU_DB_PATH = NAMU_DATA_ROOT / "db" / "namu.db"
 
+# 첨부 파일(namu-file-upload-download). 다른 그릇과 성격이 정반대라 BOWLS에 넣지
+# 않는다 — 그릇은 "모든 PC로 내려와야 하는 기억"이고, 이 폴더는 **저장소에는 있되
+# 각 PC로는 안 내려오는** 유일한 칸이다(각 PC가 sparse-checkout에서 제외한다).
+# 파일의 이력은 별도 그릇(memory/attachments.yaml)에 남으므로 "무슨 파일이 있나"는
+# 어디서나 답할 수 있고, 실물이 필요할 때만 그 하나를 받는다.
+#
+# 이름을 상수로 둔 이유: 격리 설정(memory_sync)·도구(mcp_server)·클라우드
+# (namu-cloud-routing의 user_repo)가 전부 같은 문자열을 써야 하는데, 한 곳만
+# 어긋나면 격리가 뚫린 채로 파일이 모든 PC에 내려온다(되돌릴 수 없다).
+ATTACH_DIR_NAME = "attach_file"
+
+# sparse-checkout(부분 체크아웃)에 넣을 패턴. `--no-cone` 형식이며 순서가 의미를
+# 가진다 — 먼저 전부 포함하고 뒤에서 첨부 폴더만 뺀다.
+ATTACH_SPARSE_PATTERNS: tuple[str, ...] = ("/*", f"!/{ATTACH_DIR_NAME}/")
+
 
 @dataclass(frozen=True)
 class DataPaths:

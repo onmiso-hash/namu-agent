@@ -771,6 +771,137 @@ def test_git_subprocess_calls_use_devnull_stdin(monkeypatch, tmp_path):
         assert kwargs.get("stdin") is subprocess.DEVNULL
 
 
+# ---------------------------------------------------------------------------
+# 첨부 격리 (namu-file-upload-download)
+# ---------------------------------------------------------------------------
+
+def _bare_remote_with_attachment(tmp_path: Path) -> tuple[Path, Path]:
+    """첨부 파일이 이미 들어 있는 bare 원격과, 그것을 만든 작업용 클론을 돌려준다.
+
+    "저장소에는 첨부가 있는데 이 PC에는 안 내려온다"가 격리의 정의이므로, 원격에
+    첨부가 실재하는 상태에서만 의미 있는 검증이 된다.
+    """
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
+    seed = tmp_path / "seed"
+    _init_git_repo(seed)
+    (seed / "memory").mkdir()
+    (seed / "memory" / "learnings.yaml").write_text("- id: A\n", encoding="utf-8")
+    (seed / cfg.ATTACH_DIR_NAME).mkdir()
+    (seed / cfg.ATTACH_DIR_NAME / "report.pdf").write_bytes(b"PDF" * 1000)
+    _commit_all(seed, "seed")
+    subprocess.run(
+        ["git", "-C", str(seed), "push", "-q", str(bare), "HEAD:main"],
+        check=True, capture_output=True,
+    )
+    return bare, seed
+
+
+def _clone_from(bare: Path, dest: Path) -> Path:
+    subprocess.run(["git", "clone", "-q", str(bare), str(dest)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(dest), "config", "user.email", "test@example.com"],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(dest), "config", "user.name", "Test User"],
+        check=True, capture_output=True,
+    )
+    return dest
+
+
+def test_ensure_attach_isolation_removes_attachment_from_working_tree(tmp_path):
+    """격리를 걸면 첨부는 작업트리에서 사라지고, 기억 파일은 그대로 남는다."""
+    bare, _ = _bare_remote_with_attachment(tmp_path)
+    home = _clone_from(bare, tmp_path / "home")
+    assert (home / cfg.ATTACH_DIR_NAME / "report.pdf").exists()  # 격리 전에는 있다
+
+    notes = ms.ensure_attach_isolation(home)
+
+    assert any("첨부 격리 적용" in n for n in notes), notes
+    assert not (home / cfg.ATTACH_DIR_NAME).exists()
+    assert (home / "memory" / "learnings.yaml").exists()
+
+
+def test_ensure_attach_isolation_sets_partial_clone_config(tmp_path):
+    """이후 fetch가 첨부 몸통을 받지 않도록 두 설정이 실제로 박힌다."""
+    bare, _ = _bare_remote_with_attachment(tmp_path)
+    home = _clone_from(bare, tmp_path / "home")
+
+    ms.ensure_attach_isolation(home)
+
+    def _config(key: str) -> str:
+        res = subprocess.run(
+            ["git", "-C", str(home), "config", "--get", key],
+            capture_output=True, encoding="utf-8",
+        )
+        return (res.stdout or "").strip()
+
+    assert _config("remote.origin.promisor") == "true"
+    assert _config("remote.origin.partialclonefilter") == "blob:none"
+
+
+def test_ensure_attach_isolation_is_idempotent(tmp_path):
+    """두 번째 호출은 아무것도 하지 않고 스킵으로 보고한다 — 세션 시작마다 불려도
+    작업트리를 건드리지 않아야 한다."""
+    bare, _ = _bare_remote_with_attachment(tmp_path)
+    home = _clone_from(bare, tmp_path / "home")
+
+    ms.ensure_attach_isolation(home)
+    notes = ms.ensure_attach_isolation(home)
+
+    assert any("이미 걸려 있음" in n for n in notes), notes
+    assert ms.attach_isolation_active(home) is True
+
+
+def test_ensure_attach_isolation_skips_when_not_git_repo(tmp_path):
+    """git 저장소가 아니면 조용히 건너뛴다(부팅 훅에서 불리므로 실패하면 안 된다)."""
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    notes = ms.ensure_attach_isolation(plain)
+
+    assert any("git 저장소가 아니라" in n for n in notes), notes
+    assert ms.attach_isolation_active(plain) is False
+
+
+def test_attachment_survives_sync_push_after_isolation(monkeypatch, tmp_path):
+    """격리를 건 뒤 기억을 저장해도 원격의 첨부가 지워지지 않는다.
+
+    이 시험이 이 기능에서 가장 중요하다 — 여기서 실패하면 웹에서 올린 파일이
+    다음 기억 저장 때 조용히 삭제된다(되돌리기 어렵다).
+    """
+    bare, _ = _bare_remote_with_attachment(tmp_path)
+    home = _clone_from(bare, tmp_path / "home")
+    ms.ensure_attach_isolation(home)
+    (home / ".namu_sync").touch()
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+
+    (home / "memory" / "learnings.yaml").write_text("- id: A\n- id: B\n", encoding="utf-8")
+    assert ms.sync_push("memory update") is True
+
+    listing = subprocess.run(
+        ["git", "--git-dir", str(bare), "ls-tree", "-r", "--name-only", "main"],
+        capture_output=True, encoding="utf-8", check=True,
+    ).stdout
+    assert f"{cfg.ATTACH_DIR_NAME}/report.pdf" in listing
+
+
+def test_sync_setup_applies_attach_isolation(monkeypatch, tmp_path):
+    """첫 설정 경로에서도 격리가 함께 깔린다 — 새 PC가 첨부를 받지 않게."""
+    bare, _ = _bare_remote_with_attachment(tmp_path)
+    home = _clone_from(bare, tmp_path / "home")
+    monkeypatch.setattr(cfg, "NAMU_DATA_ROOT", home)
+    monkeypatch.setattr(cfg, "NAMU_MACHINE", "machine-test")
+
+    report = ms.sync_setup(str(bare))
+
+    assert "첨부 격리 적용" in report, report
+    assert ms.attach_isolation_active(home) is True
+
+
 if __name__ == "__main__":
     import pytest as _pytest
 

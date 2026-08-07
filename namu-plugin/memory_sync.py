@@ -311,6 +311,80 @@ def ensure_gitattributes_union(home: Path) -> list[str]:
     return notes
 
 
+def attach_isolation_active(home: Path) -> bool:
+    """이 저장소에 첨부 격리가 이미 걸려 있는가(멱등 판정용).
+
+    판정 근거는 `remote.origin.partialclonefilter` 설정 하나다 — 세 설정
+    (promisor·filter·sparse) 중 이것만 "격리를 위해 우리가 넣은 값"이고 나머지
+    둘은 다른 이유로도 켜질 수 있기 때문이다(sparse-checkout은 사용자가 직접 쓸
+    수 있다). 셋을 모두 확인하면 사용자가 자기 목적으로 sparse를 켠 저장소를
+    "격리됨"으로 오판할 수 있다.
+    """
+    res = _run(["git", "-C", str(home), "config", "--get", "remote.origin.partialclonefilter"], 5)
+    return res.returncode == 0 and (res.stdout or "").strip() == "blob:none"
+
+
+def ensure_attach_isolation(home: Path) -> list[str]:
+    """첨부 폴더가 이 PC로 내려오지 않게 만든다(멱등).
+
+    ⚠ 이 함수는 파일 첨부 기능보다 **먼저** 깔려야 한다. 이미 받아둔 파일은 설정을
+    걸어도 사라지지 않는다 — 새로 오는 것만 막힌다. 순서가 뒤집히면 그 사이에 올라간
+    파일이 모든 PC에 영구히 남는다(되돌릴 수 없다).
+
+    거는 설정 세 가지:
+      1. `remote.origin.promisor=true` — 몸통이 없는 객체를 "아직 안 받은 것"으로
+         취급하고, 필요해지면 그때 원격에서 받아온다는 표시.
+      2. `remote.origin.partialclonefilter=blob:none` — 이후 fetch/pull이 파일 몸통을
+         받지 않는다.
+      3. sparse-checkout에서 첨부 폴더 제외 — 작업트리에 파일이 나타나지 않는다.
+
+    2번과 3번은 역할이 다르다. 2번이 없으면 몸통이 `.git`에 쌓이고(용량), 3번이
+    없으면 작업트리에 파일이 나타난다. 둘 다 필요하다.
+
+    첨부가 저장소에 있어도 이 PC에서 지워지는 일은 없다 — `sync_push`가 쓰는 add
+    대상은 `memory/`·`tasks/`뿐이라 제외 경로가 삭제로 잡히지 않는다(실측 확인).
+
+    반환값은 사람이 읽는 notes 리스트(sync_setup 보고용). 실패는 예외를 전파하지
+    않고 notes에만 남긴다 — 세션 시작 훅을 막으면 안 되기 때문이다.
+    """
+    import config as cfg
+
+    notes: list[str] = []
+    if not (Path(home) / ".git").is_dir():
+        notes.append("첨부 격리: git 저장소가 아니라 건너뜀")
+        return notes
+
+    if attach_isolation_active(Path(home)):
+        notes.append("첨부 격리: 이미 걸려 있음 (스킵)")
+        return notes
+
+    try:
+        for key, value in (
+            ("remote.origin.promisor", "true"),
+            ("remote.origin.partialclonefilter", "blob:none"),
+        ):
+            res = _run(["git", "-C", str(home), "config", key, value], 5)
+            if res.returncode != 0:
+                notes.append(f"첨부 격리 실패({key}): {(res.stderr or '').strip()[:200]}")
+                return notes
+
+        sparse = _run(
+            [
+                "git", "-C", str(home), "sparse-checkout", "set", "--no-cone",
+                *cfg.ATTACH_SPARSE_PATTERNS,
+            ],
+            30,
+        )
+        if sparse.returncode != 0:
+            notes.append(f"첨부 격리 실패(sparse-checkout): {(sparse.stderr or '').strip()[:200]}")
+            return notes
+
+        notes.append(f"첨부 격리 적용 — {cfg.ATTACH_DIR_NAME}/ 는 이 PC로 내려오지 않는다")
+    except Exception as exc:
+        notes.append(f"첨부 격리 예외: {type(exc).__name__}: {exc}")
+    return notes
+
+
 def sync_push(message: str) -> bool:
     """memory/(+실재하면 tasks/, namu-34 ③-a / .gitattributes, namu-57 3단계 ④)를
     add→(변경 있으면) commit→push. namu_record 성공 직후 호출. 실제 git 시퀀스는
@@ -421,6 +495,19 @@ def sync_setup(remote_url: str) -> str:
             )
     except Exception as exc:
         notes.append(f"원격 설정 예외: {type(exc).__name__}: {exc}")
+
+    # 첨부 격리는 **원격을 등록한 뒤, 첫 fetch 전에** 건다. 순서가 이 사이여야 하는
+    # 이유가 양쪽에 있다.
+    #   - 원격 등록보다 먼저 걸면 안 된다: `git config remote.origin.*`이
+    #     `[remote "origin"]` 절을 먼저 만들어 버려서, 바로 위 블록의
+    #     `git remote get-url origin`이 성공해 `git remote add` 대신 `set-url`
+    #     경로를 타고, 그러면 `git remote add`가 넣어주는 fetch refspec이 영영
+    #     등록되지 않는다 → fetch를 해도 `origin/main`이 안 생겨 아래 병합이
+    #     "원격에 main 없음"으로 건너뛰어지고 push가 non-fast-forward로 거부된다
+    #     (테스트 2건이 실제로 이 순서에서 깨졌다).
+    #   - 첫 fetch보다는 먼저 걸어야 한다: 그래야 처음 받아오는 순간부터 첨부
+    #     몸통을 안 받는다.
+    notes.extend(ensure_attach_isolation(home))
 
     marker = home / ".namu_sync"
     try:

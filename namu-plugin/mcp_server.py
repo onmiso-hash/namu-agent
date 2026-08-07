@@ -53,8 +53,30 @@ def _ensure_tasks_gitattributes() -> None:
         pass
 
 
+def _ensure_attach_isolation() -> None:
+    """기존 개통분의 `~/.namu`에 첨부 격리를 멱등 ensure한다
+    (namu-file-upload-download).
+
+    `_ensure_tasks_gitattributes`와 같은 자리·같은 이유다 — sync_setup을 다시 부르지
+    않는 기존 사용자를 위한 보정. 다만 이쪽은 **파일 첨부 기능보다 먼저 깔려야 한다는
+    순서 제약**이 있다: 이미 받아둔 파일은 설정을 걸어도 사라지지 않으므로, 격리보다
+    올리기 도구가 먼저 나가면 그 사이에 올라간 파일이 모든 PC에 영구히 남는다.
+    그래서 이 보정은 첨부 도구가 생기기 전에 먼저 배포된다.
+
+    실제 설정 작업은 격리가 아직 없을 때 한 번만 돈다(memory_sync.ensure_attach_isolation
+    안에서 판정). 부팅을 절대 막으면 안 되므로 전예외 무해 처리한다.
+    """
+    try:
+        home = Path.home() / ".namu"
+        if (home / ".git").exists():
+            memory_sync.ensure_attach_isolation(home)
+    except Exception:
+        pass
+
+
 _ensure_db()
 _ensure_tasks_gitattributes()
+_ensure_attach_isolation()
 
 
 _VIA_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
