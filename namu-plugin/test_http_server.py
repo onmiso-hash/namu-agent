@@ -307,10 +307,32 @@ def test_restrict_tools_noop_when_already_restricted():
 
 
 def test_http_exposed_tools_excludes_sync_setup():
+    # 첨부 4종이 함께 있는 이유: 개인 주소와 클라우드 주소는 기능이 같아야 한다
+    # (2026-08-07 사용자 원칙). 빠지는 것은 sync_setup 하나뿐 — 서버를 켜기 전에
+    # 손으로 한 번 하는 설치 작업이라 원격에서 부를 일이 없다.
     assert http_server.HTTP_EXPOSED_TOOLS == frozenset(
-        {"namu_recall", "namu_record", "namu_search"}
+        {
+            "namu_recall", "namu_record", "namu_search",
+            "namu_upload_file", "namu_list_files", "namu_download_file",
+            "namu_delete_file",
+        }
     )
     assert "namu_sync_setup" not in http_server.HTTP_EXPOSED_TOOLS
+
+
+def test_http_and_cloud_expose_the_same_tools():
+    """개인 주소와 클라우드 주소의 도구 목록이 갈라지는 것을 여기서 막는다.
+
+    클라우드는 다른 저장소(namu-cloud-routing)라 import할 수 없으므로, 그쪽이
+    지켜야 할 목록을 **이 상수 하나로** 못 박아 둔다 — 클라우드의
+    tests/test_instructions.py가 자기 EXPOSED_TOOLS를 같은 집합과 대조한다.
+    """
+    assert http_server.HTTP_EXPOSED_TOOLS == frozenset(
+        {"namu_recall", "namu_record", "namu_search"}
+    ) | frozenset(
+        {"namu_upload_file", "namu_list_files", "namu_download_file",
+         "namu_delete_file"}
+    )
 
 
 # ---------------------------------------------------------------------------

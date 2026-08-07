@@ -52,7 +52,15 @@ logger = logging.getLogger("namu.http_server")
 # remote를 재배선하는 도구라 원격 호출자에게 주면 보안 사고(remote 탈취)로 직결된다
 # — stdio(로컬 CC/agy)에서는 그대로 쓸 수 있어야 하므로 mcp_server.py 자체에서
 # 빼지 않고, http_server가 import한 인스턴스에서만 build_app()이 제거한다.
-HTTP_EXPOSED_TOOLS = frozenset({"namu_recall", "namu_record", "namu_search"})
+# 첨부 4종(namu-file-upload-download)이 여기 함께 있는 이유: **개인 주소와 클라우드
+# 주소는 기능이 같아야 한다**(2026-08-07 사용자 원칙 확인). 한쪽에만 도구가 있으면
+# 같은 코어를 쓰는 의미가 없다. `namu_sync_setup`만 계속 빠진다 — 그건 이 서버를
+# 켜기 전에 손으로 한 번 하는 설치 작업이라 원격에서 부를 일이 없다.
+HTTP_EXPOSED_TOOLS = frozenset({
+    "namu_recall", "namu_record", "namu_search",
+    "namu_upload_file", "namu_list_files", "namu_download_file",
+    "namu_delete_file",
+})
 
 # 디바운스 pull 상태 — 모듈 전역 1개(단일 프로세스 전제, 경로 B 셀프호스팅 스코프와 합치).
 # threading.Lock으로 보호: uvicorn 워커 스레드/anyio 스레드 풀에서 동시에 갱신될 수 있음.

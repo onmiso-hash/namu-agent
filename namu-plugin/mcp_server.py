@@ -2,6 +2,8 @@
 # requires-python = ">=3.12"
 # dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
 # ///
+import base64
+import binascii
 import json
 import re
 import sqlite3
@@ -954,45 +956,69 @@ def _attach_record(path: str, size: int, status: str, summary, reason, body,
 
 @mcp.tool()
 def namu_upload_file(
-    file_path: str,
     summary: str,
     reason: str,
     body: str,
+    file_path: str | None = None,
+    content_base64: str | None = None,
     name: str | None = None,
     topic: str | None = None,
     project: str | None = None,
     tags: list[str] | None = None,
     ctx: Context | None = None,
 ) -> dict:
-    """Upload one file from this computer into the user's own GitHub repository
-    (under attach_file/) and log it in the attachments bowl.
+    """Upload one file into the user's own GitHub repository (under
+    attach_file/) and log it in the attachments bowl.
 
-    Unlike the cloud tool, this one takes a path on disk — on a terminal the
-    file is already here, so reading it through the model would only corrupt it.
+    Give the file EITHER way — the two exist because this same tool is served
+    both over stdio (a terminal, where the file is already on disk and reading
+    it through the model would only corrupt it) and over the user's own web MCP
+    URL (a chat, where there is no path — only bytes):
+      - `file_path`: a path on disk, or
+      - `content_base64`: the file's bytes, base64-encoded, plus `name`.
 
     Args:
-      file_path: path of the file to upload (absolute, or relative to cwd)
       summary/reason/body: required, same as any memory — what this file is, why
         it was kept, the full story. The file body is NOT synced to the user's
         other PCs, so this note is the only way to find it again later.
-      name: store it under a different name (default: the file's own name)
+      name: the name to store it under. Required with content_base64; with
+        file_path it defaults to the file's own name.
       topic/project/tags: optional, same meaning as in namu_record
     Returns: {"id", "path", "bytes", "status"} — status is '올림', or '새 판' if
       that name already existed in the repository.
     """
     via = _resolve_via(ctx)
-    src = Path(file_path).expanduser()
-    if not src.is_file():
-        raise ValueError(f"그런 파일이 없습니다: {src}")
     for field_name, value in (("summary", summary), ("reason", reason), ("body", body)):
         if not (value or "").strip():
             raise ValueError(
                 f"'{field_name}'은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
                 "내려오지 않으므로, 나중에 이 파일을 찾는 단서는 이 설명뿐입니다."
             )
+    if bool(file_path) == bool(content_base64):
+        raise ValueError(
+            "file_path(디스크의 파일)와 content_base64(파일 내용) 중 하나만 "
+            "주세요 — 둘 다 주거나 둘 다 안 주면 무엇을 올릴지 정할 수 없습니다."
+        )
 
-    content = src.read_bytes()
-    stored_name = (name or src.name).strip() or src.name
+    if file_path:
+        src = Path(file_path).expanduser()
+        if not src.is_file():
+            raise ValueError(f"그런 파일이 없습니다: {src}")
+        content = src.read_bytes()
+        stored_name = (name or src.name).strip() or src.name
+    else:
+        if not (name or "").strip():
+            raise ValueError(
+                "content_base64로 올릴 때는 'name'(저장할 파일 이름)이 필요합니다."
+            )
+        try:
+            content = base64.b64decode(content_base64 or "", validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError(
+                f"content_base64를 읽지 못했습니다: {exc} — 파일 내용을 base64로 "
+                "실어 보내세요."
+            ) from None
+        stored_name = name.strip()
     result = attach_local.upload(
         stored_name, content, attach_local.commit_message("올림", stored_name)
     )
@@ -1061,27 +1087,37 @@ def namu_download_file(
     save_to: str | None = None,
     ctx: Context | None = None,
 ) -> dict:
-    """Fetch one uploaded file back and write it to disk.
+    """Fetch one uploaded file back.
 
     Only that one file is pulled — the rest of the attachments stay off this
-    computer.
+    computer. The bytes always come back as base64 in `content_base64` (that is
+    what a chat needs); pass `save_to` as well when you want it written to disk.
 
     Args:
       name: file name as shown by namu_list_files
-      save_to: where to write it (a folder, or a full path). Default: the
-        current directory.
-    Returns: {"path", "bytes", "saved_to"} — `saved_to` is the file on disk.
-      Downloads are deliberately not logged (the file does not change).
+      save_to: where to write it (a folder, or a full path). Omit to only get
+        the bytes back.
+    Returns: {"path", "bytes", "content_base64", "saved_to"} — `saved_to` is
+      None when nothing was written. Downloads are deliberately not logged (the
+      file does not change).
     """
     _resolve_via(ctx)
     content = attach_local.download(name)
     stored = attach_local.normalize_name(name)
-    dest = Path(save_to).expanduser() if save_to else Path.cwd()
-    if dest.is_dir() or not dest.suffix:
-        dest = dest / Path(stored).name
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(content)
-    return {"path": stored, "bytes": len(content), "saved_to": str(dest)}
+    saved_to = None
+    if save_to:
+        dest = Path(save_to).expanduser()
+        if dest.is_dir() or not dest.suffix:
+            dest = dest / Path(stored).name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(content)
+        saved_to = str(dest)
+    return {
+        "path": stored,
+        "bytes": len(content),
+        "content_base64": base64.b64encode(content).decode("ascii"),
+        "saved_to": saved_to,
+    }
 
 
 @mcp.tool()
