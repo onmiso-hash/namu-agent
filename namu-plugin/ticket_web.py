@@ -106,6 +106,24 @@ class _Hooks:
         self.render_page = render_page or _plain_page
 
 
+def _in_own_conn(hooks: _Hooks, work):
+    """`work(conn)`을 **이 흐름에서 새로 연 커넥션**으로 돌린다.
+
+    저장·받기는 git·네트워크를 쓰는 동기 작업이라 별도 실행 흐름(threadpool)으로
+    넘긴다. 그런데 요청을 받은 쪽에서 연 커넥션을 그대로 들려 보내면 sqlite3가
+    그 자리에서 거절한다 — "만든 흐름에서만 쓸 수 있다"가 sqlite3의 기본값이다.
+    2026-08-07 운영에서 파일 올리기가 전부 502로 죽은 원인이 이것이었고, 시험은
+    저장 대역이 커넥션을 건드리지 않아 통과하고 있었다.
+
+    `check_same_thread=False`로 그 검사를 끄는 길도 있었지만 택하지 않았다 —
+    커넥션을 여는 자리가 여럿(개인 주소는 티켓 파일, 클라우드는 회원 장부)이라
+    한 곳만 고치면 다른 쪽이 그대로 남고, 무엇보다 검사를 끄는 것은 "다른
+    흐름에서 써도 된다"는 뜻이 아니라 "틀려도 안 알려준다"는 뜻이다.
+    """
+    with closing(hooks.open_conn()) as conn:
+        return work(conn)
+
+
 # ---------------------------------------------------------------------------
 # 들여보낼지 판정
 # ---------------------------------------------------------------------------
@@ -363,8 +381,10 @@ def _build_upload_post(hooks: _Hooks):
                 # 저장은 git·네트워크를 쓰는 동기 작업이다. 그대로 부르면 그 몇
                 # 초 동안 서버가 다른 요청을 하나도 못 받는다.
                 result = await run_in_threadpool(
-                    hooks.store_file, conn, ticket["user_key"], ticket["name"],
-                    content, meta, via,
+                    _in_own_conn, hooks,
+                    lambda c: hooks.store_file(
+                        c, ticket["user_key"], ticket["name"], content, meta, via,
+                    ),
                 )
             except Exception as exc:
                 # **티켓을 닫지 않는다**(설계서 7절). 실패한 시도로 링크를 태우면
@@ -415,7 +435,10 @@ def _build_download_get(hooks: _Hooks):
                 return failure
             try:
                 content = await run_in_threadpool(
-                    hooks.fetch_file, conn, ticket["user_key"], ticket["name"]
+                    _in_own_conn, hooks,
+                    lambda c: hooks.fetch_file(
+                        c, ticket["user_key"], ticket["name"],
+                    ),
                 )
             except Exception as exc:
                 logger.warning(

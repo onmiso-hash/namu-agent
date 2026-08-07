@@ -363,3 +363,59 @@ def test_everything_else_still_goes_through_the_authenticated_side():
 def test_lifespan_scope_is_never_treated_as_a_ticket_path():
     """lifespan scope에는 'path' 키가 없다 — 여기서 걸리면 서버가 뜨지 못한다."""
     assert ticket_web.is_ticket_path("") is False
+
+
+# ---------------------------------------------------------------------------
+# 저장·받기가 받는 커넥션 (2026-08-07 운영 502)
+# ---------------------------------------------------------------------------
+def _client_for(spy):
+    """대역을 바꾼 뒤 앱을 만든다 — `client` 붙박이는 만들 때의 대역을 붙잡는다."""
+    return TestClient(ticket_web.build_ticket_app(
+        open_conn=spy.open_conn, store_file=spy.store_file,
+        fetch_file=spy.fetch_file, max_bytes=spy.max_bytes,
+        session_user_key=spy.session_user_key,
+    ))
+
+
+def test_the_stored_file_gets_a_connection_it_can_actually_use(spy):
+    """저장 대역이 넘겨받은 커넥션을 **실제로 써도** 성공해야 한다.
+
+    저장은 별도 실행 흐름에서 도는데 커넥션을 요청 쪽에서 열어 넘기면 sqlite3가
+    거절한다. 클라우드의 저장 함수는 첫 줄에서 회원 장부를 읽기 때문에 이 결함이
+    운영에서 파일 올리기 전부를 502로 만들었다. 대역이 커넥션을 안 건드리면
+    시험은 통과하고 운영만 죽는다 — 그래서 여기서 일부러 건드린다.
+    """
+    used = []
+
+    def _store(conn, user_key, name, content, meta, via):
+        used.append(conn.execute("SELECT 1").fetchone()[0])
+        return {"id": "01AAA", "path": name, "bytes": len(content), "status": "올림"}
+
+    spy.store_file = _store
+    client = _client_for(spy)
+    t = _ticket(spy)
+
+    r = client.post(f"/u/{t['ticket_id']}", files={"file": ("x", b"ab")},
+                    headers=JSON)
+
+    assert r.status_code == 200, r.text
+    assert used == [1]
+
+
+def test_the_fetched_file_gets_a_connection_it_can_actually_use(spy):
+    """받기도 같은 자리·같은 이유다."""
+    used = []
+
+    def _fetch(conn, user_key, name):
+        used.append(conn.execute("SELECT 1").fetchone()[0])
+        return b"PDFBYTES"
+
+    spy.fetch_file = _fetch
+    client = _client_for(spy)
+    t = _ticket(spy, kind=tickets.KIND_DOWNLOAD)
+
+    r = client.get(f"/d/{t['ticket_id']}")
+
+    assert r.status_code == 200, r.text
+    assert r.content == b"PDFBYTES"
+    assert used == [1]
