@@ -3,7 +3,6 @@
 # dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
 # ///
 import base64
-import binascii
 import json
 import re
 import sqlite3
@@ -1032,7 +1031,6 @@ def namu_upload_file(
     body: str | None = None,
     file_path: str | None = None,
     content_text: str | None = None,
-    content_base64: str | None = None,
     name: str | None = None,
     topic: str | None = None,
     project: str | None = None,
@@ -1042,18 +1040,20 @@ def namu_upload_file(
     """Upload one file into the user's own GitHub repository (under
     attach_file/) and log it in the attachments bowl.
 
-    Give the file exactly ONE of these three ways. They exist because this same
+    Give the file exactly ONE of these two ways. They exist because this same
     tool is served both over stdio (a terminal, where the file is already on
     disk) and over the user's own web MCP URL (a chat, where there is no path):
       - `file_path`: a path on disk. **Always prefer this when you have one** —
-        nothing passes through your output.
-      - `content_text`: the text itself, plus `name`. For text files, put the
-        text here. Do NOT base64-encode it.
-      - `content_base64`: the bytes, base64-encoded, plus `name`. Slow, because
-        you have to emit every character.
+        the file never passes through your output, whatever its size or type.
+      - `content_text`: the text itself, plus `name`. Plain text only, and only
+        when there is no path.
 
-    **For binaries (PPT/PDF/images/video/zip) or anything over 100KB with no
-    path on disk, do not use this tool — use `namu_create_upload_ticket`.**
+    There is no base64 field on this tool and you must not create one: encoding
+    a file into text is what used to make this take minutes.
+
+    **Anything that is not plain text — PPT/PDF/images/video/zip — and any text
+    over 100KB, with no path on disk, goes through
+    `namu_create_upload_ticket`.**
 
     Args:
       summary: what this file is (required)
@@ -1061,8 +1061,8 @@ def namu_upload_file(
         user's other PCs, so summary+reason are the only way to find it later.
       body: optional — for an attachment the file itself IS the full story. Add
         it only when there is context the file does not carry.
-      name: the name to store it under. Required with content_text or
-        content_base64; with file_path it defaults to the file's own name.
+      name: the name to store it under. Required with content_text; with
+        file_path it defaults to the file's own name.
       topic/project/tags: optional, same meaning as in namu_record
     Returns: {"id", "path", "bytes", "status"} — status is '올림', or '새 판' if
       that name already existed in the repository.
@@ -1070,14 +1070,14 @@ def namu_upload_file(
     via = _resolve_via(ctx)
     given = [k for k, v in (
         ("file_path", file_path), ("content_text", content_text),
-        ("content_base64", content_base64),
     ) if v]
     if len(given) != 1:
         raise ValueError(
-            "file_path(디스크의 파일) · content_text(글자 원문) · "
-            "content_base64(바이트) 중 **하나만** 주세요 — 지금 준 것: "
-            f"{given or '없음'}. 둘 이상 오면 어느 쪽이 진짜 내용인지 알 수 없고, "
-            "하나도 없으면 무엇을 올릴지 정할 수 없습니다."
+            "file_path(디스크의 파일)와 content_text(글자 원문) 중 **하나만** "
+            f"주세요 — 지금 준 것: {given or '없음'}. 둘 다 오면 어느 쪽이 진짜 "
+            "내용인지 알 수 없고, 하나도 없으면 무엇을 올릴지 정할 수 없습니다. "
+            "글자가 아니거나 100KB를 넘고 디스크에도 없으면 "
+            "namu_create_upload_ticket을 쓰세요."
         )
 
     if file_path:
@@ -1089,27 +1089,17 @@ def namu_upload_file(
     else:
         if not (name or "").strip():
             raise ValueError(
-                "content_text·content_base64로 올릴 때는 'name'(저장할 파일 "
-                "이름)이 필요합니다."
+                "content_text로 올릴 때는 'name'(저장할 파일 이름)이 필요합니다."
             )
         stored_name = name.strip()
-        if content_text is not None:
-            content = content_text.encode("utf-8")
-            if len(content) > attach_text.MAX_INLINE_TEXT_BYTES:
-                raise ValueError(
-                    f"content_text가 너무 큽니다 ({len(content):,}바이트) — 이 칸의 "
-                    f"상한은 {attach_text.MAX_INLINE_TEXT_BYTES:,}바이트입니다. "
-                    "이보다 큰 파일은 file_path로 주거나 "
-                    "namu_create_upload_ticket으로 올리세요."
-                )
-        else:
-            try:
-                content = base64.b64decode(content_base64 or "", validate=True)
-            except (ValueError, binascii.Error) as exc:
-                raise ValueError(
-                    f"content_base64를 읽지 못했습니다: {exc} — 파일 내용을 base64로 "
-                    "실어 보내세요."
-                ) from None
+        content = content_text.encode("utf-8")
+        if len(content) > attach_text.MAX_INLINE_TEXT_BYTES:
+            raise ValueError(
+                f"content_text가 너무 큽니다 ({len(content):,}바이트) — 이 칸의 "
+                f"상한은 {attach_text.MAX_INLINE_TEXT_BYTES:,}바이트입니다. "
+                "이보다 큰 파일은 file_path로 주거나 "
+                "namu_create_upload_ticket으로 올리세요."
+            )
 
     meta = normalize_attach_meta({
         "summary": summary, "reason": reason, "body": body,
