@@ -17,6 +17,7 @@ import pytest
 import config as cfg
 import db as _db
 import profile as _profile
+import task_resolve
 
 
 def _isolate_cfg(monkeypatch, tmp_path):
@@ -180,8 +181,12 @@ def test_search_bowl_tasks(monkeypatch, tmp_path, fake_home):
         result = _db.search_bowl(conn, bowl="tasks")
 
     assert result["bowl"] == "tasks"
-    assert result["count"] == 1
-    assert result["results"][0]["text"] == "코어 조회 계층 설계"
+    # 작업일지 그릇에는 log.md 줄과 task.md 한 장이 함께 담긴다(2026-08-08) —
+    # `_make_pool_task`이 두 파일을 다 만들므로 걸러내지 않으면 2건이다.
+    assert result["count"] == 2
+    assert {e["tag"] for e in result["results"]} == {"결정", task_resolve.TASK_DOC_TAG}
+    logs = [e for e in result["results"] if e["tag"] != task_resolve.TASK_DOC_TAG]
+    assert logs[0]["text"] == "코어 조회 계층 설계"
     assert "summary" not in result
 
 
@@ -287,8 +292,9 @@ def test_search_bowl_tasks_with_project_is_allowed(monkeypatch, tmp_path, fake_h
         _db.init_db()
         result = _db.search_bowl(conn, bowl="tasks", project="namu-agent")
 
-    assert result["count"] == 1
-    assert result["results"][0]["project"] == "namu-agent"
+    # 축은 일지 줄과 설명서에 똑같이 걸린다 — 걸러진 뒤 남은 것이 모두 그 방이면 된다.
+    assert result["count"] > 0
+    assert {e["project"] for e in result["results"]} == {"namu-agent"}
 
 
 # ---------------------------------------------------------------------------

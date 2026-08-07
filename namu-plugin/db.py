@@ -315,15 +315,20 @@ def cache_is_stale(yaml_path, db_path) -> bool:
 def _bowl_source_files(bowl: str, paths: "cfg.DataPaths") -> list:
     """그 그릇의 원본 파일 목록. **낡음 판정과 재색인이 같은 목록을 본다.**
 
-    작업일지만 파일이 여럿이다(개인 풀의 log.md 전부, 2026-08-08 기준 84개). 목록
-    자체가 판정 근거에 들어가야 새 작업 폴더가 생긴 것도 낡음으로 잡힌다.
+    작업일지만 파일이 여럿이다(개인 풀의 log.md와 task.md 전부, 2026-08-08 기준
+    각 84개). 목록 자체가 판정 근거에 들어가야 새 작업 폴더가 생긴 것도 낡음으로
+    잡힌다. **task.md도 반드시 함께 훑는다** — 색인에는 담고 판정에서 빼면, 설명서만
+    고쳐 쓴 경우(완료조건 체크 등) 서명이 그대로라 색인이 영영 안 따라온다.
 
     첨부 기록은 yaml 한 장뿐이다 — 사용자 저장소(attach_file/)는 여기 절대 들어오지
     않는다(설계서 9.3).
     """
     if bowl == "tasks":
         try:
-            return sorted(task_resolve._tasks_pool_root().glob("*/*/log.md"))
+            pool = task_resolve._tasks_pool_root()
+            return sorted(
+                list(pool.glob("*/*/log.md")) + list(pool.glob("*/*/task.md"))
+            )
         except OSError:
             return []
     if bowl == "memo":
@@ -384,9 +389,18 @@ def _bowl_rows(bowl: str, paths: "cfg.DataPaths") -> list[tuple]:
     rows: list[tuple] = []
 
     if bowl == "tasks":
-        # 작업일지의 단위는 레코드가 아니라 log.md **한 줄**이다. journal()이 이미
-        # 그 형태로 파싱하고 시간 역순으로 세워 주므로 그대로 담는다.
-        for e in task_resolve.journal(project=None, limit=None):
+        # 작업일지 그릇에는 두 종류가 들어간다 — log.md **한 줄**(진행 기록)과
+        # task.md **한 장**(작업 설명서, 2026-08-08 사용자 결정). 단위가 다른 것을
+        # 한 그릇에 섞는 이유는 찾는 사람 쪽 사정이다: "그 작업이 뭐였지"와 "그때
+        # 무슨 일이 있었지"는 같은 질문의 앞뒤라, 그릇을 갈라 두면 둘 다 뒤져야 한다.
+        # 구분은 tag 칸(`설명서`)이 지고, 반환 모양은 완전히 같다.
+        #
+        # 두 목록을 합친 뒤 journal()과 **같은 키로** 다시 세운다. 키가 같고 파이썬
+        # 정렬이 안정 정렬이라 일지 줄끼리의 상대 순서는 합치기 전과 글자 그대로
+        # 같다 — 설명서가 사이사이 끼어들 뿐 기존 결과가 재배열되지 않는다.
+        merged = task_resolve.journal(project=None, limit=None) + task_resolve.task_docs()
+        merged.sort(key=lambda e: (e["ts"], e["project"], e["task_slug"]), reverse=True)
+        for e in merged:
             rows.append((
                 None,
                 e.get("ts") or "",

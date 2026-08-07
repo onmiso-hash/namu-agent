@@ -284,6 +284,85 @@ def test_tasks_search_looks_into_the_detail_lines(paths, tasks_home):
 
 
 # ---------------------------------------------------------------------------
+# 작업 설명서(task.md) — 같은 그릇에 tag만 다르게 실린다 (2026-08-08)
+#
+# 왜 넣었나: 검색은 log.md만 봤고 실물 84개 작업 **전부** task.md에만 있는 줄을
+# 갖고 있었다. "그 작업이 뭐였지"(제목·목적·완료조건)가 낱말로 안 찾혔다.
+# ---------------------------------------------------------------------------
+
+def _task_md(tasks_home, project, slug, body):
+    d = tasks_home / project / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "task.md").write_text(body, encoding="utf-8")
+
+
+def test_task_doc_is_searchable(paths, tasks_home):
+    _task_md(tasks_home, "namu-agent", "namu-17-subagent-parity",
+             "# namu-17-subagent-parity — 네이티브 서브에이전트 대칭\n"
+             "📅 생성 2026-07-01 [hp] · 🔗 관련: __\n"
+             "\n## 완료조건\n- [x] 안내서 4종 검토\n")
+
+    got = search(paths, "tasks", query="네이티브 서브에이전트 대칭")
+    assert [e["task_slug"] for e in got["results"]] == ["namu-17-subagent-parity"]
+    # 완료조건처럼 본문에만 있는 줄도 걸린다(설명서를 넣은 이유 그 자체).
+    assert search(paths, "tasks", query="안내서 4종 검토")["count"] == 1
+
+
+def test_task_doc_is_tagged_so_it_is_distinguishable(paths, tasks_home):
+    """일지 줄과 한 목록에 섞이므로, 구분은 오직 tag 칸이 진다."""
+    _log(tasks_home, "namu-agent", "어떤작업",
+         ["[기록] 2026-08-01 10:00:00 hp · 공통낱말 들어간 일지"])
+    _task_md(tasks_home, "namu-agent", "어떤작업",
+             "# 어떤작업 — 공통낱말 들어간 설명서\n📅 생성 2026-08-01 [hp]\n")
+
+    tags = {e["tag"] for e in search(paths, "tasks", query="공통낱말")["results"]}
+    assert tags == {"기록", task_resolve.TASK_DOC_TAG}
+
+
+def test_editing_only_the_task_doc_refreshes_the_index(paths, tasks_home):
+    """설명서만 고쳐도 색인이 따라와야 한다.
+
+    낡음 판정이 log.md만 보면 완료조건에 체크만 한 경우 서명이 그대로라 색인이
+    영영 안 따라온다 — 조용히 옛 내용이 검색되는, 발견이 가장 늦는 종류의 결함이다.
+    """
+    _task_md(tasks_home, "namu-agent", "어떤작업", "# 어떤작업 — 첫판제목\n")
+    assert search(paths, "tasks", query="첫판제목")["count"] == 1
+
+    _task_md(tasks_home, "namu-agent", "어떤작업", "# 어떤작업 — 고친제목\n")
+    assert search(paths, "tasks", query="고친제목")["count"] == 1
+    assert search(paths, "tasks", query="첫판제목")["count"] == 0
+
+
+def test_task_doc_obeys_the_same_axes(paths, tasks_home):
+    """축(project·task·machine·since)은 일지 줄과 설명서에 똑같이 걸린다 —
+    한 그릇에 섞기로 한 이상 축이 종류마다 다르게 들으면 결과를 믿을 수 없다."""
+    _task_md(tasks_home, "namu-agent", "namu-57-refactor",
+             "# namu-57-refactor — 낱말하나\n📅 생성 2026-08-01 [hp] · 🔗 관련: __\n")
+    _task_md(tasks_home, "다른방", "namu-570-other",
+             "# namu-570-other — 낱말하나\n📅 생성 2026-08-05 [samsung] · 🔗 관련: __\n")
+
+    assert search(paths, "tasks", query="낱말하나")["count"] == 2
+    assert search(paths, "tasks", query="낱말하나", project="namu-agent")["count"] == 1
+    assert search(paths, "tasks", query="낱말하나", task="namu-57")["count"] == 1
+    assert search(paths, "tasks", query="낱말하나", machine="samsung")["count"] == 1
+    assert search(paths, "tasks", query="낱말하나", since="2026-08-03")["count"] == 1
+
+
+def test_task_doc_does_not_reorder_the_log_lines(paths, tasks_home):
+    """설명서는 사이사이 끼어들 뿐, 일지 줄끼리의 순서를 바꾸지 않는다."""
+    _log(tasks_home, "namu-agent", "가작업",
+         ["[기록] 2026-08-01 10:00:00 hp · 공통 첫 줄"])
+    _log(tasks_home, "namu-agent", "나작업",
+         ["[기록] 2026-08-03 10:00:00 hp · 공통 둘째 줄"])
+    logs_only = [e["ts"] for e in search(paths, "tasks", query="공통")["results"]]
+
+    _task_md(tasks_home, "namu-agent", "가작업",
+             "# 가작업 — 공통 설명서\n📅 생성 2026-08-02 [hp] · 🔗 관련: __\n")
+    got = search(paths, "tasks", query="공통")["results"]
+    assert [e["ts"] for e in got if e["tag"] != task_resolve.TASK_DOC_TAG] == logs_only
+
+
+# ---------------------------------------------------------------------------
 # 낡음 판정
 # ---------------------------------------------------------------------------
 

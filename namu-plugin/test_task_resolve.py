@@ -2,6 +2,7 @@ import os
 import pytest
 from pathlib import Path
 from task_resolve import (
+    TASK_DOC_TAG,
     _parse_log_line,
     _parse_log_ts,
     _line_tag,
@@ -13,9 +14,11 @@ from task_resolve import (
     journal,
     list_projects,
     open_tasks_briefing,
+    parse_task_doc,
     record_project_marker,
     resolve_active_task,
     strip_slug_prefix,
+    task_docs,
     task_title,
     tasks_root_for,
 )
@@ -707,6 +710,112 @@ def test_journal_via_filter(fake_home):
 
     all_rows = journal()
     assert {r["via"] for r in all_rows} == {"claude", None}
+
+
+# ---------------------------------------------------------------------------
+# task_docs / parse_task_doc — 작업 설명서(task.md)를 검색에 싣기 위한 조회.
+# journal()과 **같은 모양**을 돌려주는 것이 계약이며, 클라우드(회원별 폴더를 훑느라
+# 개인 풀 경로 규칙을 못 쓴다)는 parse_task_doc을 한 장씩 부른다.
+# ---------------------------------------------------------------------------
+
+
+def _write_task_doc(home: Path, project: str, slug: str, body: str) -> Path:
+    task_dir = home / ".namu" / "tasks" / project / slug
+    task_dir.mkdir(parents=True, exist_ok=True)
+    path = task_dir / "task.md"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_task_doc_shape_matches_a_journal_line(fake_home):
+    """칸 이름·개수가 journal() 줄과 완전히 같아야 한다 — 받는 쪽(플러그인·웹·
+    클라우드)이 한 목록에 섞어 놓고 tag만 보고 구분하기로 한 결정 때문이다."""
+    path = _write_task_doc(
+        fake_home,
+        "namu-agent",
+        "namu-70-briefing-pick-task",
+        "# namu-70-briefing-pick-task — 브리핑이 순서를 속이게 만든다\n"
+        "📅 생성 2026-07-31 [hp] · 🔗 관련: __\n"
+        "\n"
+        "## 목적\n"
+        "급한 작업이 뒷자리로 밀렸다\n"
+        "\n"
+        "## 완료조건\n"
+        "- [x] 이어서 할 작업을 지정할 수 있다\n",
+    )
+
+    entry = parse_task_doc(path, "namu-agent")
+    assert entry == {
+        "ts": "2026-07-31 00:00:00",
+        "project": "namu-agent",
+        "task_slug": "namu-70-briefing-pick-task",
+        "tag": TASK_DOC_TAG,
+        "machine": "hp",
+        "via": None,
+        # 제목에서 폴더명 접두는 걷어낸다(journal 소비자와 같은 규칙).
+        "text": "브리핑이 순서를 속이게 만든다",
+        "detail": "## 목적\n급한 작업이 뒷자리로 밀렸다\n\n## 완료조건\n"
+                  "- [x] 이어서 할 작업을 지정할 수 있다",
+    }
+
+
+def test_task_doc_keys_are_identical_to_journal_keys(pool):
+    """계약을 글자로 못 박는다 — 한쪽에 칸이 늘면 여기서 깨진다."""
+    assert set(task_docs()[0]) == set(journal()[0])
+
+
+def test_task_doc_ts_falls_back_to_the_first_log_line(fake_home):
+    """생성 줄이 없는 옛 설명서(실물 84장 중 3장)도 시각을 갖는다.
+
+    시각이 비면 정렬에서 맨 뒤로 밀리고 since/until 필터에서 통째로 빠진다 —
+    task.md는 불변이라 원본을 고쳐 해결할 수 없는 자리다.
+    """
+    _make_pool_task(
+        fake_home,
+        "namu-agent",
+        "namu-16-live-verify",
+        "# log\n[시작] 2026-06-28 09:30:00 samsung · 라이브 검증 착수\n",
+    )
+    # _make_pool_task이 만든 task.md에는 생성 줄이 없다.
+    entry = task_docs()[0]
+    assert entry["ts"] == "2026-06-28 09:30:00"
+    assert entry["machine"] == "samsung"
+
+
+def test_task_doc_ts_is_empty_when_nothing_says_when(fake_home):
+    _write_task_doc(fake_home, "namu-agent", "언제인지모름", "# 언제인지모름 — 제목\n")
+    entry = task_docs()[0]
+    assert entry["ts"] == ""
+    assert entry["machine"] is None
+
+
+def test_task_docs_merge_all_projects_newest_first(pool):
+    _write_task_doc(
+        pool, "onnamu-project", "deploy-1",
+        "# deploy-1 — 배포\n📅 생성 2026-07-30 [hp] · 🔗 관련: __\n",
+    )
+    rows = task_docs()
+    assert [r["ts"] for r in rows] == sorted((r["ts"] for r in rows), reverse=True)
+    assert {r["project"] for r in rows} == {"namu-agent", "onnamu-project"}
+    assert all(r["tag"] == TASK_DOC_TAG for r in rows)
+
+
+def test_task_docs_stay_out_of_the_journal(pool):
+    """설명서는 **활동이 아니다.** journal()에 섞이면 오늘 아무 일도 없던 작업
+    84개가 브리핑의 "최근 활동"과 마무리 검사에 나타나 답이 망가진다."""
+    assert task_docs()
+    assert all(r["tag"] != TASK_DOC_TAG for r in journal())
+
+
+def test_task_doc_creation_line_is_read_only_from_the_head(fake_home):
+    """본문에 적힌 `생성 2026-...` 서술을 생성 시각으로 오인하지 않는다."""
+    _write_task_doc(
+        fake_home, "namu-agent", "본문에날짜",
+        "# 본문에날짜 — 제목\n"
+        "📅 생성 2026-07-01 [hp] · 🔗 관련: __\n"
+        "\n## 목적\n색인을 생성 2026-01-01에 만들기로 했다\n",
+    )
+    assert task_docs()[0]["ts"] == "2026-07-01 00:00:00"
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ _PROBE_TEMPLATE = """
 import sys
 sys.path.insert(0, {plugin_dir!r})
 import mcp_server
+import task_resolve
 
 class _FakeRequest:
     def __init__(self, query_params):
@@ -105,10 +106,13 @@ def test_namu_search_bowl_tasks_returns_journal(fake_home):
         fake_home, "proj-x", "namu-57",
         "# log\n[결정] 2026-07-25 10:00:00 hp · 코어 조회\n",
     )
+    # 작업일지 그릇에는 log.md 줄과 task.md 한 장이 함께 담기므로(2026-08-08),
+    # 일지 줄만 골라 본다 — 이 시험이 확인하려는 것은 journal 결과의 반환이다.
     result = _run_probe(
         fake_home,
         "r = mcp_server.namu_search(bowl='tasks', project='proj-x')\n"
-        "print('RESULT', r['bowl'], r['count'], r['results'][0]['text'])\n",
+        "logs = [e for e in r['results'] if e['tag'] != task_resolve.TASK_DOC_TAG]\n"
+        "print('RESULT', r['bowl'], len(logs), logs[0]['text'])\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "RESULT tasks 1 코어 조회" in result.stdout
@@ -128,11 +132,13 @@ def test_namu_search_stdio_default_project_is_cwd(tmp_path, fake_home):
     result = _run_probe(
         fake_home,
         "r = mcp_server.namu_search(bowl='tasks')\n"
-        "print('RESULT', r['count'], [e['project'] for e in r['results']])\n",
+        "print('RESULT', sorted(set(e['project'] for e in r['results'])))\n",
         cwd=cwd,
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "RESULT 1 ['my-proj']" in result.stdout
+    # 확인 대상은 "어느 방이 걸렸나"다 — 방마다 일지 줄과 설명서가 함께 나오므로
+    # 건수가 아니라 방 이름으로 본다(2026-08-08 설명서 색인 이후).
+    assert "RESULT ['my-proj']" in result.stdout
 
 
 def test_namu_search_web_default_project_merges_all(fake_home):
@@ -142,10 +148,10 @@ def test_namu_search_web_default_project_merges_all(fake_home):
     result = _run_probe(
         fake_home,
         "r = mcp_server.namu_search(bowl='tasks', ctx=_WEB_CTX)\n"
-        "print('RESULT', r['count'], sorted(e['project'] for e in r['results']))\n",
+        "print('RESULT', sorted(set(e['project'] for e in r['results'])))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "RESULT 2 ['proj-a', 'proj-b']" in result.stdout
+    assert "RESULT ['proj-a', 'proj-b']" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +168,11 @@ def test_namu_search_project_star_merges_all_even_on_stdio(tmp_path, fake_home):
     result = _run_probe(
         fake_home,
         "r = mcp_server.namu_search(bowl='tasks', project='*')\n"
-        "print('RESULT', r['count'], sorted(e['project'] for e in r['results']))\n",
+        "print('RESULT', sorted(set(e['project'] for e in r['results'])))\n",
         cwd=cwd,
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "RESULT 2 ['proj-a', 'proj-b']" in result.stdout
+    assert "RESULT ['proj-a', 'proj-b']" in result.stdout
 
 
 # ---------------------------------------------------------------------------

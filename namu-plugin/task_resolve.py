@@ -30,15 +30,27 @@ def _extract_next_section(text: str) -> str | None:
     return "\n".join(body).strip() or None
 
 
+def _title_from_text(text: str, fallback: str) -> str:
+    """task.md 본문(글자)에서 첫 번째 # 헤더를 뽑는다. 없으면 fallback.
+
+    파일이 아니라 글자를 받는 이유: 설명서를 통째로 읽어 둔 쪽(`parse_task_doc`)이
+    제목만 얻으려고 같은 파일을 한 번 더 열지 않게 하기 위해서다. 제목을 뽑는
+    규칙은 여기 하나뿐이어야 한다 — 두 벌이 되면 한쪽만 고쳐지는 종류의 결함이다.
+    """
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return fallback
+
+
 def _extract_task_title(task_md_path: Path) -> str:
     """task.md 첫 번째 # 헤더에서 제목 추출. 실패 시 폴더명 폴백."""
     try:
-        for line in task_md_path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("# "):
-                return line[2:].strip()
+        return _title_from_text(
+            task_md_path.read_text(encoding="utf-8"), task_md_path.parent.name
+        )
     except OSError:
-        pass
-    return task_md_path.parent.name
+        return task_md_path.parent.name
 
 
 def strip_slug_prefix(title: str, slug: str) -> str:
@@ -803,6 +815,134 @@ def journal(
     entries.sort(key=lambda e: (e["ts"], e["project"], e["task_slug"]), reverse=True)
     if limit is not None:
         entries = entries[:limit]
+    return entries
+
+
+# 작업 설명서(task.md)가 검색 결과에 실릴 때 다는 태그. log.md 줄의 태그
+# ([시작]·[단계]·[다음]…)와 **같은 자리**에 들어가되 겹치지 않는 이름이라, 읽는
+# 쪽이 "이 건은 일지 한 줄이 아니라 설명서 한 장"임을 바로 안다. 이 태그가 log.md에
+# 적히는 일은 없다 — 설명서는 파일이 따로 있고 append 대상이 아니다.
+TASK_DOC_TAG = "설명서"
+
+# task.md 머리의 생성 줄. 실물: `📅 생성 2026-07-31 [hp] · 🔗 관련: __`
+_TASK_DOC_CREATED_RE = re.compile(r"생성\s+(\d{4}-\d{2}-\d{2})(?:\s*\[([^\]]+)\])?")
+
+# 생성 줄은 머리말에만 있다. 본문까지 뒤지면 "## 목적" 안의 `생성 2026-...` 같은
+# 서술이 생성 시각으로 둔갑하므로 앞부분만 본다.
+_TASK_DOC_HEAD_LINES = 5
+
+
+def _task_doc_origin(text: str, task_dir: Path) -> tuple[str, str | None]:
+    """설명서의 (ts, machine). 생성 줄이 없으면 log.md의 가장 이른 줄로 대신한다.
+
+    ts는 log 줄과 같은 폭(`YYYY-MM-DD HH:MM:SS`)으로 맞춘다 — 두 종류가 한 목록에
+    섞여 정렬·범위 필터를 함께 타므로 폭이 다르면 사전순 비교가 어긋난다(날짜만
+    적힌 `2026-07-31`은 `2026-07-31 00:00:00`보다 **작다**).
+
+    폴백이 필요한 이유(실측 2026-08-08): 실물 84장 중 3장(namu-16·39·40)에는 생성
+    줄이 없다. 이 머리말 형식이 굳기 전에 만들어졌고 task.md는 불변이라 고칠 수도
+    없다. 시각이 비면 정렬에서 맨 뒤로 밀리고 since/until 필터에서 통째로 빠지므로,
+    그 task가 처음 기록된 시각을 대신 쓴다 — 생성 시각의 가장 정확한 근사이고 셋 다
+    log.md 첫 줄에 시각이 있는 것을 확인했다.
+    """
+    for line in text.splitlines()[:_TASK_DOC_HEAD_LINES]:
+        match = _TASK_DOC_CREATED_RE.search(line)
+        if match:
+            return f"{match.group(1)} 00:00:00", match.group(2)
+
+    try:
+        log_lines = (task_dir / "log.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return "", None
+    parsed = [p for p in (_parse_log_line(line) for line in log_lines) if p]
+    if not parsed:
+        return "", None
+    earliest = min(parsed, key=lambda p: p["ts"])
+    return earliest["ts"], earliest["machine"]
+
+
+def parse_task_doc(task_md_path: Path, project: str) -> dict[str, str | None] | None:
+    """task.md 한 장 → journal() 줄과 **같은 모양**의 항목 하나. 못 읽으면 None.
+
+    단위가 줄이 아니라 문서 한 장인 이유(2026-08-08 사용자 결정): 설명서는 제목·목적·
+    완료조건이 한 덩어리로 하나의 답을 이룬다. 줄로 쪼개면 `- [x] 안내서 4종 검토`
+    한 줄만 걸려 그게 어느 작업의 무엇인지 알 수 없고, 검색 대상 줄이 625줄에서
+    2,091줄로 불어나 log.md 쪽 결과까지 묻힌다.
+
+    반환 모양을 journal()과 같게 맞추는 이유: 이 결과를 받는 곳(플러그인·웹·클라우드)
+    이 세 군데인데, 새 모양을 만들면 세 곳을 다 고쳐야 하고 안 고친 곳에서는 설명서가
+    조용히 사라진다. 같은 모양에 tag만 `설명서`로 다르면 안 고친 곳도 그대로 뜬다.
+
+    `project`를 인자로 받는 이유: 클라우드는 회원별 폴더를 훑느라 개인 풀 경로 규칙을
+    못 쓴다. 파싱 규칙만 여기서 내주면 그쪽이 함수를 베끼지 않아도 되고, 베끼는 순간
+    두 서버가 갈라지는 일(2026-08-08 작업일지 검색에서 실제로 겪었다)을 막는다.
+    """
+    try:
+        raw = task_md_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    task_dir = task_md_path.parent
+    slug = task_dir.name
+    ts, machine = _task_doc_origin(raw, task_dir)
+    title = strip_slug_prefix(_title_from_text(raw, slug), slug)
+
+    # 화면에 실을 한 줄은 제목, 나머지(목적·완료조건)는 detail — journal()의
+    # `_display_text`와 같은 역할 분담이다. 머리말 두 줄(제목·생성)은 이미 다른
+    # 칸으로 갔으므로 detail에서 뺀다.
+    body_lines = [
+        line
+        for line in raw.splitlines()
+        if not line.startswith("# ") and not _TASK_DOC_CREATED_RE.search(line)
+    ]
+    detail = "\n".join(body_lines).strip()
+
+    return {
+        "ts": ts,
+        "project": project,
+        "task_slug": slug,
+        "tag": TASK_DOC_TAG,
+        "machine": machine,
+        # 설명서에는 `(via ...)` 꼬리표가 없다 — 사람이 만든 문서이지 AI가 남긴
+        # 로그 줄이 아니므로 출처 라벨이 애초에 붙지 않는다.
+        "via": None,
+        "text": title,
+        "detail": detail,
+    }
+
+
+def task_docs(project: str | None = None) -> list[dict[str, str | None]]:
+    """개인 풀의 task.md 전부를 journal()과 같은 모양으로 합쳐 최신순 반환한다.
+
+    journal()에 합치지 않고 함수를 나눈 이유: journal()은 검색만 쓰는 게 아니라
+    브리핑의 "최근 활동"과 마무리 검사(closing_guard)도 함께 쓴다. 설명서를 거기
+    섞으면 오늘 아무 일도 없던 작업 84개가 활동 목록에 나타나 "어제 무슨 일이
+    있었나"의 답이 망가진다. 설명서가 필요한 곳은 검색뿐이라 합류 지점도 검색
+    색인 한 곳(`db._bowl_rows`)뿐이다.
+
+    필터 인자를 두지 않은 이유: 이 결과는 색인에 통째로 담기고 걸러내기는 SQL이
+    한다(설계서 6장 5단계). 여기에 파이썬 필터를 또 두면 같은 규칙이 두 벌이 된다.
+
+    stdlib 전용 유지 — journal()과 같은 모듈 규약이다.
+    """
+    if project is None:
+        targets = [(name, _tasks_pool_root() / name) for name in list_projects()]
+    else:
+        root = tasks_root_for(project)
+        targets = [(root.name, root)]
+
+    entries: list[dict[str, str | None]] = []
+    for project_name, tasks_root in targets:
+        try:
+            doc_files = sorted(tasks_root.glob("*/task.md"))
+        except OSError:
+            continue
+        for doc_path in doc_files:
+            entry = parse_task_doc(doc_path, project_name)
+            if entry is not None:
+                entries.append(entry)
+
+    entries.sort(key=lambda e: (e["ts"], e["project"], e["task_slug"]), reverse=True)
     return entries
 
 

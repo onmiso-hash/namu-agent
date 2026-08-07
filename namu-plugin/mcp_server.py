@@ -629,7 +629,10 @@ def namu_search(
     Bowls (`bowl`):
       - 'learnings' (default): task outcomes/reasons/notes. Adds a trend
         summary {success/failure/partial counts}.
-      - 'tasks': project work-log lines (log.md, merged across machines).
+      - 'tasks': project work-log lines (log.md, merged across machines) PLUS
+        each task's brief (task.md — its title, purpose and done-criteria),
+        which comes back as one whole entry tagged '설명서'. Use it to answer
+        "what was that task about?", not just "what happened when".
         `project` picks a project by folder name (e.g. 'namu-agent'); omit
         it to default to "here" on stdio or "all projects merged" on the
         web (no cwd there). `project='*'` forces "all projects" explicitly
