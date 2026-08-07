@@ -18,6 +18,8 @@ Just click — no code reading required. The guides are written in Korean.
 | [🌐 Self-host it on the web](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | Browser route, but you run the server yourself |
 | [📐 Memory architecture](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) | Where memory lives and what shape it takes |
 | [⚙️ Workflow architecture](https://onmiso-hash.github.io/namu-agent/docs/workflow_architecture.html) | The other half — how work is ordered, and where it stops for you |
+| [📎 File attachments](docs/attach_files.md) | Uploading/downloading files to your own repo, and the isolation rule you must not break |
+| [🔎 Unified search](docs/search_index_unify.md) | How all five bowls ended up behind one SQLite index |
 
 ## What NAMU actually does
 
@@ -42,16 +44,16 @@ flowchart LR
 
 ## Support status — where you can use NAMU today
 
-NAMU is two halves — **memory** (4 bowls + task journals) and **the working
-procedure** (session briefing, `/namu-task`, workers, statusLine, guard hooks).
-Memory attaches anywhere that accepts an MCP address; the procedure needs a
-**host-specific plugin envelope** built for it.
+NAMU is two halves — **memory** (5 bowls + task journals + file attachments) and
+**the working procedure** (session briefing, `/namu-task`, workers, statusLine,
+guard hooks). Memory attaches anywhere that accepts an MCP address; the
+procedure needs a **host-specific plugin envelope** built for it.
 
 | Client | How it attaches | 🧠 Memory | ⚙️ Working procedure | |
 |---|---|---|---|---|
-| **Claude Code** (terminal) | plugin | full (7 tools) | full | ✅ supported |
-| **agy** (terminal, Antigravity CLI) | plugin | full (7 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
-| **claude.ai** (web) | MCP address | full (4 bowls + journals) | not yet | ✅ supported |
+| **Claude Code** (terminal) | plugin | full (14 tools) | full | ✅ supported |
+| **agy** (terminal, Antigravity CLI) | plugin | full (14 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
+| **claude.ai** (web) | MCP address | full (5 bowls + journals + attachments, 10 tools) | not yet | ✅ supported |
 | ChatGPT · Gemini (web) · Copilot · Cursor, etc. | — | not yet | not yet | ⏳ not wired up |
 
 - **"Not yet" does not mean the client can't do it — it means NAMU hasn't taken
@@ -62,9 +64,10 @@ Memory attaches anywhere that accepts an MCP address; the procedure needs a
   re-injecting standing reminders (UserPromptSubmit). agy has no matching events,
   so only these two are missing (namu-62). Its session briefing ships separately
   as a PreInvocation hook and does work.
-- Over an MCP address the exposed tools are `namu_recall`/`namu_record`/`namu_search`.
-  Removing sticky notes, bookmarks, and sync setup are plugin-only — but all four
-  bowls and the task journals are fully readable and writable.
+- Over an MCP address 10 of the 14 tools are exposed: the three memory tools
+  (`namu_recall`/`namu_record`/`namu_search`) plus the seven attachment tools.
+  Removing sticky notes, bookmarks, and sync setup are plugin-only — but all
+  five bowls and the task journals are fully readable and writable.
 - The Claude Code row was measured directly (same folder, plugin on vs. off);
   the agy row reflects what the plugin ships.
 
@@ -93,23 +96,43 @@ that differs is the registration format each engine requires.
 
 ## Architecture overview
 
-- **Four bowls** — learnings (`learnings.yaml`), personal facts
-  (`profile.yaml`), task journals (`tasks/<project>/log.md`), and sticky
-  notes (`memo.yaml`). Every entry has the same three layers: `summary`
-  (what), `reason` (why), `body` (what actually happened). Only the sticky
-  notes bowl is erasable; the rest are append-only.
+- **Five bowls** — learnings (`learnings.yaml`), personal facts
+  (`profile.yaml`), task journals (`tasks/<project>/log.md`), sticky notes
+  (`memo.yaml`), and the attachment log (`attachments.yaml`). Every entry has
+  the same three layers: `summary` (what), `reason` (why), `body` (what
+  actually happened). Only the sticky notes bowl is erasable; the rest are
+  append-only.
 - **Source of truth** — everything under `~/.namu`. The data root is a fixed
   constant, so it is the same path no matter which project you run from
   (namu-35).
-- **SQLite (FTS5) search cache** — a regenerable local index over
-  `learnings.yaml`. It is gitignored, and rebuilds itself on boot when it
-  detects a count mismatch against the YAML.
+- **SQLite (FTS5) search cache — all five bowls.** Learnings keep their own
+  table (`learnings` + `learnings_fts`); the other four each get an
+  identically shaped pair (`bowl_<name>` + `bowl_<name>_fts`, trigram). It is
+  gitignored and fully regenerable from the source files. Staleness is judged
+  per bowl by one signature over its source files' size and mtime, so only the
+  bowl that actually changed is rebuilt (session start, server boot, and right
+  after a pull). Queries are **AND across whitespace-separated tokens**; a
+  query containing a token under 3 characters skips the index and falls back
+  to a full LIKE scan, because trigram cannot match two characters at all.
 - **Task state, two files** — `task.md` (immutable purpose) and `log.md`
   (append-only, authoritative). "What's next" is the last `[다음]` line;
-  the only lines that close a task are `[완료]` and `[중단]`.
-- **7 MCP tools** — `namu_recall`, `namu_search`, `namu_record`,
-  `namu_memo_remove`, `namu_task_pin`, `namu_task_unpin`,
-  `namu_sync_setup`. Only the first three are exposed over remote MCP.
+  the only lines that close a task are `[완료]` and `[중단]`. Searching the
+  tasks bowl returns log lines **and** each task's brief as one whole entry
+  tagged `설명서`.
+- **File attachments** — files go into `attach_file/` in *your own* synced
+  repo, never onto a NAMU server. That folder is sparse-checkout isolated on
+  each PC so the bodies never come down, while the attachment log travels
+  everywhere. One-time ticket URLs let a file body move without passing
+  through the AI's output at all. **File sizes are always read from the
+  attachment log, never asked of the repository** — asking git makes it fetch
+  every missing body and the isolation collapses.
+- **14 MCP tools** — memory: `namu_recall`, `namu_search`, `namu_record`,
+  `namu_memo_remove`, `namu_task_pin`, `namu_task_unpin`, `namu_sync_setup`;
+  attachments: `namu_upload_file`, `namu_list_files`, `namu_download_file`,
+  `namu_delete_file`, `namu_create_upload_ticket`,
+  `namu_create_download_ticket`, `namu_check_ticket`. Remote MCP exposes 10 —
+  everything except the four plugin-only tools (`namu_memo_remove`,
+  `namu_task_pin`, `namu_task_unpin`, `namu_sync_setup`).
 - **Worker layer** — `namu-coder`/`namu-reviewer` subagents exist in each
   engine's native format with identical system prompts. The `/namu-task`
   skill orchestrates them.

@@ -9,12 +9,15 @@ NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code
 
 | 파일 | 역할 |
 |------|------|
-| `mcp_server.py` | FastMCP 메모리 서버. MCP 도구 7종(`namu_recall`/`namu_search`/`namu_record`/`namu_memo_remove`/`namu_task_pin`/`namu_task_unpin`/`namu_sync_setup`) 노출, stdio 전송 |
-| `http_server.py` | 셀프호스팅용 HTTP 서버. 같은 코어를 원격에 노출하되 도구를 3종(`recall`/`record`/`search`)으로 제한한다(`HTTP_EXPOSED_TOOLS`) |
-| `db.py` | `~/.namu/memory/learnings.yaml` ↔ SQLite 코어. 읽기(recall/search)는 conn 인자를 받고, 쓰기(record/init_db/rebuild)는 함수 내부에서 conn을 열고 닫는다 |
+| `mcp_server.py` | FastMCP 메모리 서버. MCP 도구 14종 노출, stdio 전송 — 기억 7종(`namu_recall`/`namu_search`/`namu_record`/`namu_memo_remove`/`namu_task_pin`/`namu_task_unpin`/`namu_sync_setup`) + 첨부 7종(`namu_upload_file`/`namu_list_files`/`namu_download_file`/`namu_delete_file`/`namu_create_upload_ticket`/`namu_create_download_ticket`/`namu_check_ticket`) |
+| `http_server.py` | 셀프호스팅용 HTTP 서버. 같은 코어를 원격에 노출하되 10종으로 제한한다(`HTTP_EXPOSED_TOOLS` — 기억 3종 + 첨부 7종). 빠지는 넷은 플러그인 전용이다: `namu_sync_setup`(서버의 저장소 배선을 바꿔 remote 탈취로 이어짐)과 쪽지 떼기·책갈피 2종 |
+| `db.py` | `~/.namu/memory/learnings.yaml` ↔ SQLite 코어 + **다섯 그릇 색인**(`ensure_indexes`·`_bowl_signature`·`_bowl_rows`·`search_bowl`). 읽기(recall/search)는 conn 인자를 받고, 쓰기(record/init_db/rebuild)는 함수 내부에서 conn을 열고 닫는다. 낱말 규칙(`query_tokens`·`matches_all_tokens`)은 **공개 함수로 내준다** — 색인을 못 타는 경로가 규칙을 베껴 가면 두 서버가 갈라지기 때문(`docs/search_index_unify.md` 10.6) |
 | `config.py` | 경로·`NAMU_MACHINE`·그릇 레지스트리(`BOWLS`)·기록 칸 정의(`FIELDS`) 일원화. 데이터 루트는 고정 상수 `NAMU_DATA_ROOT`(`~/.namu`, namu-35로 환경변수 분기 폐지). 기록 시각은 반드시 `cfg.now()` |
-| `memo.py` | 쪽지 그릇(namu-56). 유일한 mutable 저장소이며 SQLite 색인을 하지 않는다 |
+| `memo.py` | 쪽지 그릇(namu-56). 유일한 mutable 저장소. **자기 표를 갖고 색인된다** — namu-56이 금지한 것은 "교훈 색인에 섞이는 것"이지 색인을 갖는 것이 아니었다 |
 | `profile.py` | 개인 사실 그릇. `상시` 태그가 붙은 항목은 매 입력마다 재주입된다 |
+| `attachments.py` | 첨부 기록 그릇(`attachments.yaml`). 파일 **이력만** 담고 몸통은 없다. append-only라 "지금 살아 있는 파일 목록"은 `status`(올림/새 판/지움)를 훑어 계산한다(`current_files`). `bytes` 칸이 필수인 이유가 이 그릇의 급소다 |
+| `attach_local.py` · `attach_text.py` | 첨부 파일을 회원 저장소 `attach_file/`에 넣고 빼는 git 조작(`--sparse` 계열) / 글자 원문을 파일로 만드는 경로 |
+| `tickets.py` · `ticket_web.py` | 일회용 올리기·받기 주소. 파일 몸통이 AI의 출력을 안 거치게 하는 길이며, 티켓 주소는 **인증 미들웨어 바깥**에 선다(추측 불가능한 티켓 번호 자체가 그 자리의 인증) |
 | `memory_sync.py` | `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작. `.gitattributes` union 라인은 `config.BOWLS`에서 파생된다 |
 | `task_resolve.py` | stdlib-only 활성 task 탐색(`log.md` 타임스탬프 기준 단일 출처). statusLine과 `session_context.py`가 공용으로 import |
 | `record_input.py` | `namu_record`의 입력 정규화·검증과 도구 설명문 생성(`tool_description()`) |
@@ -63,4 +66,6 @@ uv run --script mcp_server.py
 
 - [기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) — 다섯 그릇·3층 기록·원격 두 경로
 - [`docs/memory_schema_v2.md`](../docs/memory_schema_v2.md) — 현행 기록 구조 설명서. **기록 관련 작업 전 반드시 읽을 것**
+- [`docs/attach_files.md`](../docs/attach_files.md) — 첨부 기능 완료 보고서. **첨부 관련 작업 전 반드시 읽을 것**(특히 4절 "크기를 저장소에 물으면 격리가 뚫린다")
+- [`docs/search_index_unify.md`](../docs/search_index_unify.md) — 다섯 그릇 색인 통일. **검색 관련 작업 전 반드시 읽을 것**
 - [루트 README](../README.ko.md) — 폴더 구조·개발용 셋업·버전 bump 규율
