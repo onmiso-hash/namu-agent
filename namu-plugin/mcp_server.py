@@ -958,7 +958,7 @@ def _attach_record(path: str, size: int, status: str, summary, reason, body,
 def namu_upload_file(
     summary: str,
     reason: str,
-    body: str,
+    body: str | None = None,
     file_path: str | None = None,
     content_base64: str | None = None,
     name: str | None = None,
@@ -978,9 +978,11 @@ def namu_upload_file(
       - `content_base64`: the file's bytes, base64-encoded, plus `name`.
 
     Args:
-      summary/reason/body: required, same as any memory — what this file is, why
-        it was kept, the full story. The file body is NOT synced to the user's
-        other PCs, so this note is the only way to find it again later.
+      summary: what this file is (required)
+      reason: why it was kept (required). The file body is NOT synced to the
+        user's other PCs, so summary+reason are the only way to find it later.
+      body: optional — for an attachment the file itself IS the full story. Add
+        it only when there is context the file does not carry.
       name: the name to store it under. Required with content_base64; with
         file_path it defaults to the file's own name.
       topic/project/tags: optional, same meaning as in namu_record
@@ -988,7 +990,10 @@ def namu_upload_file(
       that name already existed in the repository.
     """
     via = _resolve_via(ctx)
-    for field_name, value in (("summary", summary), ("reason", reason), ("body", body)):
+    # body가 선택인 이유는 클라우드 쪽 같은 도구의 주석 참고(2026-08-07 실사용에서
+    # 필수로 뒀다가 재시도 폭주를 겪었다).
+    body = (body or "").strip() or cfg.OMITTED
+    for field_name, value in (("summary", summary), ("reason", reason)):
         if not (value or "").strip():
             raise ValueError(
                 f"'{field_name}'은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
