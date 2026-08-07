@@ -150,8 +150,9 @@ def test_memo_remove_is_exposed_as_its_own_tool(fake_home):
         "print('RESULT', 'namu_memo_remove' in names, len(names))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    # 7 = recall/search/record/memo_remove/sync_setup + 책갈피 2종(namu-70)
-    assert "RESULT True 7" in result.stdout
+    # 11 = recall/search/record/memo_remove/sync_setup + 책갈피 2종(namu-70)
+    #      + 첨부 4종(namu-file-upload-download: 올리기·목록·받기·지우기)
+    assert "RESULT True 11" in result.stdout
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,9 @@ import config as cfg
 STATUS_UPLOADED = "올림"
 STATUS_REVISED = "새 판"
 STATUS_REMOVED = "지움"
+# 받기(내려받기)는 일부러 기록하지 않는다 — 2026-08-07 사용자 결정. 파일 자체가
+# 달라지지 않는 일이고, 웹에서는 회원이 실제로 손에 넣었는지까지 서버가 알 수 없어
+# 반쪽만 남는다. 반쪽짜리 기록은 "받은 적 없다"로 잘못 읽히기 쉽다.
 VALID_STATUSES = (STATUS_UPLOADED, STATUS_REVISED, STATUS_REMOVED)
 
 

@@ -9,6 +9,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
+import attach_local
 import attachments
 import config as cfg
 import memo
@@ -930,6 +931,196 @@ def namu_sync_setup(remote_url: str) -> str:
     Returns: human-readable result string (per-step success/failure notes)
     """
     return memory_sync.sync_setup(remote_url)
+
+
+# ---------------------------------------------------------------------------
+# 첨부 파일 네 도구 (namu-file-upload-download 5·6단계)
+#
+# 파일은 `~/.namu`의 git 저장소를 통해 회원 본인 GitHub 저장소와 오간다. 첨부 폴더는
+# 이 PC에서 격리돼 있어 평범한 git 명령이 통하지 않는다 — 어떤 명령이 왜 필요한지는
+# attach_local 모듈 docstring의 실측 표에 있다.
+#
+# 기록은 도구가 직접 남긴다(namu_record로 아무나 쓰게 두지 않는다) — 실제 파일 없이
+# 기록만 있는 유령 항목이 생기면 목록이 거짓말을 한다.
+# ---------------------------------------------------------------------------
+def _attach_record(path: str, size: int, status: str, summary, reason, body,
+                   topic, project, tags, via) -> str:
+    return attachments.record_attachment(
+        path=path, bytes_=size, status=status,
+        summary=summary, reason=reason, body=body,
+        topic=topic, project=project, tags=_normalize_tags(tags), via=via,
+    )
+
+
+@mcp.tool()
+def namu_upload_file(
+    file_path: str,
+    summary: str,
+    reason: str,
+    body: str,
+    name: str | None = None,
+    topic: str | None = None,
+    project: str | None = None,
+    tags: list[str] | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Upload one file from this computer into the user's own GitHub repository
+    (under attach_file/) and log it in the attachments bowl.
+
+    Unlike the cloud tool, this one takes a path on disk — on a terminal the
+    file is already here, so reading it through the model would only corrupt it.
+
+    Args:
+      file_path: path of the file to upload (absolute, or relative to cwd)
+      summary/reason/body: required, same as any memory — what this file is, why
+        it was kept, the full story. The file body is NOT synced to the user's
+        other PCs, so this note is the only way to find it again later.
+      name: store it under a different name (default: the file's own name)
+      topic/project/tags: optional, same meaning as in namu_record
+    Returns: {"id", "path", "bytes", "status"} — status is '올림', or '새 판' if
+      that name already existed in the repository.
+    """
+    via = _resolve_via(ctx)
+    src = Path(file_path).expanduser()
+    if not src.is_file():
+        raise ValueError(f"그런 파일이 없습니다: {src}")
+    for field_name, value in (("summary", summary), ("reason", reason), ("body", body)):
+        if not (value or "").strip():
+            raise ValueError(
+                f"'{field_name}'은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
+                "내려오지 않으므로, 나중에 이 파일을 찾는 단서는 이 설명뿐입니다."
+            )
+
+    content = src.read_bytes()
+    stored_name = (name or src.name).strip() or src.name
+    result = attach_local.upload(
+        stored_name, content, attach_local.commit_message("올림", stored_name)
+    )
+    status = "새 판" if result["replaced"] else "올림"
+    entry_id = _attach_record(
+        result["path"], result["bytes"], status, summary, reason, body,
+        topic, project, tags, via,
+    )
+    memory_sync.sync_push(f"attach: {result['path']} ({cfg.NAMU_MACHINE})")
+    return {
+        "id": entry_id, "path": result["path"],
+        "bytes": result["bytes"], "status": status,
+    }
+
+
+@mcp.tool()
+def namu_list_files(include_removed: bool = False, ctx: Context | None = None) -> dict:
+    """List the files uploaded to the user's repository, with sizes and the note
+    recorded at upload time.
+
+    Sizes come from the attachments log, never from the repository — asking the
+    repository for sizes makes git fetch every missing file body and breaks the
+    isolation that keeps attachments off this computer (measured 2026-08-07).
+
+    Args:
+      include_removed: also list files that were deleted, so "where did that
+        file go" can be answered (a deleted file keeps its log entry and reason)
+    Returns: {"files": [{"path","bytes","status","summary","reason","task",
+      "project","timestamp"}...], "count": N}
+    """
+    _resolve_via(ctx)
+    present = set(attach_local.list_paths())
+    latest: dict = {}
+    for entry in attachments.load_all():
+        if entry.get("path"):
+            latest[entry["path"]] = entry
+
+    rows = []
+    for path in sorted(present):
+        note = latest.get(path, {})
+        rows.append({
+            "path": path, "bytes": note.get("bytes"),
+            "status": note.get("status") or "올림",
+            "summary": note.get("summary"), "reason": note.get("reason"),
+            "task": note.get("task"), "project": note.get("project"),
+            "timestamp": note.get("timestamp"),
+        })
+    if include_removed:
+        for path, note in latest.items():
+            if path in present:
+                continue
+            rows.append({
+                "path": path, "bytes": note.get("bytes"),
+                "status": note.get("status") or "지움",
+                "summary": note.get("summary"), "reason": note.get("reason"),
+                "task": note.get("task"), "project": note.get("project"),
+                "timestamp": note.get("timestamp"),
+            })
+    rows.sort(key=lambda r: str(r.get("timestamp") or ""), reverse=True)
+    return {"files": rows, "count": len(rows)}
+
+
+@mcp.tool()
+def namu_download_file(
+    name: str,
+    save_to: str | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Fetch one uploaded file back and write it to disk.
+
+    Only that one file is pulled — the rest of the attachments stay off this
+    computer.
+
+    Args:
+      name: file name as shown by namu_list_files
+      save_to: where to write it (a folder, or a full path). Default: the
+        current directory.
+    Returns: {"path", "bytes", "saved_to"} — `saved_to` is the file on disk.
+      Downloads are deliberately not logged (the file does not change).
+    """
+    _resolve_via(ctx)
+    content = attach_local.download(name)
+    stored = attach_local.normalize_name(name)
+    dest = Path(save_to).expanduser() if save_to else Path.cwd()
+    if dest.is_dir() or not dest.suffix:
+        dest = dest / Path(stored).name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+    return {"path": stored, "bytes": len(content), "saved_to": str(dest)}
+
+
+@mcp.tool()
+def namu_delete_file(name: str, reason: str, ctx: Context | None = None) -> dict:
+    """Remove one uploaded file from the user's GitHub repository and log why.
+
+    ⚠ This is not an erase. Git keeps history, so anyone who walks back to a
+    commit before the deletion still finds the file. Say so plainly if the user
+    asks for it to be wiped — truly erasing it means rewriting the repository
+    history, which this tool does not do.
+
+    Args:
+      name: file name as shown by namu_list_files
+      reason: why it is being removed — required, because the log outlives the
+        file and this line is what answers "where did that file go"
+    Returns: {"id", "path", "status"}
+    """
+    via = _resolve_via(ctx)
+    if not (reason or "").strip():
+        raise ValueError(
+            "'reason'(왜 빼는지)은 필수입니다 — 파일은 사라져도 기록은 남으므로, "
+            "나중에 '그 자료 어디 갔지'에 답할 수 있는 것은 이 한 줄뿐입니다."
+        )
+    path = attach_local.normalize_name(name)
+    # 크기·설명은 마지막 기록에서 물려받는다 — 파일이 사라진 뒤에는 크기를
+    # 물어볼 곳이 없고, 첨부 기록의 bytes는 비워 둘 수 없는 칸이다.
+    last = {}
+    for entry in attachments.load_all():
+        if entry.get("path") == path:
+            last = entry
+    attach_local.delete(name, attach_local.commit_message("지움", path))
+    entry_id = _attach_record(
+        path, last.get("bytes") or 0, "지움",
+        last.get("summary") or f"{path} 를 저장소에서 뺐다", reason,
+        last.get("body") or "생략",
+        last.get("task"), last.get("project"), None, via,
+    )
+    memory_sync.sync_push(f"attach: {path} 지움 ({cfg.NAMU_MACHINE})")
+    return {"id": entry_id, "path": path, "status": "지움"}
 
 
 if __name__ == "__main__":
