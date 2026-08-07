@@ -25,8 +25,8 @@
 
 - `docs/plan.md` — NAMU 전체 계획·결정 이력·로드맵
 - `docs/mcp_memory_design.md` — MCP 메모리 서버 상세 설계 (스키마, SQLite 테이블, 도구 명세)
-- `docs/memory_schema_v2.md` — **기억 구조 v2 (namu-65, 2026-07-31 완료 · v0.1.43)**. 네 그릇 공통 3층(`summary`/`reason`/`body`), 입력 항목 19개→13개 통일. **현행 구조 설명서**이며 4장의 칸 표는 `config.FIELDS`에서 자동 생성된다(`python scripts/gen_field_docs.py`, 손으로 고치면 `test_field_docs.py` 실패) — 기록 관련 작업 전 반드시 읽을 것
-- `docs/search_index_unify.md` — **검색 통일 (2026-08-03 설계 확정 · 구현 미착수)**. 네 그릇을 모두 SQLite 색인으로 모으는 6단계 계획. 앞선 웹 설계문서의 전제 반증 근거, 두 글자 우회가 필수인 이유, 착수 전 확인된 파일·줄번호 표를 담았다 — 검색 관련 작업 전 반드시 읽을 것
+- `docs/memory_schema_v2.md` — **기억 구조 v2 (namu-65, 2026-07-31 완료 · v0.1.43)**. 모든 그릇 공통 3층(`summary`/`reason`/`body`), 입력 항목 19개→13개 통일. **현행 구조 설명서**이며 4장의 칸 표는 `config.FIELDS`에서 자동 생성된다(`python scripts/gen_field_docs.py`, 손으로 고치면 `test_field_docs.py` 실패) — 기록 관련 작업 전 반드시 읽을 것
+- `docs/search_index_unify.md` — **검색 통일 (2026-08-03 설계 확정 · 구현 미착수)**. 그릇을 모두 SQLite 색인으로 모으는 6단계 계획. 앞선 웹 설계문서의 전제 반증 근거, 두 글자 우회가 필수인 이유, 착수 전 확인된 파일·줄번호 표를 담았다 — 검색 관련 작업 전 반드시 읽을 것
 
 구현 작업 시 위 문서를 먼저 참조할 것.
 
@@ -36,6 +36,7 @@
 - **SQLite(`~/.namu/db/namu.db`)** = learnings.yaml를 인덱싱한 로컬 검색 캐시. gitignore 대상(namu_sync_setup이 자동 추가)이며, git pull 후 yaml↔db 항목 수 불일치를 감지하면 서버 부팅 시 자동 재생성된다.
 - **tasks(개인 풀 `~/.namu/tasks/<basename(프로젝트 폴더)>/`, namu-34)** = 작업 상태. `log.md`가 유일한 권위 기록이며 "다음 할 일"도 마지막 `[다음]` 태그 줄로 여기 남긴다(namu-57). `context.<machine>.md`는 레거시 읽기 폴백. **작업을 닫는 말은 `[완료]`·`[중단]` 둘뿐이다** — `[종료]`·`[마무리]` 같은 유의어는 저장은 되지만 닫지 못해 조용히 열린 채로 남으므로 `namu_record`가 거절한다(namu-66, 실물 사고: namu-37이 `[종료]`로 적혀 기록상 미종결). **책갈피(namu-70)** — "다음엔 이것부터"는 log가 아니라 `~/.namu/tasks/<방>/.pin.<machine>` 한 장에 적는다(`namu_task_pin`/`namu_task_unpin`). log에 적으면 ①append-only라 뗐다 붙였다를 표현할 수 없고 ②그 task의 `last_ts`가 갱신돼 **순서가 두 경로로 흔들린다** — 이 작업이 없애려던 "기록을 건드려 화면 순서를 바꾸는" 짓과 결과가 같아진다. 파일을 기기마다 가르는 것이 git 충돌 0의 근거이며(각 기기는 제 파일에만 쓴다), 여러 개면 최근에 꽂은 순으로 앞에 선다. 닫힌 task를 가리키는 책갈피는 파일을 지우지 않고도 화면에서 사라진다. 닫을 때 `task.md`에 안 채운 완료조건이 남아 있으면 반환문에 경고가 붙는다(막지는 않는다 — 이관·범위 축소는 정당한 종결 사유). 저장 위치는 학습 기억(`NAMU_DATA_ROOT`)과 별개 산출 기준(프로젝트 폴더명 basename)으로 정해지지만, 물리적으로는 같은 `~/.namu` 계열에 모인다.
 - **`~/.namu/memory/memo.yaml`(namu-56)** = 스틱노트. 위 그릇들과 **반대로 append-only가 아니다** — 떼면 그 항목이 사라진다. "영화 8시 20분" 같은 일회성 메모가 갈 곳이 없어 learnings.yaml로 밀려들어오던 문제를 끊기 위한 그릇이라, 검색 인덱스(SQLite)에 넣지 않는다. git은 `merge=union`이 아니라 파일 단위다(union은 삭제를 표현하지 못해 뗀 메모가 병합 때 되살아난다). 세션 브리핑 맨 앞과 `namu_recall` 반환의 `memo` 키로 다시 나타난다.
+- **`~/.namu/memory/attachments.yaml`(namu-file-upload-download 4단계)** = 첨부 기록. 사용자 저장소 `attach_file/`에 올린 파일의 **이력**만 담는다(몸통은 여기 없고, 그 폴더는 각 PC에서 sparse-checkout으로 격리돼 안 내려온다). append-only라 고치거나 지울 수 없으므로 **"지금 살아 있는 파일 목록"은 `status`(올림/새 판/지움)를 훑어 계산한다**(`attachments.current_files`). `bytes` 칸이 필수인 이유가 이 그릇의 급소다 — 목록 도구가 크기를 저장소에 물으면 git이 크기를 알아내려고 빠진 파일 몸통을 전부 내려받아 격리가 뚫린다(2026-08-07 실측: 파일 2,548개에 7분 넘게 안 끝나 중단).
 - **ID** = ULID — 시간순 정렬 + 오프라인 다중 PC git 머지 충돌 0.
 
 ### 그릇 레지스트리 (namu-57 3단계)

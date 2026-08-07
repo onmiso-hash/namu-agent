@@ -9,6 +9,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
+import attachments
 import config as cfg
 import memo
 import memory_sync
@@ -491,7 +492,7 @@ def _create_task_entry(
 
 
 _KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
-_VALID_RECORD_BOWLS = ("learnings", "tasks", "profile", "memo")
+_VALID_RECORD_BOWLS = ("learnings", "tasks", "profile", "memo", "attachments")
 
 
 def _resolve_record_bowl(bowl: str | None, kind: str) -> str:
@@ -508,10 +509,11 @@ def _resolve_record_bowl(bowl: str | None, kind: str) -> str:
         return inferred
     if bowl not in _VALID_RECORD_BOWLS:
         raise ValueError(f"bowl은 {list(_VALID_RECORD_BOWLS)} 중 하나여야 합니다: {bowl!r}")
-    if bowl in ("tasks", "memo"):
-        # kind와 무관한 그릇들 — tasks는 로그 한 줄, memo는 스틱노트 한 장이라
-        # lesson/note/fact 어디에도 속하지 않는다. kind 기본값('lesson')이 넘어와도
-        # 모순으로 보지 않는다(호출자가 kind를 줄 이유가 없는 경로다).
+    if bowl in ("tasks", "memo", "attachments"):
+        # kind와 무관한 그릇들 — tasks는 로그 한 줄, memo는 스틱노트 한 장,
+        # attachments는 올린 파일 한 건이라 lesson/note/fact 어디에도 속하지 않는다.
+        # kind 기본값('lesson')이 넘어와도 모순으로 보지 않는다(호출자가 kind를 줄
+        # 이유가 없는 경로다).
         return bowl
     inferred = _KIND_TO_BOWL.get(kind)
     if inferred is not None and inferred != bowl:
@@ -675,6 +677,9 @@ def namu_record(
     supersedes: str | None = None,
     create: bool = False,
     done_when: list[str] | None = None,
+    # ── 첨부 기록 전용 2칸 (namu-file-upload-download 4단계) ───────────────
+    path: str | None = None,
+    bytes: int | None = None,
     # ── 옛 이름 (그대로 불러도 새 칸으로 옮겨 저장한다) ───────────────────
     task: str | None = None,
     outcome: str | None = None,
@@ -698,7 +703,8 @@ def namu_record(
     (1) record_input.normalize가 그릇을 확정하고, 옛 이름을 새 이름으로 옮기고,
         그 그릇이 받지 않는 칸/빈 필수 칸/정해진 값 밖의 값을 거절한다.
     (2) 그릇별 저장 계층으로 넘긴다(교훈=db.record, 개인 사실=profile.record_fact,
-        쪽지=memo.add, 작업일지=log.md append).
+        쪽지=memo.add, 작업일지=log.md append,
+        첨부 기록=attachments.record_attachment).
     (3) 옮긴 내역(notices)을 반환문 뒤에 붙인다 — 옮겨놓고 알리지 않으면 그것도
         조용한 유실이다.
 
@@ -720,6 +726,7 @@ def namu_record(
         "topic": topic, "status": status, "category": category, "tags": tags,
         "project": project, "confidence": confidence, "supersedes": supersedes,
         "create": create, "done_when": done_when,
+        "path": path, "bytes": bytes,
         "task": task, "outcome": outcome, "task_type": task_type,
         "verified_by": verified_by, "kind": kind, "subject": subject,
         "statement": statement, "source": source, "text": text, "tag": tag,
@@ -766,6 +773,21 @@ def namu_record(
         )
         t2 = time.perf_counter()
         memory_sync.sync_push(f"memo: {(v_summary or '')[:40]} ({cfg.NAMU_MACHINE})")
+        t3 = time.perf_counter()
+        memory_sync._append_sync_log(
+            f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"
+        )
+        return _with_notices(entry_id, parsed.notices)
+
+    if resolved_bowl == "attachments":
+        entry_id = attachments.record_attachment(
+            path=v.get("path"), bytes_=v.get("bytes"), status=v.get("status"),
+            summary=v_summary, reason=v_reason, body=v_body,
+            topic=v_topic, project=v.get("project"),
+            supersedes=v.get("supersedes"), tags=v_tags, via=via,
+        )
+        t2 = time.perf_counter()
+        memory_sync.sync_push(f"attach: {v.get('path')} ({cfg.NAMU_MACHINE})")
         t3 = time.perf_counter()
         memory_sync._append_sync_log(
             f"RECORD timing ensure={t1 - t0:.2f}s record={t2 - t1:.2f}s sync={t3 - t2:.2f}s"

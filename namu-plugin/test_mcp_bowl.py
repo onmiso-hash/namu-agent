@@ -824,6 +824,74 @@ def test_namu_record_create_then_recall_roundtrip(fake_home):
     assert "RESULT ['namu-100'] namu-100" in result.stdout
 
 
+# ---------------------------------------------------------------------------
+# ⑨ bowl='attachments' — 첨부 기록(namu-file-upload-download 4단계)
+# ---------------------------------------------------------------------------
+
+
+def test_namu_record_bowl_attachments_writes_the_entry(fake_home):
+    """도구 계층까지 붙어 있는지 — 저장 계층 시험(test_attachments.py)만으로는
+    namu_record가 그 그릇으로 갈라지는지 알 수 없다."""
+    result = _run_probe(
+        fake_home,
+        "mcp_server.namu_record(bowl='attachments',"
+        " path='attach_file/설계.pdf', bytes=284915, status='올림',"
+        " summary='설계 문서', reason='파일째 남긴다', body='원문',"
+        " topic='namu-70', project='proj-x')\n"
+        "r = mcp_server.namu_search(bowl='attachments')\n"
+        "e = r['results'][0]\n"
+        "print('RESULT', r['bowl'], r['count'], e['path'], e['bytes'], e['status'], e['task'])\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT attachments 1 attach_file/설계.pdf 284915 올림 namu-70" in result.stdout
+
+
+def test_namu_record_attachments_rejects_missing_size(fake_home):
+    """크기 칸이 비면 거절한다 — 비어 있으면 목록 도구가 크기를 저장소에 묻는 쪽으로
+    되돌아갈 수밖에 없고, 그 순간 첨부가 통째로 내려와 격리가 뚫린다."""
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='attachments', path='attach_file/a.pdf',"
+        " status='올림', summary='s', reason='r', body='b')\n"
+        "    print('RESULT 거절안됨')\n"
+        "except ValueError as e:\n"
+        "    print('RESULT', 'bytes' in str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT True" in result.stdout
+
+
+def test_namu_record_attachments_rejects_unknown_status(fake_home):
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='attachments', path='attach_file/a.pdf',"
+        " bytes=10, status='삭제', summary='s', reason='r', body='b')\n"
+        "    print('RESULT 거절안됨')\n"
+        "except ValueError as e:\n"
+        "    print('RESULT', '올림' in str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT True" in result.stdout
+
+
+def test_namu_record_other_bowls_still_reject_the_attachment_fields(fake_home):
+    """path·bytes는 첨부 기록 전용이다 — 다른 그릇이 받으면 그릇을 새로 만든
+    이유(파일 이력이 지식베이스에 섞이지 않게)가 사라진다."""
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='learnings', topic='t', path='attach_file/a.pdf',"
+        " summary='s', reason='r', body='b')\n"
+        "    print('RESULT 거절안됨')\n"
+        "except ValueError as e:\n"
+        "    print('RESULT', '첨부 기록' in str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "RESULT True" in result.stdout
+
+
 if __name__ == "__main__":
     import pytest as _pytest
 

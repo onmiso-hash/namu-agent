@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import yaml
 from ulid import ULID
 
+import attachments as _attachments
 import config as cfg
 import memo as _memo
 import profile as _profile
@@ -493,7 +494,7 @@ def search(
     return {"results": results, "summary": summary}
 
 
-_VALID_BOWLS = ("learnings", "tasks", "profile", "memo")
+_VALID_BOWLS = ("learnings", "tasks", "profile", "memo", "attachments")
 
 
 def search_bowl(
@@ -525,16 +526,22 @@ def search_bowl(
       since/until은 timestamp 비교, timestamp 내림차순 정렬 후 limit. 반환
       `{"bowl","results","count"}`.
 
-    `project`는 tasks 전용 축이다 — learnings/profile에 project를 주면 조용히
-    무시하지 않고 ValueError로 명시 거절한다(조용히 무시하면 웹 AI가 필터가
+    - `attachments` → `attachments.load_all(...)` 로드 후 파이썬 필터. query는
+      path/3층/task/project/tags 부분일치이며 **파일 이름(path)까지 훑는다** —
+      첨부를 다시 찾을 때 사람이 기억하는 것은 대개 파일 이름이기 때문이다.
+      크기는 기록의 `bytes` 칸에서만 읽고 저장소에 묻지 않는다(물으면 격리가
+      뚫린다). 반환 `{"bowl","results","count"}`.
+
+    `project`는 tasks·attachments 전용 축이다 — learnings/profile에 project를 주면
+    조용히 무시하지 않고 ValueError로 명시 거절한다(조용히 무시하면 웹 AI가 필터가
     걸린 줄 알고 잘못된 결론을 낸다).
     """
     if bowl not in _VALID_BOWLS:
         raise ValueError(f"bowl은 {list(_VALID_BOWLS)} 중 하나여야 합니다: {bowl!r}")
 
-    if bowl != "tasks" and project is not None:
+    if bowl not in ("tasks", "attachments") and project is not None:
         raise ValueError(
-            f"project는 tasks 전용 축입니다 (bowl={bowl!r}에는 쓸 수 없습니다)"
+            f"project는 tasks·attachments 전용 축입니다 (bowl={bowl!r}에는 쓸 수 없습니다)"
         )
 
     if bowl == "learnings":
@@ -605,6 +612,48 @@ def search_bowl(
         if limit is not None:
             memos = memos[:limit]
         return {"bowl": bowl, "results": memos, "count": len(memos)}
+
+    if bowl == "attachments":
+        # 첨부 기록 조회(namu-file-upload-download 4단계). memo·profile과 같이
+        # SQLite를 타지 않는다 — 검색 색인에 넣을지는 이 작업의 범위 밖이다.
+        # **저장소에 파일 크기를 묻지 않는다**: 여기 적힌 bytes 칸만 읽는다(물으면
+        # git이 크기를 알아내려고 빠진 몸통을 전부 내려받아 격리가 뚫린다).
+        # paths를 그대로 넘기는 이유도 memo와 같다 — 안 넘기면 남의 이력을 읽는다.
+        items = _attachments.load_all(paths)
+        if project is not None:
+            items = [a for a in items if a.get("project") == project]
+        if task is not None:
+            items = [a for a in items if a.get("task") == task]
+        if machine is not None:
+            items = [a for a in items if a.get("machine") == machine]
+        if via is not None:
+            items = [a for a in items if a.get("via") == via]
+        if since is not None:
+            items = [a for a in items if (a.get("timestamp") or "") >= since]
+        if until is not None:
+            op, bound = _until_bound(until)
+            if op == "<":
+                items = [a for a in items if (a.get("timestamp") or "") < bound]
+            else:
+                items = [a for a in items if (a.get("timestamp") or "") <= bound]
+        if query:
+            q = query.lower()
+
+            def _attachment_matches(a: dict) -> bool:
+                # 파일 이름(path)까지 훑는다 — 첨부를 다시 찾을 때 사람이 기억하는
+                # 것은 대개 내용 설명이 아니라 파일 이름이다.
+                haystack = " ".join(
+                    str(a.get(k) or "")
+                    for k in ("path", "summary", "reason", "body", "task", "project")
+                )
+                haystack += " " + " ".join(str(t) for t in (a.get("tags") or []))
+                return q in haystack.lower()
+
+            items = [a for a in items if _attachment_matches(a)]
+        items.sort(key=lambda a: str(a.get("timestamp") or ""), reverse=True)
+        if limit is not None:
+            items = items[:limit]
+        return {"bowl": bowl, "results": items, "count": len(items)}
 
     # bowl == "profile"
     # 위 memo와 같은 이유로 paths를 넘긴다(사용자별 폴더).

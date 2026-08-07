@@ -97,6 +97,13 @@ ATTACH_DIR_NAME = "attach_file"
 # 가진다 — 먼저 전부 포함하고 뒤에서 첨부 폴더만 뺀다.
 ATTACH_SPARSE_PATTERNS: tuple[str, ...] = ("/*", f"!/{ATTACH_DIR_NAME}/")
 
+# 첨부 기록 그릇(namu-file-upload-download 4단계). 파일 몸통은 위 격리로 각 PC에
+# 안 내려오지만, **이력은 모든 기기에 있어야 한다** — "무슨 파일이 있고 왜 올렸나"에
+# 어디서나 답하기 위해서다. 그래서 실물은 저장소의 attach_file/, 이력은 이 파일로
+# 갈라 둔다. profile.yaml과 같은 append-only 다중 문서 형식이다(고치거나 지우지
+# 않고 status='새 판'/'지움' 항목을 덧붙여 표현한다).
+ATTACHMENTS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "attachments.yaml"
+
 
 @dataclass(frozen=True)
 class DataPaths:
@@ -113,6 +120,10 @@ class DataPaths:
     # namu-56 memo 그릇. 기본값을 둬서 기존 호출부(3개 인자)가 그대로 동작한다 —
     # None이면 모듈 상수(MEMO_YAML_PATH)를 쓴다는 뜻이고, 해석은 memo.py가 한다.
     memo_yaml: Path | None = None
+    # 첨부 기록 그릇. memo_yaml과 같은 규약이다(None이면 모듈 상수).
+    # **클라우드에서 이 값이 빠지면 남의 첨부 이력을 읽는다** — 요청마다 사용자
+    # 폴더가 다르므로, 읽고 쓰는 쪽은 반드시 paths를 타고 내려온 값을 써야 한다.
+    attachments_yaml: Path | None = None
 
 
 def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
@@ -132,6 +143,7 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
             profile_yaml=PROFILE_YAML_PATH,
             db_path=NAMU_DB_PATH,
             memo_yaml=MEMO_YAML_PATH,
+            attachments_yaml=ATTACHMENTS_YAML_PATH,
         )
     root = Path(root)
     return DataPaths(
@@ -139,6 +151,7 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
         profile_yaml=root / "memory" / "profile.yaml",
         db_path=root / "db" / "namu.db",
         memo_yaml=root / "memory" / "memo.yaml",
+        attachments_yaml=root / "memory" / "attachments.yaml",
     )
 
 
@@ -225,6 +238,20 @@ BOWLS: tuple[Bowl, ...] = (
         web_exposed=True,
         label="쪽지",
     ),
+    # attachments(namu-file-upload-download 4단계) — 올린 파일의 이력.
+    # append-only인 이유가 이 그릇에서는 특히 중요하다: 고칠 수 없으므로 "지금 살아
+    # 있는 파일 목록"은 기록을 시간순으로 훑어 계산해야 하고, status(올림/새 판/지움)가
+    # 그 계산의 유일한 근거다. 지운 파일도 "있었다는 사실 + 왜 뺐는지"가 남는다.
+    # cached=False — 검색 색인에 넣을지는 이 작업의 범위 밖으로 사용자가 정했다.
+    Bowl(
+        name="attachments",
+        git_patterns=("memory/attachments.yaml",),
+        mutable=False,
+        merge="union",
+        cached=False,
+        web_exposed=True,
+        label="첨부 기록",
+    ),
 )
 
 
@@ -290,9 +317,9 @@ class Field:
     values: "Mapping[str, tuple[str, ...]]" = MappingProxyType({})  # 그릇별 닫힌 허용값
 
 
-_ALL_BOWLS = ("learnings", "profile", "tasks", "memo")
+_ALL_BOWLS = ("learnings", "profile", "tasks", "memo", "attachments")
 
-# 3층(summary/reason/body)은 네 그릇 전부에서 필수다 — 예외 없음(설계 원칙 2).
+# 3층(summary/reason/body)은 모든 그릇에서 필수다 — 예외 없음(설계 원칙 2).
 # 적을 게 없으면 `생략`을 넣는다. reason을 필수에서 빼자는 재검토는 이미 닫힌
 # 논점이다: 기존 작업일지 450줄에 reason이 없던 것은 **칸 자체가 없었기 때문**이지
 # 불필요해서가 아니다.
@@ -337,35 +364,43 @@ FIELDS: tuple[Field, ...] = (
         # 옛 이름(kind='fact' 등)으로 부르는 호출은 종전 해석을 유지하므로 안 깨진다.
         bowls=_ALL_BOWLS,
         required_in=_ALL_BOWLS,
-        desc="어느 그릇에 담을지. 생략할 수 없다 — 안 적으면 거절하고 네 그릇을 "
+        desc="어느 그릇에 담을지. 생략할 수 없다 — 안 적으면 거절하고 그릇 목록을 "
              "안내한다. 교훈(learnings)은 다시 쓸 배움, 개인 사실(profile)은 사용자에 "
-             "대한 사실, 작업일지(tasks)는 진행 기록, 쪽지(memo)는 쓰고 버릴 메모다.",
+             "대한 사실, 작업일지(tasks)는 진행 기록, 쪽지(memo)는 쓰고 버릴 메모, "
+             "첨부 기록(attachments)은 올린 파일의 이력이다.",
         example="memo",
         values=MappingProxyType({bowl: _ALL_BOWLS for bowl in _ALL_BOWLS}),
     ),
     Field(
         name="topic",
-        bowls=("learnings", "profile", "tasks"),
+        bowls=("learnings", "profile", "tasks", "attachments"),
         required_in=("learnings", "profile", "tasks"),
         desc="주제·작업 이름. 교훈은 어느 작업에서 얻었는지, 개인 사실은 무엇에 대한 "
              "사실인지(옛 subject), 작업일지는 어느 작업의 log.md에 붙일지를 정한다 "
              "— 작업일지에서는 이미 있는 작업의 이름이나 그 앞부분이어야 한다. "
+             "첨부 기록에서는 그 파일이 어느 작업에서 나왔는지이며, 대화 중 만든 "
+             "파일이 늘 작업에 속하지는 않으므로 비워도 된다. "
              "쪽지는 받지 않는다(쓰고 버리는 그릇이라 분류할 이유가 없다).",
         example="namu-65-memory-schema-unify",
     ),
     Field(
         name="status",
-        bowls=("learnings", "tasks"),
-        required_in=(),
+        bowls=("learnings", "tasks", "attachments"),
+        required_in=("attachments",),
         desc="상태. 교훈은 success/failure/partial 셋 중 하나이며, 비면 교훈이 아니라 "
              "단순 기록으로 취급한다(옛 kind를 대신하는 판정 기준). 작업일지는 줄 앞에 "
              "붙는 꼬리표이고 기본값은 '기록'이다. 개인 사실·쪽지는 받지 않는다. "
              "주의: 작업일지의 '완료'/'중단'은 **작업 전체가 닫힌다**는 뜻이라 진행 "
              "메모에 쓰면 열린 작업 목록에서 사라진다(실제 사고 2회). 반대로 "
              "'종료'·'마무리' 같은 비슷한 말은 **닫지 못하므로 거절한다** — 닫는 말은 "
-             "이 둘뿐이다(namu-66).",
+             "이 둘뿐이다(namu-66). 첨부 기록에서는 올림/새 판/지움 셋 중 하나이며 "
+             "**필수다** — 기억은 고칠 수 없어서 '지금 살아 있는 파일 목록'을 기록을 "
+             "훑어 계산하는데, 그 계산의 유일한 근거가 이 칸이기 때문이다.",
         example="failure",
-        values=MappingProxyType({"learnings": ("success", "failure", "partial")}),
+        values=MappingProxyType({
+            "learnings": ("success", "failure", "partial"),
+            "attachments": ("올림", "새 판", "지움"),
+        }),
         # tasks는 일부러 닫지 않는다 — 실제 로그에 30가지 꼬리표가 쓰이고 있어
         # 5가지로 닫으면 기존 사용을 깬다. 권장값: 시작·기록·다음·완료·중단.
     ),
@@ -379,7 +414,7 @@ FIELDS: tuple[Field, ...] = (
     ),
     Field(
         name="tags",
-        bowls=("learnings", "profile", "memo"),
+        bowls=("learnings", "profile", "memo", "attachments"),
         required_in=(),
         desc="꼬리표 목록. 개인 사실에 '상시'를 붙이면 세션 시작 1회가 아니라 "
              "사용자 입력마다 다시 올라온다. 작업일지는 받지 않는다 — 거기서 꼬리표에 "
@@ -389,10 +424,11 @@ FIELDS: tuple[Field, ...] = (
     # ── 대상·부가 ───────────────────────────────────────────────────────────
     Field(
         name="project",
-        bowls=("tasks",),
+        bowls=("tasks", "attachments"),
         required_in=(),
-        desc="프로젝트 폴더 이름. 작업일지 전용이다. 로컬에서는 생략하면 현재 폴더로 "
-             "보지만, 웹에는 현재 폴더라는 것이 없으므로 반드시 적어야 한다.",
+        desc="프로젝트 폴더 이름. 로컬에서는 생략하면 현재 폴더로 보지만, 웹에는 현재 "
+             "폴더라는 것이 없으므로 반드시 적어야 한다. 첨부 기록에서는 그 파일이 "
+             "어느 프로젝트에서 나왔는지이며 비워도 된다.",
         example="namu-agent",
     ),
     Field(
@@ -409,10 +445,11 @@ FIELDS: tuple[Field, ...] = (
     ),
     Field(
         name="supersedes",
-        bowls=("profile",),
+        bowls=("profile", "attachments"),
         required_in=(),
         desc="정정할 옛 기록의 id. 개인 사실은 고쳐 쓰지 않고(append-only) 새 항목이 "
-             "옛 항목을 가리키는 방식으로 정정한다.",
+             "옛 항목을 가리키는 방식으로 정정한다. 첨부 기록에서는 같은 파일의 옛 "
+             "판을 가리켜 '이 문서를 언제부터 몇 번 고쳤나'를 볼 수 있게 한다.",
         example="01KYKFDR8Q2N7V0C6W3M5Y1XT",
     ),
     Field(
@@ -429,6 +466,24 @@ FIELDS: tuple[Field, ...] = (
         required_in=(),
         desc="완료조건 목록. 작업을 새로 만들 때(create) 체크리스트로 적힌다.",
         example="['입력 항목이 13개로 정리된다', '기존 테스트 386개 통과']",
+    ),
+    # ── 첨부 기록 전용(namu-file-upload-download 4단계) ──────────────────────
+    Field(
+        name="path",
+        bowls=("attachments",),
+        required_in=("attachments",),
+        desc=f"올린 파일의 저장소 안 경로({ATTACH_DIR_NAME}/ 아래). 파일 몸통은 각 PC로 "
+             "안 내려오므로, 이 경로가 '무슨 파일이 있나'에 답하는 유일한 이름이다.",
+        example=f"{ATTACH_DIR_NAME}/fts5-검색인덱스-설계.pdf",
+    ),
+    Field(
+        name="bytes",
+        bowls=("attachments",),
+        required_in=("attachments",),
+        desc="파일 크기(바이트). **필수다** — 목록 도구는 크기를 여기서만 읽는다. "
+             "저장소에 물으면 크기를 알아내려고 빠진 파일 몸통을 전부 내려받아 "
+             "격리가 뚫린다(2026-08-07 실측: 파일 2,548개에 7분 넘게 안 끝남).",
+        example="284915",
     ),
 )
 
@@ -529,8 +584,9 @@ def suggest_bowl(field_names: "Iterable[str]") -> "str | None":
 
     그릇을 안 적어 거절할 때 "네 개 중 고르세요"로 끝내지 않고 후보를 짚어주기 위한
     것이다(설계 원칙 4). 근거는 **그 칸을 받는 그릇이 하나뿐인 경우**뿐이다 — 예를
-    들어 project/create/done_when은 작업일지만, supersedes는 개인 사실만, category는
-    교훈만 받는다. 근거가 갈리면 조용히 하나를 고르지 않고 None을 준다: 빗나간 추천은
+    들어 create/done_when은 작업일지만, category는 교훈만, path/bytes는 첨부 기록만
+    받는다. 두 그릇이 함께 받는 칸(project·supersedes 등)은 근거가 되지 않는다.
+    근거가 갈리면 조용히 하나를 고르지 않고 None을 준다: 빗나간 추천은
     없느니만 못하고, 애초에 이 작업이 없애려는 것이 '조용한 짐작'이다.
 
     옛 이름도 근거로 본다(tag·title·purpose는 작업일지 전용). 다만 갈 곳이 그릇마다

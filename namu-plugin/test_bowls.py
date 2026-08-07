@@ -43,11 +43,14 @@ def _read_module_level_tuple_constant(module_path: Path, name: str) -> tuple:
 # BOWLS 레지스트리 자체 (① 스펙 확인)
 # ---------------------------------------------------------------------------
 
-def test_bowls_contains_exactly_four_bowls_in_declared_order():
+def test_bowls_contains_exactly_five_bowls_in_declared_order():
     # 순서 보증: memory_sync._gitattributes_union_lines()가 기존 3줄(learnings+tasks)이
-    # 앞서 나오게 의존하는 순서라 여기서도 못 박아 회귀를 잡는다. memo(namu-56)는
-    # 반드시 끝에 붙는다 — 앞에 끼우면 기존 설치본의 .gitattributes가 통째로 재작성된다.
-    assert [bowl.name for bowl in cfg.BOWLS] == ["learnings", "tasks", "profile", "memo"]
+    # 앞서 나오게 의존하는 순서라 여기서도 못 박아 회귀를 잡는다. 새 그릇은 반드시
+    # 끝에 붙는다 — 앞에 끼우면 기존 설치본의 .gitattributes가 통째로 재작성된다.
+    # memo(namu-56) 다음이 attachments(namu-file-upload-download 4단계)다.
+    assert [bowl.name for bowl in cfg.BOWLS] == [
+        "learnings", "tasks", "profile", "memo", "attachments",
+    ]
 
 
 def test_bowls_field_values_match_spec():
@@ -57,8 +60,9 @@ def test_bowls_field_values_match_spec():
     assert by_name["tasks"].git_patterns == ("tasks/**/log.md", "tasks/*/.project")
     assert by_name["profile"].git_patterns == ("memory/profile.yaml",)
     assert by_name["memo"].git_patterns == ("memory/memo.yaml",)
+    assert by_name["attachments"].git_patterns == ("memory/attachments.yaml",)
 
-    for name in ("learnings", "tasks", "profile"):
+    for name in ("learnings", "tasks", "profile", "attachments"):
         assert by_name[name].mutable is False
         assert by_name[name].merge == "union"
 
@@ -74,6 +78,8 @@ def test_bowls_field_values_match_spec():
     assert by_name["tasks"].cached is False
     assert by_name["profile"].cached is False
     assert by_name["memo"].cached is False
+    # 첨부 기록을 검색 색인에 넣을지는 이 작업의 범위 밖으로 사용자가 정했다.
+    assert by_name["attachments"].cached is False
 
 
 def test_bowl_is_frozen():

@@ -29,8 +29,11 @@ def test_field_names_are_unique():
 
 
 def test_field_count_matches_design():
-    # 설계서 4장: 19개 → 13개로 줄이는 것이 이번 작업의 완료조건 1이다.
-    assert len(cfg.FIELDS) == 13
+    # 설계서 4장: 19개 → 13개로 줄이는 것이 namu-65의 완료조건 1이었다.
+    # +2 = 첨부 기록 그릇 전용 path·bytes(namu-file-upload-download 4단계).
+    # 그 그릇의 설계(2판 7절)가 "새로 만드는 칸은 셋뿐이고 status는 기존 칸을
+    # 늘려 쓴다"이므로, 여기 숫자가 15를 넘으면 칸을 더 만든 것이다.
+    assert len(cfg.FIELDS) == 15
 
 
 def test_every_field_references_only_declared_bowls():
@@ -86,10 +89,19 @@ def test_bowl_is_required_in_every_bowl():
 
 
 def test_suggest_bowl_uses_exclusive_fields():
-    assert cfg.suggest_bowl(["summary", "project"]) == "tasks"
+    assert cfg.suggest_bowl(["summary", "create"]) == "tasks"
     assert cfg.suggest_bowl(["summary", "done_when"]) == "tasks"
-    assert cfg.suggest_bowl(["summary", "supersedes"]) == "profile"
     assert cfg.suggest_bowl(["summary", "category"]) == "learnings"
+    assert cfg.suggest_bowl(["summary", "path"]) == "attachments"
+    assert cfg.suggest_bowl(["summary", "bytes"]) == "attachments"
+
+
+def test_shared_fields_are_no_longer_evidence_for_a_bowl():
+    # project·supersedes는 첨부 기록 그릇이 생기며 두 그릇이 함께 받는 칸이 됐다.
+    # 근거가 하나로 좁혀지지 않으면 짐작하지 않는 것이 이 함수의 규칙이다 —
+    # 옛 기대값(project→tasks)을 그대로 두면 빗나간 추천을 시험이 보증하게 된다.
+    assert cfg.suggest_bowl(["summary", "project"]) is None
+    assert cfg.suggest_bowl(["summary", "supersedes"]) is None
 
 
 def test_suggest_bowl_reads_bowl_scoped_old_names():
@@ -114,11 +126,20 @@ def test_suggest_bowl_returns_none_when_evidence_is_absent_or_split():
 
 def test_bowl_specific_fields_are_not_shared():
     # 그릇을 나눈 이유가 사라지지 않도록, 전용 칸은 그 그릇에서만 받는다.
-    assert cfg.bowls_accepting("project") == ("tasks",)
     assert cfg.bowls_accepting("create") == ("tasks",)
     assert cfg.bowls_accepting("done_when") == ("tasks",)
     assert cfg.bowls_accepting("category") == ("learnings",)
-    assert cfg.bowls_accepting("supersedes") == ("profile",)
+    # 첨부 기록 전용 2칸 — 여기 다른 그릇이 붙으면 그 그릇도 파일 이력을 받는다는
+    # 뜻이고, 그러면 그릇을 새로 만든 이유가 사라진다(설계서 2판 7절).
+    assert cfg.bowls_accepting("path") == ("attachments",)
+    assert cfg.bowls_accepting("bytes") == ("attachments",)
+
+
+def test_attachments_reuse_shared_fields_instead_of_new_ones():
+    # 설계서 2판 7절: "기존 그릇의 칸을 그대로 쓴다. 새로 만드는 것은 셋뿐이다."
+    # project·supersedes·tags·topic은 새로 만들지 않고 첨부 기록이 함께 쓴다.
+    for name in ("project", "supersedes", "tags", "topic", "status"):
+        assert "attachments" in cfg.bowls_accepting(name), name
 
 
 def test_memo_takes_only_the_three_layers_plus_bowl_and_tags():
@@ -128,9 +149,14 @@ def test_memo_takes_only_the_three_layers_plus_bowl_and_tags():
 
 
 def test_topic_is_required_where_it_routes_the_record():
-    assert set(cfg.bowls_accepting("topic")) == {"learnings", "profile", "tasks"}
+    assert set(cfg.bowls_accepting("topic")) == {
+        "learnings", "profile", "tasks", "attachments"
+    }
     for bowl in ("learnings", "profile", "tasks"):
         assert "topic" in cfg.required_fields(bowl)
+    # 첨부 기록에서만 선택이다 — 대화 중 만든 파일이 늘 작업에 속하지는 않는데,
+    # 필수로 두면 작업 이름을 지어내 채우게 된다.
+    assert "topic" not in cfg.required_fields("attachments")
 
 
 def test_tasks_do_not_take_tags_and_memo_does():
@@ -146,6 +172,14 @@ def test_status_values_are_closed_for_learnings_but_open_for_tasks():
     assert cfg.allowed_values("status", "learnings") == ("success", "failure", "partial")
     # 실제 로그에 30가지 꼬리표가 쓰이고 있어 닫으면 기존 사용을 깬다.
     assert cfg.allowed_values("status", "tasks") == ()
+
+
+def test_status_is_closed_and_required_for_attachments():
+    # 첨부 기록은 고칠 수 없어서 "지금 살아 있는 파일 목록"을 status로 계산한다 —
+    # 값이 열려 있으면 계산이 모르는 말이 섞이고, 비어 있으면 새 판을 첫 올림으로
+    # 세어 같은 파일이 목록에 두 번 뜬다.
+    assert cfg.allowed_values("status", "attachments") == ("올림", "새 판", "지움")
+    assert "status" in cfg.required_fields("attachments")
 
 
 def test_allowed_values_is_empty_for_free_fields_and_unknown_names():

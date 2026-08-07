@@ -61,6 +61,6 @@ uv run --script mcp_server.py
 
 ## 함께 볼 것
 
-- [기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) — 네 그릇·3층 기록·원격 두 경로
+- [기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) — 다섯 그릇·3층 기록·원격 두 경로
 - [`docs/memory_schema_v2.md`](../docs/memory_schema_v2.md) — 현행 기록 구조 설명서. **기록 관련 작업 전 반드시 읽을 것**
 - [루트 README](../README.ko.md) — 폴더 구조·개발용 셋업·버전 bump 규율

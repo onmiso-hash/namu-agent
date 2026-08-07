@@ -58,6 +58,19 @@ def _bowl_list_ko(names) -> str:
     return "·".join(f"{cfg.bowl_label(n)}({n})" for n in names)
 
 
+_COUNT_KO = {1: "한", 2: "두", 3: "세", 4: "네", 5: "다섯", 6: "여섯", 7: "일곱"}
+
+
+def _bowl_count_ko() -> str:
+    """"네"/"다섯" — 그릇 개수를 세는 우리말. 레지스트리에서 파생시킨다.
+
+    손으로 적으면 그릇이 늘 때 안내문만 옛 개수로 남는다(첨부 기록 그릇을 더할 때
+    실제로 "네 그릇"이 여섯 곳에 박혀 있었다). 표기 없는 개수는 숫자로 떨어뜨린다.
+    """
+    n = len(cfg.BOWL_NAMES)
+    return _COUNT_KO.get(n, str(n) + "개")
+
+
 def _all_bowls_ko() -> str:
     return _bowl_list_ko(cfg.BOWL_NAMES)
 
@@ -75,7 +88,8 @@ def resolve_bowl(given: dict) -> tuple[str, list]:
 
     if bowl is not None and bowl not in cfg.BOWL_NAMES:
         raise ValueError(
-            f"'{bowl}'라는 그릇은 없습니다 — 네 그릇 중 하나를 고르세요: {_all_bowls_ko()}."
+            f"'{bowl}'라는 그릇은 없습니다 — {_bowl_count_ko()} 그릇 중 하나를 "
+            f"고르세요: {_all_bowls_ko()}."
         )
 
     if bowl is None:
@@ -250,7 +264,9 @@ def tool_description() -> str:
     도구 설명과 소개문이 갈라지지 않는다.
     """
     lines = [
-        "기억 한 건을 남긴다(append-only). 네 그릇 중 하나를 골라 담는다: "
+        "기억 한 건을 남긴다(append-only). "
+        + _bowl_count_ko()
+        + " 그릇 중 하나를 골라 담는다: "
         + _all_bowls_ko()
         + ".",
         "",
@@ -292,7 +308,7 @@ _TOOL_LINES = (
                     "열린 작업·관련 교훈을 한꺼번에 돌려준다."),
     ("namu_search", "지난 기억을 낱말로 찾는다."),
     ("namu_record", "기억 한 건을 남긴다(아래 규칙)."),
-    ("namu_memo_remove", "다 쓴 쪽지를 뗀다 — 네 그릇 중 유일하게 지워지는 그릇이다."),
+    ("namu_memo_remove", "다 쓴 쪽지를 뗀다 — 모든 그릇 중 유일하게 지워지는 그릇이다."),
     ("namu_task_pin", "다음에 이어서 할 작업에 책갈피를 꽂는다 — 브리핑 맨 위에 📌로 선다. "
                       "작업일지에는 아무것도 적지 않는다(순서는 표시의 문제)."),
     ("namu_task_unpin", "이 기기의 책갈피를 뺀다(작업을 닫으면 자동으로 빠진다)."),
@@ -316,9 +332,10 @@ def server_instructions(exposed: "Iterable[str] | None" = None) -> str:
     shown = [(n, d) for n, d in _TOOL_LINES if exposed is None or n in set(exposed)]
     hidden = [n for n, _ in _TOOL_LINES if exposed is not None and n not in set(exposed)]
     lines = [
-        "NAMU 기억 서버 — 대화가 끝나도 남는 기억을 네 그릇에 나눠 담고 다시 꺼낸다.",
+        f"NAMU 기억 서버 — 대화가 끝나도 남는 기억을 {_bowl_count_ko()} 그릇에 "
+        "나눠 담고 다시 꺼낸다.",
         "",
-        # 그릇의 성격은 `bowl` 칸 설명이 이미 네 그릇을 다 짚고 있다 — 소개문에 따로
+        # 그릇의 성격은 `bowl` 칸 설명이 이미 그릇을 다 짚고 있다 — 소개문에 따로
         # 쓰면 그게 곧 갈라질 두 번째 설명이 된다.
         f"그릇 고르기 — {bowl_field.desc}",
         "",
@@ -389,7 +406,7 @@ def field_detail_markdown() -> str:
     for field in cfg.FIELDS:
         lines.append(f"- **`{field.name}`** — {field.desc}")
         lines.append(f"  - 예) `{field.example}`")
-        # 값 목록이 같은 그릇은 한 줄로 묶는다 — bowl처럼 네 그릇이 같은 값을 받는 칸을
+        # 값 목록이 같은 그릇은 한 줄로 묶는다 — bowl처럼 모든 그릇이 같은 값을 받는 칸을
         # 그릇마다 되풀이하면 같은 줄이 네 번 나와 정작 다른 칸(status)의 차이가 묻힌다.
         grouped: dict = {}
         for bowl in cfg.BOWL_NAMES:
