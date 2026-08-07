@@ -42,9 +42,12 @@ import time
 import anyio
 from mcp.server.transport_security import TransportSecuritySettings
 
+import attach_local  # 크기 상한만 읽는다(~/.namu는 함수 안에서만 만진다)
 import config as cfg
 import memory_sync
 import record_input  # 순수 함수만 든 모듈이라 ~/.namu를 건드리지 않는다(지연 import 불필요)
+import ticket_web
+import tickets
 
 logger = logging.getLogger("namu.http_server")
 
@@ -60,6 +63,11 @@ HTTP_EXPOSED_TOOLS = frozenset({
     "namu_recall", "namu_record", "namu_search",
     "namu_upload_file", "namu_list_files", "namu_download_file",
     "namu_delete_file",
+    # 티켓 3종은 웹으로 열었을 때만 뜻이 있다 — 회원이 브라우저로 열 수 있는
+    # 주소가 있어야 링크가 성립한다. stdio에서도 도구 자체는 보이지만, 그쪽에서
+    # 부르면 "파일이 이 PC에 있으니 file_path로 주라"고 거절한다.
+    "namu_create_upload_ticket", "namu_create_download_ticket",
+    "namu_check_ticket",
 })
 
 # 디바운스 pull 상태 — 모듈 전역 1개(단일 프로세스 전제, 경로 B 셀프호스팅 스코프와 합치).
@@ -306,7 +314,17 @@ def build_app(settings: dict):
     app = mcp_server.mcp.streamable_http_app()
     app = PullDebounceMiddleware(app, settings["pull_interval"])
     app = AuthMiddleware(app, settings["token"])  # 인증 실패 시 pull까지 도달하지 않도록 가장 바깥
-    return app
+
+    # 티켓 주소(/u/… · /d/…)는 **인증 미들웨어 바깥**에 선다 — 브라우저에는 토큰이
+    # 없고, 추측할 수 없는 티켓 번호 자체가 그 자리의 인증이기 때문이다(설계서
+    # 5-4절, ticket_web 모듈 설명). 나머지 요청은 종전 그대로 인증을 통과한다.
+    ticket_app = ticket_web.build_ticket_app(
+        open_conn=tickets.connect,
+        store_file=mcp_server.store_file,
+        fetch_file=mcp_server.fetch_file,
+        max_bytes=attach_local.max_bytes,
+    )
+    return ticket_web.TicketOrAppDispatcher(app, ticket_app)
 
 
 def _auth_description(settings: dict) -> str:

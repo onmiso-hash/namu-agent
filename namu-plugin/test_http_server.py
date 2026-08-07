@@ -315,6 +315,8 @@ def test_http_exposed_tools_excludes_sync_setup():
             "namu_recall", "namu_record", "namu_search",
             "namu_upload_file", "namu_list_files", "namu_download_file",
             "namu_delete_file",
+            "namu_create_upload_ticket", "namu_create_download_ticket",
+            "namu_check_ticket",
         }
     )
     assert "namu_sync_setup" not in http_server.HTTP_EXPOSED_TOOLS
@@ -332,6 +334,11 @@ def test_http_and_cloud_expose_the_same_tools():
     ) | frozenset(
         {"namu_upload_file", "namu_list_files", "namu_download_file",
          "namu_delete_file"}
+    ) | frozenset(
+        # 티켓 3종 — 파일 몸통이 AI의 출력을 거치지 않는 우회로. 웹으로 열었을
+        # 때만 뜻이 있는데, 개인 주소도 웹으로 열 수 있으므로 양쪽에 함께 선다.
+        {"namu_create_upload_ticket", "namu_create_download_ticket",
+         "namu_check_ticket"}
     )
 
 

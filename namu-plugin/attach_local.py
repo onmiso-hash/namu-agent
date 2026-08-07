@@ -34,6 +34,29 @@ _BAD_NAME_PARTS = ("..", "\\", "/")
 
 _GIT_TIMEOUT_SEC = 120
 
+_MAX_BYTES_ENV = "NAMU_ATTACH_MAX_BYTES"
+# 기본 상한 20 MiB — 나무 클라우드와 **같은 이름의 환경변수, 같은 기본값**이다.
+# 두 경로가 다른 상한을 쓰면 "여기서는 올라가는데 저기서는 안 올라간다"가 되고,
+# 그 차이를 회원에게 설명할 방법이 없다.
+_DEFAULT_MAX_BYTES = 20 * 1024 * 1024
+
+
+def max_bytes() -> int:
+    """파일 하나의 크기 상한(바이트). 환경변수를 매 호출 읽는다 — 모듈을 불러오는
+    시점에 굳히면 값을 바꿔도 반영되지 않는다."""
+    import os
+
+    raw = os.environ.get(_MAX_BYTES_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_MAX_BYTES
+    try:
+        value = int(raw)
+    except ValueError:
+        raise AttachError(f"{_MAX_BYTES_ENV} 값이 숫자가 아닙니다: {raw!r}.") from None
+    if value <= 0:
+        raise AttachError(f"{_MAX_BYTES_ENV}는 0보다 커야 합니다.")
+    return value
+
 
 def normalize_name(name: str) -> str:
     """올리려는 이름을 `attach_file/<이름>` 한 칸으로 정규화한다.

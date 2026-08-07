@@ -12,6 +12,7 @@ from contextlib import closing
 from pathlib import Path
 
 import attach_local
+import attach_text
 import attachments
 import config as cfg
 import memo
@@ -19,6 +20,8 @@ import memory_sync
 import profile
 import record_input
 import task_resolve
+import ticket_web
+import tickets
 from mcp.server.fastmcp import Context, FastMCP
 from db import init_db, rebuild_from_yaml, record, cache_is_stale
 from db import recall as _recall
@@ -954,12 +957,81 @@ def _attach_record(path: str, size: int, status: str, summary, reason, body,
     )
 
 
+def normalize_attach_meta(meta: dict) -> dict:
+    """첨부 한 건에 딸린 설명 칸들을 검사하고 다듬는다.
+
+    올리기 도구와 올리기 티켓이 **같은 칸을 같은 규칙으로** 받아야 하므로 판정을
+    한 곳에 둔다. 티켓은 발급 시점에 한 번, 파일이 도착했을 때 `store_file`이 한 번
+    더 통과한다.
+    """
+    meta = dict(meta or {})
+    for field_name in ("summary", "reason"):
+        if not (meta.get(field_name) or "").strip():
+            raise ValueError(
+                f"'{field_name}'은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
+                "내려오지 않으므로, 나중에 이 파일을 찾는 단서는 이 설명뿐입니다."
+            )
+        meta[field_name] = meta[field_name].strip()
+    # body가 선택인 이유(2026-08-07 실사용): 다른 기억처럼 필수로 뒀더니 붙은 AI가
+    # 그 칸을 빼고 불렀고, 거절당할 때마다 **파일 내용 전체를 처음부터 다시 써서**
+    # 재시도했다. 첨부에서는 파일 자체가 원문이라 애초에 요구할 이유도 없었다.
+    meta["body"] = (meta.get("body") or "").strip() or cfg.OMITTED
+    meta["topic"] = meta.get("topic") or None
+    meta["project"] = meta.get("project") or None
+    meta["tags"] = meta.get("tags") or None
+    return meta
+
+
+def store_file(conn, user_key: str, name: str, content: bytes,
+               meta: dict, via) -> dict:
+    """파일 한 개가 저장소에 자리 잡기까지의 전 과정 — 올리기 도구와 티켓의 공통 자리.
+
+    `conn`·`user_key`는 쓰지 않는다. 이 서버는 회원 한 사람의 것이고 파일은 이 PC의
+    git 사본으로 오간다 — 두 칸은 **나무 클라우드의 같은 이름 함수와 부르는 모양을
+    맞추기 위해** 있다(ticket_web이 둘 다 같은 자리에서 부른다). 모양이 갈라지면
+    티켓 코드가 두 벌이 된다.
+    """
+    limit = attach_local.max_bytes()
+    if len(content) > limit:
+        raise attach_local.AttachError(
+            f"파일이 너무 큽니다 ({len(content):,}바이트) — 지금 상한은 "
+            f"{limit:,}바이트입니다."
+        )
+    if not content:
+        raise attach_local.AttachError("빈 파일은 올리지 않습니다 — 내용이 없습니다.")
+
+    meta = normalize_attach_meta(meta)
+    result = attach_local.upload(
+        name, content, attach_local.commit_message("올림", name)
+    )
+    status = "새 판" if result["replaced"] else "올림"
+    entry_id = _attach_record(
+        result["path"], result["bytes"], status,
+        meta["summary"], meta["reason"], meta["body"],
+        meta["topic"], meta["project"], meta["tags"], via,
+    )
+    memory_sync.sync_push(f"attach: {result['path']} ({cfg.NAMU_MACHINE})")
+    return {
+        "id": entry_id, "path": result["path"],
+        "bytes": result["bytes"], "status": status,
+    }
+
+
+def fetch_file(conn, user_key: str, name: str) -> bytes:
+    """파일 한 개를 저장소에서 받아 온다 — 받기 도구와 받기 티켓의 공통 자리.
+
+    `conn`·`user_key`가 쓰이지 않는 이유는 `store_file`과 같다.
+    """
+    return attach_local.download(name)
+
+
 @mcp.tool()
 def namu_upload_file(
     summary: str,
     reason: str,
     body: str | None = None,
     file_path: str | None = None,
+    content_text: str | None = None,
     content_base64: str | None = None,
     name: str | None = None,
     topic: str | None = None,
@@ -970,12 +1042,18 @@ def namu_upload_file(
     """Upload one file into the user's own GitHub repository (under
     attach_file/) and log it in the attachments bowl.
 
-    Give the file EITHER way — the two exist because this same tool is served
-    both over stdio (a terminal, where the file is already on disk and reading
-    it through the model would only corrupt it) and over the user's own web MCP
-    URL (a chat, where there is no path — only bytes):
-      - `file_path`: a path on disk, or
-      - `content_base64`: the file's bytes, base64-encoded, plus `name`.
+    Give the file exactly ONE of these three ways. They exist because this same
+    tool is served both over stdio (a terminal, where the file is already on
+    disk) and over the user's own web MCP URL (a chat, where there is no path):
+      - `file_path`: a path on disk. **Always prefer this when you have one** —
+        nothing passes through your output.
+      - `content_text`: the text itself, plus `name`. For text files, put the
+        text here. Do NOT base64-encode it.
+      - `content_base64`: the bytes, base64-encoded, plus `name`. Slow, because
+        you have to emit every character.
+
+    **For binaries (PPT/PDF/images/video/zip) or anything over 100KB with no
+    path on disk, do not use this tool — use `namu_create_upload_ticket`.**
 
     Args:
       summary: what this file is (required)
@@ -983,26 +1061,23 @@ def namu_upload_file(
         user's other PCs, so summary+reason are the only way to find it later.
       body: optional — for an attachment the file itself IS the full story. Add
         it only when there is context the file does not carry.
-      name: the name to store it under. Required with content_base64; with
-        file_path it defaults to the file's own name.
+      name: the name to store it under. Required with content_text or
+        content_base64; with file_path it defaults to the file's own name.
       topic/project/tags: optional, same meaning as in namu_record
     Returns: {"id", "path", "bytes", "status"} — status is '올림', or '새 판' if
       that name already existed in the repository.
     """
     via = _resolve_via(ctx)
-    # body가 선택인 이유는 클라우드 쪽 같은 도구의 주석 참고(2026-08-07 실사용에서
-    # 필수로 뒀다가 재시도 폭주를 겪었다).
-    body = (body or "").strip() or cfg.OMITTED
-    for field_name, value in (("summary", summary), ("reason", reason)):
-        if not (value or "").strip():
-            raise ValueError(
-                f"'{field_name}'은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
-                "내려오지 않으므로, 나중에 이 파일을 찾는 단서는 이 설명뿐입니다."
-            )
-    if bool(file_path) == bool(content_base64):
+    given = [k for k, v in (
+        ("file_path", file_path), ("content_text", content_text),
+        ("content_base64", content_base64),
+    ) if v]
+    if len(given) != 1:
         raise ValueError(
-            "file_path(디스크의 파일)와 content_base64(파일 내용) 중 하나만 "
-            "주세요 — 둘 다 주거나 둘 다 안 주면 무엇을 올릴지 정할 수 없습니다."
+            "file_path(디스크의 파일) · content_text(글자 원문) · "
+            "content_base64(바이트) 중 **하나만** 주세요 — 지금 준 것: "
+            f"{given or '없음'}. 둘 이상 오면 어느 쪽이 진짜 내용인지 알 수 없고, "
+            "하나도 없으면 무엇을 올릴지 정할 수 없습니다."
         )
 
     if file_path:
@@ -1014,29 +1089,33 @@ def namu_upload_file(
     else:
         if not (name or "").strip():
             raise ValueError(
-                "content_base64로 올릴 때는 'name'(저장할 파일 이름)이 필요합니다."
+                "content_text·content_base64로 올릴 때는 'name'(저장할 파일 "
+                "이름)이 필요합니다."
             )
-        try:
-            content = base64.b64decode(content_base64 or "", validate=True)
-        except (ValueError, binascii.Error) as exc:
-            raise ValueError(
-                f"content_base64를 읽지 못했습니다: {exc} — 파일 내용을 base64로 "
-                "실어 보내세요."
-            ) from None
         stored_name = name.strip()
-    result = attach_local.upload(
-        stored_name, content, attach_local.commit_message("올림", stored_name)
-    )
-    status = "새 판" if result["replaced"] else "올림"
-    entry_id = _attach_record(
-        result["path"], result["bytes"], status, summary, reason, body,
-        topic, project, tags, via,
-    )
-    memory_sync.sync_push(f"attach: {result['path']} ({cfg.NAMU_MACHINE})")
-    return {
-        "id": entry_id, "path": result["path"],
-        "bytes": result["bytes"], "status": status,
-    }
+        if content_text is not None:
+            content = content_text.encode("utf-8")
+            if len(content) > attach_text.MAX_INLINE_TEXT_BYTES:
+                raise ValueError(
+                    f"content_text가 너무 큽니다 ({len(content):,}바이트) — 이 칸의 "
+                    f"상한은 {attach_text.MAX_INLINE_TEXT_BYTES:,}바이트입니다. "
+                    "이보다 큰 파일은 file_path로 주거나 "
+                    "namu_create_upload_ticket으로 올리세요."
+                )
+        else:
+            try:
+                content = base64.b64decode(content_base64 or "", validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ValueError(
+                    f"content_base64를 읽지 못했습니다: {exc} — 파일 내용을 base64로 "
+                    "실어 보내세요."
+                ) from None
+
+    meta = normalize_attach_meta({
+        "summary": summary, "reason": reason, "body": body,
+        "topic": topic, "project": project, "tags": tags,
+    })
+    return store_file(None, ticket_web.LOCAL_USER, stored_name, content, meta, via)
 
 
 @mcp.tool()
@@ -1090,24 +1169,35 @@ def namu_list_files(include_removed: bool = False, ctx: Context | None = None) -
 def namu_download_file(
     name: str,
     save_to: str | None = None,
+    force_base64: bool = False,
     ctx: Context | None = None,
 ) -> dict:
-    """Fetch one uploaded file back.
+    """Read one uploaded file back **so that you can look at its contents**.
 
     Only that one file is pulled — the rest of the attachments stay off this
-    computer. The bytes always come back as base64 in `content_base64` (that is
-    what a chat needs); pass `save_to` as well when you want it written to disk.
+    computer.
+
+    **If the point is to hand the file to the user, use
+    `namu_create_download_ticket` instead** — that gives a link they click, and
+    nothing passes through your output. If you want the file on disk, pass
+    `save_to`; that also keeps the bytes out of your output.
+
+    Text files up to 100KB come back as plain text in `content_text`. Anything
+    else comes back with no content at all, just a `hint` — unless you pass
+    `save_to` (then it is written to disk) or `force_base64=True` (slow; only
+    when you genuinely must process the bytes yourself).
 
     Args:
       name: file name as shown by namu_list_files
       save_to: where to write it (a folder, or a full path). Omit to only get
         the bytes back.
-    Returns: {"path", "bytes", "content_base64", "saved_to"} — `saved_to` is
-      None when nothing was written. Downloads are deliberately not logged (the
+      force_base64: return a binary as base64 anyway
+    Returns: {"path", "bytes", "saved_to"} plus one of `content_text`,
+      `content_base64`, or `hint`. Downloads are deliberately not logged (the
       file does not change).
     """
     _resolve_via(ctx)
-    content = attach_local.download(name)
+    content = fetch_file(None, ticket_web.LOCAL_USER, name)
     stored = attach_local.normalize_name(name)
     saved_to = None
     if save_to:
@@ -1117,12 +1207,29 @@ def namu_download_file(
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)
         saved_to = str(dest)
-    return {
-        "path": stored,
-        "bytes": len(content),
-        "content_base64": base64.b64encode(content).decode("ascii"),
-        "saved_to": saved_to,
-    }
+
+    out = {"path": stored, "bytes": len(content), "saved_to": saved_to}
+    text = attach_text.as_text(stored, content)
+    if text is not None:
+        out["content_text"] = text
+        return out
+    if force_base64:
+        out["content_base64"] = base64.b64encode(content).decode("ascii")
+        return out
+    if saved_to:
+        # 디스크에 썼으면 몸통을 또 실어 보낼 이유가 없다 — 회원이 원한 자리에
+        # 이미 있다.
+        return out
+    # 몸통을 싣지 않는다. 칸을 아예 빼지 않고 비워 두는 이유는, 칸이 없으면 붙은
+    # AI가 "도구가 실패했다"로 읽고 같은 호출을 되풀이하기 때문이다.
+    out["content_base64"] = None
+    out["hint"] = (
+        "바이너리이거나 100KB를 넘어 원문으로 전달하지 않았습니다. 회원에게 이 "
+        "파일을 건네려면 namu_create_download_ticket으로 링크를 만들고, 디스크에 "
+        "두려면 save_to를 주세요. 내용을 직접 읽어야만 하는 경우에만 "
+        "force_base64=true로 다시 부르세요(느립니다)."
+    )
+    return out
 
 
 @mcp.tool()
@@ -1162,6 +1269,193 @@ def namu_delete_file(name: str, reason: str, ctx: Context | None = None) -> dict
     )
     memory_sync.sync_push(f"attach: {path} 지움 ({cfg.NAMU_MACHINE})")
     return {"id": entry_id, "path": path, "status": "지움"}
+
+
+# ---------------------------------------------------------------------------
+# 티켓 세 도구 — 파일 몸통이 붙은 AI의 출력을 거치지 않게 하는 우회로.
+#
+# 왜 필요한가는 tickets.py 첫머리에 있다(요약: base64 글자열을 AI가 한 자씩 써야
+# 해서, 6KB 문서 하나에 서버는 7.4초인데 AI 쪽은 몇 분이 걸렸다).
+#
+# **이 도구들은 웹 주소로 열었을 때만 뜻이 있다.** 터미널(stdio)에서는 요청 자체가
+# 없어 링크를 지을 주소가 없고, 애초에 파일이 이 PC에 있으므로 `file_path`로 바로
+# 올리는 편이 티켓보다 빠르고 확실하다 — 그래서 그 경우엔 거절하면서 그렇게 안내한다.
+# ---------------------------------------------------------------------------
+def _public_origin(ctx: "Context | None") -> str:
+    """이 서버의 바깥 주소(`https://호스트`). 터미널이라 요청이 없으면 빈 문자열.
+
+    전용 환경변수를 두지 않고 요청에서 끌어내는 이유: 회원이 이 서버를 터널이나
+    포트포워딩 뒤에 두면 서버가 자기 바깥 주소를 스스로 알 방법이 없다. 요청에는
+    그 주소가 이미 실려 온다.
+    """
+    req = getattr(getattr(ctx, "request_context", None), "request", None) if ctx else None
+    if req is None:
+        return ""
+    forwarded = (req.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    scheme = forwarded if forwarded in ("http", "https") else req.url.scheme
+    host = (
+        (req.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+        or (req.headers.get("host") or "").strip()
+        or req.url.netloc
+    )
+    return f"{scheme}://{host}"
+
+
+def _require_origin(ctx: "Context | None", instead: str) -> str:
+    origin = _public_origin(ctx)
+    if not origin:
+        raise ValueError(
+            "이 연결에서는 티켓 링크를 만들 수 없습니다 — 터미널로 붙은 연결이라 "
+            f"회원이 열 수 있는 주소가 없습니다. 대신 {instead}"
+        )
+    return origin
+
+
+@mcp.tool()
+def namu_create_upload_ticket(
+    name: str,
+    summary: str,
+    reason: str,
+    body: str | None = None,
+    topic: str | None = None,
+    project: str | None = None,
+    tags: list[str] | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Create a one-time upload link for one file.
+
+    Use this for anything you should NOT push through `namu_upload_file`:
+    binaries (PPT/PDF/images/video/zip) and anything over 100KB that you have no
+    disk path for. Nothing is written to the repository until a file actually
+    arrives, so an unused link leaves no trace anywhere.
+
+    You get back `upload_url`. Then do ONE of these:
+      1. If the file is in your own workspace, POST it yourself:
+         `curl -sS -X POST -F "file=@/path/to/file" <upload_url>`
+         If that fails with host_not_allowed (403), the link is still alive —
+         hand it to the user as in step 2. Do not create another ticket.
+      2. If the file is on the user's machine, give them the `upload_url` and
+         ask them to open it and drop the file in.
+
+    Args:
+      name: the name to store it under, e.g. '발표자료.pptx'
+      summary/reason: same meaning as in namu_upload_file — required, and
+        written to the attachments log when the file lands
+      body/topic/project/tags: optional, same meaning as in namu_upload_file
+    Returns: {"ticket_id", "upload_url", "expires_at", "name"}. The link expires
+      in 2 hours and works once.
+    """
+    via = _resolve_via(ctx)
+    origin = _require_origin(
+        ctx, "파일이 이 PC에 있으므로 namu_upload_file에 file_path로 바로 주세요."
+    )
+    # 이름과 설명을 **발급 시점에** 검사한다. 미루면 회원이 파일을 다 올린
+    # 다음에야 "이름이 잘못됐다"고 튕기게 되는데, 그때는 되돌릴 방법이 없다.
+    path = attach_local.normalize_name(name)
+    meta = normalize_attach_meta({
+        "summary": summary, "reason": reason, "body": body,
+        "topic": topic, "project": project, "tags": tags,
+    })
+    meta["via"] = via
+
+    with closing(tickets.connect()) as conn:
+        ticket = tickets.create(
+            conn, ticket_web.LOCAL_USER, tickets.KIND_UPLOAD, path, meta,
+            ttl_sec=tickets.UPLOAD_TTL_SEC,
+        )
+        tickets.purge_expired(conn)
+
+    upload_url = f"{origin}{ticket_web.UPLOAD_PREFIX}{ticket['ticket_id']}"
+    return {
+        "ticket_id": ticket["ticket_id"],
+        "upload_url": upload_url,
+        "expires_at": ticket["expires_at"],
+        "name": path,
+        "curl": f'curl -sS -X POST -F "file=@<파일경로>" {upload_url}',
+        "if_blocked": (
+            "curl이 403 host_not_allowed로 막히면 이 링크는 **그대로 살아 있습니다** "
+            "— 새로 만들지 말고 회원에게 이 링크에 직접 올려 달라고 안내하세요."
+        ),
+    }
+
+
+@mcp.tool()
+def namu_create_download_ticket(name: str, ctx: Context | None = None) -> dict:
+    """Create a download link for one uploaded file.
+
+    **This is how you hand a file to the user** — they click the link and the
+    file downloads. Nothing passes through your output. Use this instead of
+    `namu_download_file` whenever the user wants the file itself rather than you
+    reading its contents.
+
+    You can also fetch it yourself with `curl -sS -o <path> <download_url>`.
+
+    Args:
+      name: file name as shown by namu_list_files
+    Returns: {"ticket_id", "download_url", "name", "expires_at"}. The link
+      expires in 1 hour and can be opened more than once until then.
+    """
+    via = _resolve_via(ctx)
+    origin = _require_origin(
+        ctx, "namu_download_file에 save_to를 주어 디스크에 바로 쓰세요."
+    )
+    path = attach_local.normalize_name(name)
+    # 없는 파일에 링크를 내주지 않는다 — 회원이 눌렀을 때 비로소 깨지는 링크는
+    # "받기가 고장났다"로 읽힌다. 목록은 이름만 읽으므로 몸통을 끌어오지 않는다.
+    if path not in set(attach_local.list_paths()):
+        raise ValueError(
+            f"저장소에 그런 파일이 없습니다: {path} — namu_list_files로 이름을 "
+            "먼저 확인해 보세요."
+        )
+
+    with closing(tickets.connect()) as conn:
+        ticket = tickets.create(
+            conn, ticket_web.LOCAL_USER, tickets.KIND_DOWNLOAD, path,
+            {"via": via}, ttl_sec=tickets.DOWNLOAD_TTL_SEC,
+        )
+        tickets.purge_expired(conn)
+
+    return {
+        "ticket_id": ticket["ticket_id"],
+        "download_url": (
+            f"{origin}{ticket_web.DOWNLOAD_PREFIX}{ticket['ticket_id']}"
+        ),
+        "name": path,
+        "expires_at": ticket["expires_at"],
+    }
+
+
+@mcp.tool()
+def namu_check_ticket(ticket_id: str, ctx: Context | None = None) -> dict:
+    """Check whether a file has arrived through an upload link yet.
+
+    Use this when the user says "I uploaded it".
+
+    Args:
+      ticket_id: the ticket_id you got from namu_create_upload_ticket
+    Returns: {"status", "kind", "name", "expires_at"} plus "path"/"bytes" once
+      the file has landed. `status` is 완료 (done), 대기중 (waiting), 만료됨
+      (expired) or 없음 (no such link). A download link stays 대기중 even after
+      the user downloads: this server cannot tell whether they saved the file,
+      and does not log it.
+    """
+    _resolve_via(ctx)
+    with closing(tickets.connect()) as conn:
+        ticket = tickets.get(conn, ticket_id)
+    if ticket is None:
+        return {"status": tickets.STATUS_MISSING}
+
+    out = {
+        "status": tickets.status_of(ticket),
+        "kind": ticket["kind"],
+        "name": ticket["name"],
+        "expires_at": ticket["expires_at"],
+    }
+    result = ticket.get("result") or {}
+    if result:
+        out["path"] = result.get("path")
+        out["bytes"] = result.get("bytes")
+    return out
 
 
 if __name__ == "__main__":
