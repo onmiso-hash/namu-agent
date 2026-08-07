@@ -94,3 +94,37 @@ def test_http_server_feeds_its_exposed_list_into_the_instructions():
     # 거르는 목록과 소개문이 같은 인자에서 나오는지 소스로 못 박는다.
     src = Path(__file__).with_name("http_server.py").read_text(encoding="utf-8")
     assert "set_instructions(mcp_server.mcp, HTTP_EXPOSED_TOOLS)" in src
+
+
+# ---------------------------------------------------------------------------
+# 올리기 소개가 그 연결에 실제로 있는 칸과 맞는가 (2026-08-07, 세 번째 base64 사고)
+# ---------------------------------------------------------------------------
+#
+# stdio에는 `file_path` 칸이 있어 "디스크에 있는 파일을 올린다"가 참이다. 웹으로
+# 여는 경로에 붙는 AI는 이 PC의 경로를 지어낼 수 없으므로 그 문장이 거짓이 된다.
+# 거짓인 쪽에서 파일을 든 AI가 넣을 칸을 못 찾으면, 남는 길은 파일을 읽어 글자로
+# 옮기는 것뿐이다 — 실제로 명령을 돌려 base64로 바꾸기 시작했고 회원은 몇 분을
+# 기다리다 응답을 멈췄다. 도구에서 base64 칸을 없앤 것으로는 안 막힌다(인코딩이
+# 도구의 인자가 아니라 그 앞 단계에서 일어나므로).
+
+def _upload_line(text: str) -> str:
+    return next(l for l in text.splitlines() if l.startswith("- namu_upload_file —"))
+
+
+def test_stdio_still_offers_the_disk_path():
+    # 터미널에서는 경로로 주는 것이 가장 빠른 길이다 — 이 안내가 사라지면 안 된다.
+    assert "디스크" in _upload_line(record_input.server_instructions())
+
+
+def test_the_web_upload_line_does_not_offer_a_disk_path():
+    line = _upload_line(record_input.server_instructions(upload_takes_path=False))
+    assert "디스크" not in line, f"없는 칸을 있다고 소개하고 있다: {line}"
+    assert "namu_create_upload_ticket" in line, (
+        "파일로 있는 것이 갈 곳을 안 알려 주면 AI는 파일을 읽는 쪽을 고른다"
+    )
+
+
+def test_the_web_paths_ask_for_the_no_path_line():
+    # 소개문 함수만 고치고 부르는 쪽을 안 고치면 웹은 그대로 옛 문장을 받는다.
+    src = Path(__file__).with_name("http_server.py").read_text(encoding="utf-8")
+    assert "upload_takes_path=False" in src

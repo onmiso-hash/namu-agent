@@ -332,8 +332,49 @@ _TOOL_LINES = (
                           "했을 때 확인하는 용도."),
 )
 
+# 웹으로 열었을 때의 `namu_upload_file` 소개 — 위 줄을 대신한다.
+#
+# 왜 갈라 두나 (2026-08-07, 세 번째 base64 사고):
+# 위 줄은 "디스크에 있는 파일을 올린다"고 말하는데, 그 말은 stdio(터미널)에서만
+# 참이다 — 그쪽 도구에는 `file_path` 칸이 있다. 웹으로 여는 두 경로(개인 주소·
+# 나무 클라우드)의 도구에는 그 칸이 없다.
+#
+# 그런데 웹에 붙은 AI는 파일을 **파일로** 들고 있는 경우가 많다(회원이 대화에
+# 첨부하면 그 AI의 작업공간에 파일로 놓인다). 그 AI가 "이 도구는 디스크의 파일을
+# 올린다"는 소개를 읽고 넣을 칸을 찾으면, 칸이 없으므로 남는 길은 파일을 직접
+# 읽어 글자로 옮기는 것뿐이다 — 실제로 명령을 돌려 base64로 바꾸기 시작했고
+# (2026-08-07 21:04 화면), 회원은 몇 분을 기다리다 응답을 멈췄다.
+#
+# 어제 올리기 도구에서 base64 칸을 없앤 것으로는 이 자리가 안 막힌다. 인코딩은
+# 우리 도구의 인자가 아니라 그 앞 단계, AI의 작업공간에서 일어나기 때문이다.
+# 막는 방법은 금지 문구를 더 붙이는 것이 아니라 **소개가 사실과 맞게 하는 것**이다
+# — 이 연결에 파일 경로 칸이 없다는 것과, 파일로 있는 것이 갈 곳(올리기 링크)을
+# 알려 주면 읽을 이유 자체가 없어진다.
+# 링크 도구 줄도 같이 바꾼다. 위 줄만 고치고 이 줄을 두면 둘이 어긋난다 — 기본
+# 문장은 "바이너리나 100KB가 넘는 파일은 이쪽"이라, 6KB짜리 `.md`를 파일로 든 AI가
+# 그 줄을 읽고 "내 것은 작고 글자니까 링크는 아니다"로 읽는다. 그 갈림길에 남는 길이
+# 다시 "파일을 읽어 글자로 옮기기"다. 웹에서 기준은 크기·종류가 아니라 **이미 파일로
+# 있는가**이므로, 그렇게 적는다.
+_WEB_TOOL_LINES = {
+    "namu_upload_file": (
+        "이 대화에서 만든 글을 파일로 저장하고 첨부 기록을 남긴다 — 이 연결에는 파일 "
+        "경로 칸이 없다. 이미 파일로 있는 것(회원이 대화에 첨부한 파일 포함)은 "
+        "namu_create_upload_ticket으로 링크를 만들어 그 파일을 그대로 보낸다. 파일 "
+        "몸통은 각 PC로 안 내려오므로 설명(3층)이 나중에 그 파일을 찾는 유일한 단서다."
+    ),
+    "namu_create_upload_ticket": (
+        "파일을 올릴 일회용 링크를 만든다 — 이미 파일로 있는 것은 크기·종류와 상관없이 "
+        "이쪽이다. 파일 몸통이 AI의 출력을 거치지 않으므로 파일을 열어 읽을 필요가 없고, "
+        "크기와 무관하게 빠르다."
+    ),
+}
 
-def server_instructions(exposed: "Iterable[str] | None" = None) -> str:
+
+def server_instructions(
+    exposed: "Iterable[str] | None" = None,
+    *,
+    upload_takes_path: bool = True,
+) -> str:
     """MCP 서버 소개문. 그릇 설명과 기록 규칙을 도구 설명문과 같은 표에서 만든다.
 
     `exposed`에 **실제로 내주는 도구 이름**을 넘기면 그만큼만 소개한다. 생략하면
@@ -344,9 +385,18 @@ def server_instructions(exposed: "Iterable[str] | None" = None) -> str:
     거르지 않아 **없는 도구 4개를 있다고 소개**하고 있었다(2026-08-05 실측:
     소개 7종 / 노출 3종). 붙은 AI가 없는 도구를 부르면 실패한다. 거르는 목록과
     소개문을 같은 인자에서 만들면 둘이 다시 갈라지지 않는다.
+
+    `upload_takes_path`는 그 연결의 `namu_upload_file`에 **파일 경로 칸이 있는지**다
+    (stdio는 있고, 웹으로 여는 두 경로는 없다). 없는 쪽에 "디스크의 파일을 올린다"고
+    소개하면 파일을 든 AI가 넣을 칸을 못 찾아 파일을 읽어 글자로 옮기기 시작한다 —
+    `_WEB_TOOL_LINES` 위의 설명 참고.
     """
     bowl_field = cfg.field_by_name("bowl")
-    shown = [(n, d) for n, d in _TOOL_LINES if exposed is None or n in set(exposed)]
+    tool_lines = tuple(
+        (n, d if upload_takes_path else _WEB_TOOL_LINES.get(n, d))
+        for n, d in _TOOL_LINES
+    )
+    shown = [(n, d) for n, d in tool_lines if exposed is None or n in set(exposed)]
     hidden = [n for n, _ in _TOOL_LINES if exposed is not None and n not in set(exposed)]
     lines = [
         f"NAMU 기억 서버 — 대화가 끝나도 남는 기억을 {_bowl_count_ko()} 그릇에 "

@@ -266,8 +266,15 @@ def set_instructions(mcp_instance, allowed: frozenset[str]) -> None:
     initialize 응답은 요청이 올 때 이 값을 읽으므로 build_app() 시점 대입으로 충분하다.
 
     stdio 경로는 이 함수를 부르지 않으므로 소개문이 7종 그대로다(도구도 안 거른다).
+
+    `upload_takes_path=False`인 이유: 이 경로에 붙는 AI는 대화창 안에 있어 이 PC의
+    디스크 경로를 갖고 있지 않다(`namu_upload_file`의 `file_path`는 이 서버가 도는
+    PC의 경로라 그 AI가 지어낼 수 없다). 소개문이 "디스크의 파일을 올린다"고 말하면
+    파일을 든 AI가 넣을 칸을 못 찾아 파일을 읽어 글자로 옮기기 시작한다.
     """
-    mcp_instance._mcp_server.instructions = record_input.server_instructions(allowed)
+    mcp_instance._mcp_server.instructions = record_input.server_instructions(
+        allowed, upload_takes_path=False,
+    )
 
 
 def configure_mcp_for_http(mcp_instance, settings: dict) -> None:
