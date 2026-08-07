@@ -22,7 +22,7 @@ import task_resolve
 import ticket_web
 import tickets
 from mcp.server.fastmcp import Context, FastMCP
-from db import init_db, rebuild_from_yaml, record, cache_is_stale
+from db import init_db, rebuild_from_yaml, record, cache_is_stale, ensure_indexes
 from db import recall as _recall
 from db import search_bowl as _search_bowl
 
@@ -37,8 +37,13 @@ def get_conn() -> sqlite3.Connection:
 
 
 def _ensure_db() -> None:
-    if not cfg.NAMU_DB_PATH.exists() or cache_is_stale(cfg.LEARNINGS_YAML_PATH, cfg.NAMU_DB_PATH):
-        rebuild_from_yaml()
+    """다섯 그릇의 검색 색인을 맞춘다(fts5-memo-tasks-index 4단계).
+
+    교훈 하나만 보던 것을 그릇 전체로 넓혔다 — 원본이 안 바뀌었으면 stat 몇 번으로
+    끝나고, 바뀐 그릇만 다시 만든다. 그릇 목록은 db가 안다(여섯 번째가 생겨도 여기는
+    안 고친다).
+    """
+    ensure_indexes()
 
 
 def _ensure_tasks_gitattributes() -> None:
@@ -618,7 +623,7 @@ def namu_search(
     limit: int = 10,
     ctx: Context | None = None,
 ):
-    """Search one of THREE memory bowls with precise axis filters (analytical
+    """Search any of the FIVE memory bowls with precise axis filters (analytical
     lookup during judgment — for fuzzy context warming use namu_recall instead).
 
     Bowls (`bowl`):
@@ -630,16 +635,23 @@ def namu_search(
         web (no cwd there). `project='*'` forces "all projects" explicitly
         on either side.
       - 'profile': facts/preferences.
+      - 'memo': sticky notes still up (the only bowl whose items disappear).
+      - 'attachments': history of uploaded files — searches the FILE NAME as
+        well as the description, and `project` works here too.
 
     `query` is optional everywhere — omit it to filter by axes alone (e.g.
     "what did I do yesterday on hp" = bowl='tasks', machine='hp',
     since='2026-07-24'). Other axes: task (substring), machine/via (exact),
     since/until (date or datetime, inclusive).
 
+    Multi-word queries mean ALL words must appear (in any order, anywhere in
+    the entry) — 'design doc' and 'doc design' find the same things.
+
     Examples:
       namu_search(bowl='tasks', machine='hp', since='2026-07-24')
       namu_search(query='timeout', bowl='learnings', outcome_filter='failure')
       namu_search(bowl='tasks', project='namu-agent', task='namu-57')
+      namu_search(query='설계.pdf', bowl='attachments')
 
     Returns: {"bowl", "results": [...], "count": N[, "summary": {...} (learnings only)]}
     """

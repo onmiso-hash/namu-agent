@@ -73,9 +73,11 @@ def _append_sync_log(line: str, home: "Path | str | None" = None) -> None:
 def sync_pull() -> bool:
     """NAMU_DATA_ROOT에서 git pull(union merge)로 다른 PC의 최신 교훈을 당겨온다.
 
-    세션 시작 훅에서 호출 — 여기서 yaml이 갱신되면 기존 cache_is_stale 로직이
-    db를 자동 재생성하므로 이 함수는 pull만 책임진다. 훅을 절대 막지 않도록
-    실패·타임아웃·예외 전부 예외를 삼키고 False를 반환한다.
+    세션 시작 훅에서 호출 — 여기서 원본 파일이 갱신되면 훅이 곧이어 부르는
+    `db.ensure_indexes()`가 바뀐 그릇의 검색 색인을 다시 만든다(다섯 그릇 전부.
+    fts5-memo-tasks-index 4단계 — 그전에는 교훈 하나뿐이었다). 그래서 이 함수는
+    pull만 책임진다. 훅을 절대 막지 않도록 실패·타임아웃·예외 전부 삼키고
+    False를 반환한다.
     """
     import config as cfg
 

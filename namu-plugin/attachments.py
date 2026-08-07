@@ -38,6 +38,22 @@ def _attachments_path(paths: "cfg.DataPaths | None" = None):
     return p.attachments_yaml or cfg.ATTACHMENTS_YAML_PATH
 
 
+def layers(doc: dict) -> tuple[str, str, str]:
+    """기록 하나에서 (summary, reason, body)를 꺼낸다. **읽는 쪽은 전부 이걸 쓴다.**
+
+    memo.layers·profile.layers와 같은 자리를 이 그릇에도 둔다(설계서 9.6 2단계).
+    저 둘은 3층 이전에 쌓인 옛 이름(`text`/`statement`/`source`)을 흡수하는 폴백을
+    갖지만, 이 그릇은 3층이 확정된 뒤에 태어나 흡수할 옛 이름이 없다 — 그래도
+    헬퍼를 두는 이유는 폴백이 필요해서가 아니라 **읽는 경로를 한 곳으로 모으기
+    위해서다.** 검색 색인이 훑는 텍스트를 만드는 곳이 여기 하나뿐이면, 나중에 칸이
+    늘거나 이름이 바뀔 때 색인만 조용히 옛 칸을 훑는 일이 생기지 않는다.
+    """
+    summary = doc.get("summary") or ""
+    reason = doc.get("reason") or ""
+    body = doc.get("body") or ""
+    return str(summary), str(reason), str(body)
+
+
 def record_attachment(
     path: str,
     bytes_: int,

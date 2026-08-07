@@ -35,16 +35,16 @@ def _project_dir_from_stdin() -> str:
 
 
 def _ensure_db(cfg) -> None:
+    """다섯 그릇의 검색 색인을 세션 시작 시점에 맞춘다.
+
+    외부 터미널에서 git pull 후 CC를 시작하면 db가 낡아 있을 수 있다(07-10 실측:
+    yaml 40건 vs db 37건). 교훈만 재생성하던 것을 `ensure_indexes` 한 번으로 넓혔다
+    (fts5-memo-tasks-index 4단계) — 부르는 쪽이 그릇 목록을 알 필요가 없어야 여섯
+    번째 그릇이 생겨도 이 배선이 새지 않는다. 안 낡았으면 stat 몇 번으로 끝난다.
+    """
     import db
 
-    if not cfg.NAMU_DB_PATH.exists():
-        db.init_db()
-        if cfg.LEARNINGS_YAML_PATH.exists():
-            db.rebuild_from_yaml()
-    elif db.cache_is_stale(cfg.LEARNINGS_YAML_PATH, cfg.NAMU_DB_PATH):
-        # 외부 터미널에서 git pull 후 CC를 시작한 경우 db가 낡아 있을 수 있음
-        # (07-10 실측: yaml 40건 vs db 37건) — 세션 브리핑이 최신 교훈을 반영하도록 재생성.
-        db.rebuild_from_yaml()
+    db.ensure_indexes()
 
 
 def main() -> None:

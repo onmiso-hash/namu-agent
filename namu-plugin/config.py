@@ -74,9 +74,14 @@ PROFILE_ALWAYS_TAG = "상시"
 
 # 메모(스틱노트) — namu-56. 앞의 두 그릇과 결정적으로 다른 점은 **append-only가
 # 아니라는 것**이다: 떼면 파일에서 그 항목이 사라진다(tombstone 없음). 이력이 남아야
-# 하는 기억(learnings/profile/tasks)과 쓰고 버리는 기억을 규칙으로 가른 결과이며,
-# 그래서 SQLite 인덱싱도 하지 않는다 — 지식베이스(learnings) 오염 0이 이 그릇의
-# 존재 이유다("영화 시간표"를 저장할 데가 없어 learnings에 밀려들어오던 문제).
+# 하는 기억(learnings/profile/tasks)과 쓰고 버리는 기억을 규칙으로 가른 결과다.
+# 지식베이스(learnings) 오염 0이 이 그릇의 존재 이유다("영화 시간표"를 저장할 데가
+# 없어 learnings에 밀려들어오던 문제).
+#
+# 검색 색인은 **자기 표를 따로 갖는다**(fts5-memo-tasks-index). namu-56이 금지한
+# 것은 "교훈 검색 색인에 섞이는 것"이지 색인을 갖는 것 자체가 아니었고, 별도 표면
+# 그 결정과 충돌하지 않는다. mutable이라 뗀 메모가 색인에 남으면 없는 것이 검색되므로,
+# 낡음 판정은 건수가 아니라 파일의 크기·수정시각을 본다(db._bowl_signature).
 MEMO_YAML_PATH = NAMU_DATA_ROOT / "memory" / "memo.yaml"
 
 # DB
@@ -211,7 +216,7 @@ BOWLS: tuple[Bowl, ...] = (
         git_patterns=("tasks/**/log.md", "tasks/*/.project"),
         mutable=False,
         merge="union",
-        cached=False,
+        cached=True,
         web_exposed=True,
         label="작업일지",
     ),
@@ -220,7 +225,7 @@ BOWLS: tuple[Bowl, ...] = (
         git_patterns=("memory/profile.yaml",),
         mutable=False,
         merge="union",
-        cached=False,
+        cached=True,
         web_exposed=True,
         label="개인 사실",
     ),
@@ -234,7 +239,7 @@ BOWLS: tuple[Bowl, ...] = (
         git_patterns=("memory/memo.yaml",),
         mutable=True,
         merge="file",
-        cached=False,
+        cached=True,
         web_exposed=True,
         label="쪽지",
     ),
@@ -242,13 +247,15 @@ BOWLS: tuple[Bowl, ...] = (
     # append-only인 이유가 이 그릇에서는 특히 중요하다: 고칠 수 없으므로 "지금 살아
     # 있는 파일 목록"은 기록을 시간순으로 훑어 계산해야 하고, status(올림/새 판/지움)가
     # 그 계산의 유일한 근거다. 지운 파일도 "있었다는 사실 + 왜 뺐는지"가 남는다.
-    # cached=False — 검색 색인에 넣을지는 이 작업의 범위 밖으로 사용자가 정했다.
+    # cached=True — 검색 색인은 fts5-memo-tasks-index가 넘겨받아 넣었다(설계서 9장).
+    # 그 색인의 입력원은 이 yaml **하나뿐**이다: 파일 목록이나 크기를 사용자
+    # 저장소에 물으면 git이 빠진 몸통을 전부 내려받아 격리가 되돌릴 수 없이 뚫린다.
     Bowl(
         name="attachments",
         git_patterns=("memory/attachments.yaml",),
         mutable=False,
         merge="union",
-        cached=False,
+        cached=True,
         web_exposed=True,
         label="첨부 기록",
     ),
