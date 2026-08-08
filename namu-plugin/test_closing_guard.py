@@ -103,6 +103,42 @@ def test_closing_regex_matches_wrapup_and_ignores_ordinary_talk():
         assert not hook._CLOSING_RE.search(text), text
 
 
+def test_closing_signal_ignores_pattern_inside_a_long_pasted_message():
+    """실물 오탐(2026-08-08) — 앱 안내문을 인용해 질문했을 뿐인데 마무리로 오인했다."""
+    hook = _load_hook()
+    pasted_question = (
+        "이전 세션에서 namu cloud 에 ai 도우미 추가했거든? 그런데 API 연동시 리미트를 "
+        "몇으로 설정했는지 벌써 한도가 도달했나봐.\n"
+        "오늘은 여기까지입니다. 내일 다시 열립니다 — 그동안은 나무 안내서를 보시면 "
+        "대부분 답이 있습니다. <--- 이런대답이 나오고 있어."
+    )
+    assert hook._CLOSING_RE.search(pasted_question)  # 글자 패턴 자체는 여전히 걸린다
+    assert not hook._is_closing_signal(pasted_question)  # 그러나 마무리 신호로는 안 본다
+
+    for text in ["마무리해", "오늘은 여기까지 하자", "세션 끝낼게", "이제 그만하자", "wrap up"]:
+        assert hook._is_closing_signal(text), text
+    for text in ["이 코드 정리해줘", "다음 작업 이어서 하자"]:
+        assert not hook._is_closing_signal(text), text
+
+
+def test_hook_stays_silent_when_closing_phrase_is_inside_a_long_pasted_message(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    _make_task(home, "proj-a", "namu-1", "# log\n[시작] 2026-07-27 09:10:00 test · 착수\n")
+    pasted_question = (
+        "이전 세션에서 namu cloud 에 ai 도우미 추가했거든? 그런데 API 연동시 리미트를 "
+        "몇으로 설정했는지 벌써 한도가 도달했나봐.\n"
+        "오늘은 여기까지입니다. 내일 다시 열립니다 — 그동안은 나무 안내서를 보시면 "
+        "대부분 답이 있습니다. <--- 이런대답이 나오고 있어."
+    )
+    transcript = _write_transcript(tmp_path, pasted_question, started)
+
+    result = _run_hook(home, _payload(tmp_path, home, transcript))
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
 def test_hook_stays_silent_when_not_closing(tmp_path):
     home = tmp_path / "home"
     home.mkdir()

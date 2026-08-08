@@ -33,9 +33,26 @@ _CLOSING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 마무리 선언은 그 말 자체가 메시지 전부일 때가 대부분이다("마무리해",
+# "오늘은 여기까지 하자"). 이보다 훨씬 긴 메시지에서 패턴이 걸리면, 사용자가
+# 다른 곳의 문구(예: 앱 화면에 뜬 안내문)를 그대로 붙여넣어 질문한 것일 가능성이
+# 높다 — 2026-08-08 실물 오탐: AI 안내원이 띄운 "오늘은 여기까지입니다..."
+# 한도 초과 안내문을 그대로 인용해 "이런 문구가 뜬다"고 물었을 뿐인데 마무리로
+# 오인해 세션을 막았다.
+_CLOSING_SIGNAL_MAX_LEN = 40
+
 # 이 줄들이 있으면 "이어갈 지점을 남겼다"로 본다. [완료]/[중단]은 task 자체가
 # 닫힌 것이라 다음 지점이 필요 없다.
 _SATISFYING_TAGS = ("다음", "완료", "중단")
+
+
+def _is_closing_signal(text: str) -> bool:
+    """마무리 패턴이 있고, 그 패턴이 메시지 전체를 거의 다 차지할 때만 True.
+
+    긴 글 속에 우연히(또는 인용문으로) 패턴 글자가 섞여 있는 경우를 걸러낸다.
+    """
+    text = text.strip()
+    return bool(text) and len(text) <= _CLOSING_SIGNAL_MAX_LEN and bool(_CLOSING_RE.search(text))
 
 
 def _read_stdin_json() -> dict:
@@ -172,7 +189,7 @@ def main() -> None:
             sys.exit(0)
 
         entries = _transcript_entries(data.get("transcript_path"))
-        if not _CLOSING_RE.search(_last_user_text(entries)):
+        if not _is_closing_signal(_last_user_text(entries)):
             sys.exit(0)
 
         import config as cfg  # noqa: F401  (tz 기준 통일에 필요)
