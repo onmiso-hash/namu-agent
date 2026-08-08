@@ -13,7 +13,7 @@ English: [README.md](README.md)
 | [🌳 **나무 안내서**](https://onmiso-hash.github.io/namu-agent/docs/index.html) | 나무가 뭔지, 쓰는 방법 네 갈래가 어떻게 다른지 |
 | [🔧 설치하기](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html) | Claude Code·agy에 붙이기 — 설치·첫 작업·업데이트·삭제 |
 | [☁️ **나무 클라우드**](https://namu-cloud.onnamu.kr/) | 브라우저에서 쓰는 AI에 붙이기 — 설치 없이 GitHub 로그인만 |
-| [🌐 웹에서 직접 서버 돌리기](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | 웹에서 쓰되 서버는 내가 직접 |
+| [🌐 웹에서 직접 서버 운영하기](https://onmiso-hash.github.io/namu-agent/docs/remote_mcp_guide.html) | 웹에서 쓰되 서버는 내가 직접 |
 | [📐 기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) | 기억이 어디에 어떤 모양으로 쌓이는지 |
 | [⚙️ 절차 설계도](https://onmiso-hash.github.io/namu-agent/docs/workflow_architecture.html) | 나머지 절반 — 일의 순서를 어떻게 잡고 어디서 멈춰 물어보는지 |
 | [📎 파일 주고받기](docs/attach_files.md) | 내 저장소에 파일을 올리고 받는 법, 절대 어기면 안 되는 격리 규칙 |
