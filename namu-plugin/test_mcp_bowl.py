@@ -937,31 +937,56 @@ def test_namu_record_create_on_web_can_pick_an_existing_room(fake_home):
     assert not (fake_home / ".namu" / "tasks" / "web-project").exists()
 
 
-def test_namu_record_create_on_web_unknown_name_lands_in_web_project(fake_home):
-    """웹에서 처음 보는 이름을 주면 그 이름의 방은 생기지 않고 web-project로 간다 —
+def test_namu_record_create_on_web_unknown_name_asks_with_a_room_list(fake_home):
+    """웹에서 처음 보는 이름을 주면 아무것도 만들지 않고 방 목록을 돌려준다 —
     실사고 'blog-summary-bot'이 정확히 이 경로였다."""
     result = _run_probe(
         fake_home,
-        "line = mcp_server.namu_record(bowl='tasks', project='brand-new-proj',"
-        " task='namu-1', create=True, body='생략', purpose='웹 고정 확인',"
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='brand-new-proj',"
+        " task='namu-1', create=True, body='생략', purpose='웹 목록 확인',"
         " ctx=_WEB_CTX)\n"
-        "print('RESULT', repr(line))\n",
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e).replace(chr(10), '⏎'))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert (fake_home / ".namu" / "tasks" / "web-project" / "namu-1" / "task.md").exists()
+    assert "VALUEERROR" in result.stdout
+    # 번호 매긴 목록 = 이미 있는 방들 + web-project. 사람이 고르기만 하면 된다.
+    assert "1. proj-new" in result.stdout and "2. proj-x" in result.stdout
+    assert "3. web-project" in result.stdout
+    # 목록에 '새 프로젝트로 만들기'가 있으면 AI가 그것을 골라 사고가 재현된다
+    # (2차 게이트가 뚫린 자리가 정확히 거기였다).
+    assert "새 프로젝트로 만들기" not in result.stdout
     assert not (fake_home / ".namu" / "tasks" / "brand-new-proj").exists()
-    # 준 이름과 다른 자리에 만들었으면 조용히 넘어가지 않고 알린다.
-    assert "web-project" in result.stdout
+    assert not (fake_home / ".namu" / "tasks" / "web-project").exists()
 
 
-def test_namu_record_create_on_web_without_project_needs_no_name(fake_home):
-    """웹에서는 project를 생략해도 만들어진다 — 자리가 이미 정해져 있어 물을 것이
-    없다(예전에는 '웹에서는 project를 명시하라'며 거절했고, 그 자리를 AI가 지어낸
-    이름으로 채운 것이 사고였다)."""
+def test_namu_record_create_on_web_without_project_asks_too(fake_home):
+    """이름을 아예 안 줘도 마찬가지로 목록을 돌려준다 — 자리를 정하는 것은 사람이다."""
     result = _run_probe(
         fake_home,
-        "line = mcp_server.namu_record(bowl='tasks', task='namu-2', create=True,"
-        " body='생략', purpose='웹 기본값 확인', ctx=_WEB_CTX)\n"
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', task='namu-2', create=True,"
+        " body='생략', purpose='웹 목록 확인', ctx=_WEB_CTX)\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e).replace(chr(10), '⏎'))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    assert "proj-x" in result.stdout and "web-project" in result.stdout
+    assert not (fake_home / ".namu" / "tasks" / "web-project").exists()
+
+
+def test_namu_record_create_on_web_after_choosing_web_project(fake_home):
+    """목록에서 web-project를 골라 다시 부르면 그 방에 만들어진다 — 아직 그 폴더가
+    없어도 된다(웹에서 만든 작업이 모이는 기본 자리라 첫 작업도 여기로 온다)."""
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', project='web-project',"
+        " task='namu-2', create=True, body='생략', purpose='골라서 만들기',"
+        " ctx=_WEB_CTX)\n"
         "print('RESULT', repr(line))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"

@@ -410,15 +410,16 @@ def _create_task_entry(
         raise ValueError(_STAR_NOT_FOR_RECORD)
 
     # 새 작업이 들어갈 자리는 부르는 쪽이 적어 넣는 값이 아니라 규칙으로 정한다 —
-    # 내 PC는 열려 있는 폴더, 웹은 상수 한 곳. 판정과 문안은 project_policy 한
-    # 곳에 있고 클라우드도 같은 모듈을 쓴다(앞선 판에서 같은 정책을 두 파일에 손으로
-    # 옮겨 적었다가 클라우드만 뚫렸던 것이 그 분리의 계기다).
+    # 내 PC는 열려 있는 폴더, 웹은 이미 있는 방 중에서 사람이 고른 곳. 판정과 문안은
+    # project_policy 한 곳에 있고 클라우드도 같은 모듈을 쓴다(앞선 판에서 같은 정책을
+    # 두 파일에 손으로 옮겨 적었다가 클라우드만 뚫렸던 것이 그 분리의 계기다).
     is_web = _is_web_request(ctx)
-    resolved_project, project_notice = project_policy.resolve_create_project(
+    resolved_project = project_policy.resolve_create_project(
         project,
         is_web=is_web,
         cwd_project=None if is_web else cfg.tasks_dir_for().name,
         existing=task_resolve.list_projects(),
+        person="사용자",
     )
 
     slug = _validate_new_task_slug(task)
@@ -515,11 +516,6 @@ def _create_task_entry(
             f"task={slug!r}, tag='다음', text='<다음 세션이 시작할 지점>')을 한 번 더 "
             "호출하세요(생성 호출에 tag/text를 함께 주면 한 번에 들어갑니다)."
         )
-
-    # 준 이름과 다른 자리에 만들었으면 맨 앞에 알린다 — 조용히 옮겨 담으면 부른
-    # 쪽도 사람도 어디에 들어갔는지 모른다.
-    if project_notice:
-        summary = f"{project_notice}\n{summary}"
 
     return summary
 
