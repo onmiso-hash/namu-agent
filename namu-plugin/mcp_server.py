@@ -16,6 +16,7 @@ import attachments
 import config as cfg
 import memo
 import memory_sync
+import new_project_gate
 import profile
 import record_input
 import task_resolve
@@ -409,17 +410,15 @@ def _create_task_entry(
     # AI가 사용자에게 묻지 않고 지어낼 수 있다는 뜻이기도 하다(실사고: onnamu-security,
     # web-write-test — 둘 다 그 자리에서 즉석으로 지어낸 프로젝트 이름이다). CLI도
     # project를 명시로 넘기면 같은 문이 열리므로, "지금까지 없던 프로젝트 이름"이면
-    # 플랫폼을 가리지 않고 여기서 한 번 멈춘다(namu-66이 닫는 말을 거절하는 것과 같은
-    # 패턴 — 지침이 아니라 코드로 막아야 어떤 AI 엔진이 불러도 똑같이 막힌다).
-    if resolved_project not in task_resolve.list_projects() and not new_project:
-        existing = task_resolve.list_projects()
-        hint = ", ".join(existing) if existing else "(아직 하나도 없음)"
-        raise ValueError(
-            f"프로젝트 {resolved_project!r}는 지금까지 없던 새 이름입니다 — 만들기 전에 "
-            "사용자에게 먼저 확인하세요: 기존 프로젝트 중 하나에 넣을지, 정말 새 "
-            f"프로젝트를 만들지. 기존 프로젝트: {hint}. 사용자가 새 프로젝트가 맞다고 "
-            "확인했으면 new_project=True를 함께 주고 다시 호출하세요."
-        )
+    # 플랫폼을 가리지 않고 여기서 한 번 멈춘다. 판정과 문안은 new_project_gate 한
+    # 곳에 있다 — 클라우드도 같은 함수를 부른다(1차 판에서 손으로 옮겨 적었다가
+    # 클라우드만 뚫렸던 것이 이 파일 분리의 계기다).
+    new_project_gate.check(
+        resolved_project,
+        task_resolve.list_projects(),
+        new_project=new_project,
+        person="사용자",
+    )
 
     slug = _validate_new_task_slug(task)
 
