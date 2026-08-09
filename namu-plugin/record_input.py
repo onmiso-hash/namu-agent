@@ -26,7 +26,7 @@ _KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
 # 호출자가 명시한 값과 구분되지 않기 때문인데, 이걸 값으로 취급하면 쪽지에
 # `create=False`가 딸려 들어온 것만으로 "쪽지는 create를 받지 않습니다"라는 엉뚱한
 # 거절이 난다. 거짓은 아무 일도 하지 않으므로 무시해도 잃는 정보가 없다.
-_FALSE_MEANS_ABSENT = ("create", "new_project")
+_FALSE_MEANS_ABSENT = ("create",)
 
 
 @dataclass(frozen=True)

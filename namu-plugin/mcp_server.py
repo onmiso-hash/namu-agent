@@ -16,7 +16,7 @@ import attachments
 import config as cfg
 import memo
 import memory_sync
-import new_project_gate
+import project_policy
 import profile
 import record_input
 import task_resolve
@@ -156,15 +156,18 @@ def _resolve_recall_project(project: str | None, ctx: Context | None) -> str | N
     return project
 
 
+_STAR_NOT_FOR_RECORD = (
+    "project='*'는 기록에 쓸 수 없습니다 — 기록은 프로젝트 하나를 명시해야 합니다"
+)
+
+
 def _resolve_record_project(project: str | None, ctx: Context | None) -> str:
     """namu_record(bowl='tasks')용 project 정규화. 기록은 반드시 프로젝트 하나에
     쓰므로(namu-57 2단계 2단위) '*'(전체)는 허용하지 않는다 — 조회(namu_search)와
     다른 점.
     """
     if project == "*":
-        raise ValueError(
-            "project='*'는 기록에 쓸 수 없습니다 — 기록은 프로젝트 하나를 명시해야 합니다"
-        )
+        raise ValueError(_STAR_NOT_FOR_RECORD)
     if project is not None:
         return project
     if _is_web_request(ctx):
@@ -393,7 +396,6 @@ def _create_task_entry(
     tag: str | None,
     via: str | None,
     ctx: Context | None,
-    new_project: bool = False,
 ) -> str:
     """bowl='tasks', create=True 경로: 새 task 폴더(task.md+log.md)를 만들고
     `[시작]` 줄을 append한다. `context.<machine>.md`는 만들지 않는다(namu-57 신규
@@ -404,20 +406,19 @@ def _create_task_entry(
     남았고(실측 2건), 브리핑이 "다음: (기록 없음)"으로 떠 다음 세션이 이어갈
     지점을 잃었다. text를 생략하면 반환문에 경고를 붙여 누락이 눈에 보이게 한다.
     """
-    resolved_project = _resolve_record_project(project, ctx)
+    if project == "*":
+        raise ValueError(_STAR_NOT_FOR_RECORD)
 
-    # 웹은 project를 매번 자유 텍스트로 받는다(cwd가 없어서다) — 그 텍스트를 호출한
-    # AI가 사용자에게 묻지 않고 지어낼 수 있다는 뜻이기도 하다(실사고: onnamu-security,
-    # web-write-test — 둘 다 그 자리에서 즉석으로 지어낸 프로젝트 이름이다). CLI도
-    # project를 명시로 넘기면 같은 문이 열리므로, "지금까지 없던 프로젝트 이름"이면
-    # 플랫폼을 가리지 않고 여기서 한 번 멈춘다. 판정과 문안은 new_project_gate 한
-    # 곳에 있다 — 클라우드도 같은 함수를 부른다(1차 판에서 손으로 옮겨 적었다가
-    # 클라우드만 뚫렸던 것이 이 파일 분리의 계기다).
-    new_project_gate.check(
-        resolved_project,
-        task_resolve.list_projects(),
-        new_project=new_project,
-        person="사용자",
+    # 새 작업이 들어갈 자리는 부르는 쪽이 적어 넣는 값이 아니라 규칙으로 정한다 —
+    # 내 PC는 열려 있는 폴더, 웹은 상수 한 곳. 판정과 문안은 project_policy 한
+    # 곳에 있고 클라우드도 같은 모듈을 쓴다(앞선 판에서 같은 정책을 두 파일에 손으로
+    # 옮겨 적었다가 클라우드만 뚫렸던 것이 그 분리의 계기다).
+    is_web = _is_web_request(ctx)
+    resolved_project, project_notice = project_policy.resolve_create_project(
+        project,
+        is_web=is_web,
+        cwd_project=None if is_web else cfg.tasks_dir_for().name,
+        existing=task_resolve.list_projects(),
     )
 
     slug = _validate_new_task_slug(task)
@@ -514,6 +515,11 @@ def _create_task_entry(
             f"task={slug!r}, tag='다음', text='<다음 세션이 시작할 지점>')을 한 번 더 "
             "호출하세요(생성 호출에 tag/text를 함께 주면 한 번에 들어갑니다)."
         )
+
+    # 준 이름과 다른 자리에 만들었으면 맨 앞에 알린다 — 조용히 옮겨 담으면 부른
+    # 쪽도 사람도 어디에 들어갔는지 모른다.
+    if project_notice:
+        summary = f"{project_notice}\n{summary}"
 
     return summary
 
@@ -714,7 +720,6 @@ def namu_record(
     supersedes: str | None = None,
     create: bool = False,
     done_when: list[str] | None = None,
-    new_project: bool = False,
     # ── 첨부 기록 전용 2칸 (namu-file-upload-download 4단계) ───────────────
     path: str | None = None,
     bytes: int | None = None,
@@ -763,7 +768,7 @@ def namu_record(
         "bowl": bowl, "summary": summary, "reason": reason, "body": body,
         "topic": topic, "status": status, "category": category, "tags": tags,
         "project": project, "confidence": confidence, "supersedes": supersedes,
-        "create": create, "done_when": done_when, "new_project": new_project,
+        "create": create, "done_when": done_when,
         "path": path, "bytes": bytes,
         "task": task, "outcome": outcome, "task_type": task_type,
         "verified_by": verified_by, "kind": kind, "subject": subject,
@@ -790,7 +795,6 @@ def namu_record(
                 start_point,
                 (v.get("status") or "다음") if start_point else None,
                 via, ctx,
-                new_project=bool(v.get("new_project")),
             )
         else:
             result = _record_task_entry(

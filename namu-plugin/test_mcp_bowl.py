@@ -22,17 +22,7 @@ _PROBE_TEMPLATE = """
 import sys
 sys.path.insert(0, {plugin_dir!r})
 import mcp_server
-import new_project_gate
 import task_resolve
-
-# 새 프로젝트 게이트는 "질문을 보여준 적 없는 프로젝트 이름"을 create 단계에서
-# 거절한다(new_project=True를 붙여도 첫 호출은 거절 — new_project_gate 참고).
-# 아래 이름들은 이 파일 대부분의 시험이 쓰는 붙박이 시험용 프로젝트로, 게이트가
-# 관심사가 아닌 시험까지 매번 "거절→대기→재호출" 두 걸음을 흉내내지 않도록
-# "이미 묻고 답을 받아 왔다"로 심어 둔다. 게이트 자체를 보는 시험은 이 목록에 없는
-# 이름('brand-new-proj')을 써서 진짜 문을 통과한다.
-for _primed in {primed!r}:
-    new_project_gate._prime_for_tests(_primed)
 
 class _FakeRequest:
     def __init__(self, query_params):
@@ -74,14 +64,24 @@ def _run_probe(
     home: Path,
     case_code: str,
     cwd: Path | None = None,
-    primed: tuple[str, ...] = ("proj-new", "proj-x"),
+    seed_projects: tuple[str, ...] = ("proj-new", "proj-x"),
 ) -> subprocess.CompletedProcess:
+    """가짜 홈에서 프로브를 돌린다.
+
+    `seed_projects`는 "이 프로젝트들은 이미 있다"를 심는다 — 새 작업은 지금 열린
+    폴더에서만 새 프로젝트를 만들고 없는 이름을 직접 주면 거절되므로
+    (project_policy), 프로젝트 이름을 명시로 주는 대부분의 시험은 그 이름이
+    이미 있어야 한다. 규칙 자체를 보는 시험은 이 목록에 없는 이름을 쓴다.
+    """
     env = os.environ.copy()
     env["HOME"] = str(home)
     env.pop("NAMU_HOME", None)
 
+    for name in seed_projects:
+        (home / ".namu" / "tasks" / name).mkdir(parents=True, exist_ok=True)
+
     script = _PROBE_TEMPLATE.format(
-        plugin_dir=str(_NAMU_PLUGIN_DIR), case_code=case_code, primed=primed
+        plugin_dir=str(_NAMU_PLUGIN_DIR), case_code=case_code
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -598,7 +598,7 @@ def test_namu_record_create_writes_task_and_log_and_start_line(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        " create=True, new_project=True, body='생략', title='새 설계 작업',"
+        " create=True, body='생략', title='새 설계 작업',"
         " purpose='웹에서 새 task를 만들 수 있어야 한다',"
         " done_when=['조건1', '조건2'])\n"
         "print('RESULT', repr(line))\n",
@@ -633,7 +633,7 @@ def test_namu_record_create_strips_slug_prefix_from_title(fake_home):
     result = _run_probe(
         fake_home,
         "mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        " create=True, new_project=True, body='생략', title='namu-99 — 이름이 이미 들어간 제목',"
+        " create=True, body='생략', title='namu-99 — 이름이 이미 들어간 제목',"
         " purpose='제목 중복 차단')\n"
         "print('OK')\n",
     )
@@ -663,7 +663,7 @@ def test_namu_record_create_rejects_overlong_title(fake_home):
         fake_home,
         "try:\n"
         "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        f" create=True, new_project=True, body='생략', title={long_title!r}, purpose='설명은 여기로')\n"
+        f" create=True, body='생략', title={long_title!r}, purpose='설명은 여기로')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -681,7 +681,7 @@ def test_namu_record_create_accepts_normal_title(fake_home):
     result = _run_probe(
         fake_home,
         "mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        " create=True, new_project=True, body='생략', title='작업 닫기 규율', purpose='짧은 제목은 통과')\n"
+        " create=True, body='생략', title='작업 닫기 규율', purpose='짧은 제목은 통과')\n"
         "print('OK')\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -696,14 +696,16 @@ def test_namu_record_create_without_purpose_raises(fake_home):
         fake_home,
         "try:\n"
         "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        " create=True, new_project=True, body='생략')\n"
+        " create=True, body='생략')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "VALUEERROR" in result.stdout
-    assert not (fake_home / ".namu" / "tasks" / "proj-new").exists()
+    # 목적 없이 거절됐으면 껍데기 task 폴더가 남지 않아야 한다(프로젝트 폴더 자체는
+    # _run_probe가 미리 심어 둔 것이라 있는 것이 정상이다).
+    assert not (fake_home / ".namu" / "tasks" / "proj-new" / "namu-99").exists()
 
 
 def test_namu_record_create_existing_slug_raises(fake_home):
@@ -748,7 +750,7 @@ def test_namu_record_create_path_traversal_slug_rejected(fake_home):
         "for bad in ('../evil', 'a/b', 'a\\\\b', '..'):\n"
         "    try:\n"
         "        mcp_server.namu_record(bowl='tasks', project='proj-x', task=bad,"
-        " create=True, new_project=True, body='생략', purpose='p')\n"
+        " create=True, body='생략', purpose='p')\n"
         "        print('NO_ERROR', bad)\n"
         "    except ValueError as e:\n"
         "        print('VALUEERROR', bad)\n",
@@ -768,7 +770,7 @@ def test_namu_record_create_with_text_appends_next_line(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-99',"
-        " create=True, new_project=True, purpose='한 번에 다음 지점까지', tag='다음',"
+        " create=True, purpose='한 번에 다음 지점까지', tag='다음',"
         " text='①user_repo.py 읽기\\n②범위 합의')\n"
         "print('RESULT', repr(line))\n",
     )
@@ -792,7 +794,7 @@ def test_namu_record_create_without_text_warns_about_missing_next(fake_home):
     result = _run_probe(
         fake_home,
         "line = mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-98',"
-        " create=True, new_project=True, body='생략', purpose='경고 확인용')\n"
+        " create=True, body='생략', purpose='경고 확인용')\n"
         "print('RESULT', repr(line))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -813,7 +815,7 @@ def test_namu_record_create_tag_without_text_raises_before_folder(fake_home):
         fake_home,
         "try:\n"
         "    mcp_server.namu_record(bowl='tasks', project='proj-new', task='namu-97',"
-        " create=True, new_project=True, body='생략', purpose='p', tag='다음')\n"
+        " create=True, body='생략', purpose='p', tag='다음')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
         "    print('VALUEERROR', str(e))\n",
@@ -828,7 +830,7 @@ def test_namu_record_create_with_text_shows_next_in_recall(fake_home):
     result = _run_probe(
         fake_home,
         "mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-101', create=True,"
-        " new_project=True, purpose='왕복 확인용', tag='다음', text='③ 결함 수정부터')\n"
+        " purpose='왕복 확인용', tag='다음', text='③ 결함 수정부터')\n"
         "r = mcp_server.namu_recall(project='proj-x')\n"
         "print('RESULT', r['tasks'][0]['next'])\n",
     )
@@ -841,7 +843,7 @@ def test_namu_record_create_then_recall_roundtrip(fake_home):
     result = _run_probe(
         fake_home,
         "mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-100', create=True,"
-        " new_project=True, body='생략', purpose='왕복 확인용')\n"
+        " body='생략', purpose='왕복 확인용')\n"
         "r = mcp_server.namu_recall(project='proj-x')\n"
         "print('RESULT', [t['slug'] for t in r['tasks']], r['tasks'][0]['title'])\n",
     )
@@ -850,146 +852,62 @@ def test_namu_record_create_then_recall_roundtrip(fake_home):
 
 
 # ---------------------------------------------------------------------------
-# ⑨-보완 새 프로젝트 게이트 — 없는 project 이름은 new_project=True 없이 못 만든다
+# ⑨-보완 새 작업이 들어갈 자리 — 내 PC는 열린 폴더, 웹은 web-project 한 곳
 #
-# 실사고: 웹채팅이 project를 매번 자유 텍스트로 받다 보니(cwd가 없어서다) AI가
+# 실사고: 웹채팅은 project를 매번 자유 텍스트로 받다 보니(cwd가 없어서다) AI가
 # 사용자에게 묻지 않고 "onnamu-security" 같은 프로젝트 이름을 그 자리에서 지어냈다.
-# CLI도 project를 명시로 넘기면 같은 문이 열리므로 플랫폼을 가리지 않고 막는다
-# (namu-66이 닫는 말을 거절하는 것과 같은 패턴).
+# 그 값을 검사하는 판(확인 칸·질문 문안·15초 문턱)을 두 번 만들었고 두 번 다
+# 뚫렸다 — 마지막 문턱은 배포 확인 중 우리 손으로 뚫었다. 지금은 검사하지 않고
+# 이름을 적어 넣을 자리 자체를 없앴다(project_policy).
 # ---------------------------------------------------------------------------
 
 
-def test_namu_record_create_unknown_project_without_flag_rejected(fake_home):
+def test_namu_record_create_unknown_project_on_stdio_is_rejected(tmp_path, fake_home):
+    """내 PC에서 없는 프로젝트 이름을 직접 적어 주면 거절된다 — 새 프로젝트를
+    만드는 것은 폴더를 여는 사람이지 부르는 쪽이 아니다."""
     _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
+    cwd = tmp_path / "opened-folder"
+    cwd.mkdir()
 
     result = _run_probe(
         fake_home,
         "try:\n"
         "    mcp_server.namu_record(bowl='tasks', project='brand-new-proj', task='namu-1',"
-        " create=True, body='생략', purpose='새 프로젝트 게이트 확인')\n"
+        " create=True, body='생략', purpose='없는 이름 직접 지정')\n"
         "    print('NO_ERROR')\n"
         "except ValueError as e:\n"
-        "    print('VALUEERROR', str(e))\n",
+        "    print('VALUEERROR', str(e).replace(chr(10), '⏎'))\n",
+        cwd=cwd,
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "VALUEERROR" in result.stdout
-    assert "proj-x" in result.stdout  # 기존 프로젝트 목록이 함께 돌아온다
+    # 거절문은 갈 곳을 함께 알려준다 — 지금 열린 폴더와 이미 있는 프로젝트 목록.
+    assert "opened-folder" in result.stdout
+    assert "proj-x" in result.stdout
     # 거절했으면 폴더가 하나도 안 생겨야 한다(반쯤 만들어진 프로젝트가 남으면 안 됨).
     assert not (fake_home / ".namu" / "tasks" / "brand-new-proj").exists()
 
 
-def test_namu_record_create_rejection_carries_a_question_to_show_the_user(fake_home):
-    """거절문은 "물어봐라"는 설명이 아니라 **사용자에게 그대로 보여줄 질문**이어야 한다.
-
-    1차 판은 설명만 돌려줬고, 웹의 AI는 묻는 대신 스스로 확인 칸을 켜서 재시도했다.
-    물어보는 비용(선택지를 손수 지어내는 일)이 0이어야 실제로 묻는다.
-    """
-    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
-    _make_pool_task(fake_home, "proj-y", "namu-58", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
+def test_namu_record_create_without_project_uses_the_open_folder(tmp_path, fake_home):
+    """project를 생략하면 지금 열려 있는 폴더에 만들어진다 — 내 PC에서 새 프로젝트가
+    생기는 유일한 길이며, 이름의 출처는 폴더를 연 사람이다."""
+    cwd = tmp_path / "opened-folder"
+    cwd.mkdir()
 
     result = _run_probe(
         fake_home,
-        "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='brand-new-proj', task='namu-1',"
-        " create=True, body='생략', purpose='질문 문안 확인')\n"
-        "    print('NO_ERROR')\n"
-        "except ValueError as e:\n"
-        "    print('VALUEERROR', str(e).replace(chr(10), '⏎'))\n",
-    )
-    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "VALUEERROR" in result.stdout
-    # 번호 매긴 선택지 — 사용자가 고르기만 하면 되는 형태
-    assert "1. proj-x" in result.stdout
-    assert "2. proj-y" in result.stdout
-    assert "0. 새 프로젝트로 만들기 — 'brand-new-proj'" in result.stdout
-    # 우회 방법(칸 이름)을 거절문이 그 자리에서 알려주면 AI가 그걸 집어 든다.
-    assert "new_project=True" not in result.stdout
-
-
-def test_namu_record_create_immediate_retry_with_flag_is_rejected(fake_home):
-    """거절 직후 곧바로 new_project=True로 다시 부르는 것은 막는다 — 사람이 답할
-    시간이 없었으므로 AI가 스스로 정한 것이다(실사고 2회: blog-summary-bot,
-    blog-auto-bot)."""
-    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
-
-    result = _run_probe(
-        fake_home,
-        "for attempt, flag in ((1, False), (2, True)):\n"
-        "    try:\n"
-        "        mcp_server.namu_record(bowl='tasks', project='brand-new-proj',"
-        " task='namu-1', create=True, body='생략', purpose='즉시 재시도 확인',"
-        " new_project=flag)\n"
-        "        print('ATTEMPT', attempt, 'NO_ERROR')\n"
-        "    except ValueError as e:\n"
-        "        print('ATTEMPT', attempt, 'VALUEERROR', str(e).replace(chr(10), '⏎'))\n",
-    )
-    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "ATTEMPT 1 VALUEERROR" in result.stdout
-    assert "ATTEMPT 2 VALUEERROR" in result.stdout
-    assert "답할" in result.stdout  # "읽고 답할 시간이 없었습니다"
-    assert not (fake_home / ".namu" / "tasks" / "brand-new-proj").exists()
-
-
-def test_namu_record_create_retry_after_the_wait_succeeds(fake_home):
-    """사람이 답할 만한 시간이 지난 뒤의 재시도는 통과한다 — 문턱은 지연이지 금지가
-    아니다(문턱이 영구 차단이면 새 프로젝트를 영영 못 만든다)."""
-    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
-
-    result = _run_probe(
-        fake_home,
-        "import new_project_gate\n"
-        "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='brand-new-proj', task='namu-1',"
-        " create=True, body='생략', purpose='기다린 뒤 재시도')\n"
-        "except ValueError:\n"
-        "    pass\n"
-        "new_project_gate.COOLDOWN_SECONDS = 0  # 사람이 답하고 온 상황을 흉내낸다\n"
-        "line = mcp_server.namu_record(bowl='tasks', project='brand-new-proj', task='namu-1',"
-        " create=True, body='생략', purpose='기다린 뒤 재시도', new_project=True)\n"
+        "line = mcp_server.namu_record(bowl='tasks', task='namu-1', create=True,"
+        " body='생략', purpose='열린 폴더에 만들기')\n"
         "print('RESULT', repr(line))\n",
+        cwd=cwd,
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert (fake_home / ".namu" / "tasks" / "brand-new-proj" / "namu-1" / "task.md").exists()
+    assert (fake_home / ".namu" / "tasks" / "opened-folder" / "namu-1" / "task.md").exists()
 
 
-def test_namu_record_create_unknown_project_with_flag_alone_is_rejected(fake_home):
-    """확인 칸만 켜서 **첫 호출에** 새 프로젝트를 만드는 길은 없다.
-
-    처음 만들 때 이 경우를 통과시켰다가 검수에서 잡혔다 — 그러면 AI는 거절문을
-    읽을 것도 없이 칸만 켜면 됐고, 사용자는 질문을 한 번도 못 봤다.
-    """
-    result = _run_probe(
-        fake_home,
-        "try:\n"
-        "    mcp_server.namu_record(bowl='tasks', project='brand-new-proj', task='namu-1',"
-        " create=True, new_project=True, body='생략', purpose='새 프로젝트 게이트 확인')\n"
-        "    print('NO_ERROR')\n"
-        "except ValueError as e:\n"
-        "    print('VALUEERROR', str(e).replace(chr(10), '⏎'))\n",
-    )
-    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "VALUEERROR" in result.stdout
-    assert "질문을 보여준 적이 없" in result.stdout
-    assert not (fake_home / ".namu" / "tasks" / "brand-new-proj").exists()
-
-
-def test_namu_record_create_unknown_project_after_asking_succeeds(fake_home):
-    """물어보고 답을 받아 온 흐름은 실제로 새 프로젝트를 만든다 — 게이트가 새
-    프로젝트를 영영 못 만들게 하는 것은 아니라는 대조군."""
-    result = _run_probe(
-        fake_home,
-        "new_project_gate._prime_for_tests('brand-new-proj')  # 묻고 답을 받아 온 상태\n"
-        "line = mcp_server.namu_record(bowl='tasks', project='brand-new-proj', task='namu-1',"
-        " create=True, new_project=True, body='생략', purpose='새 프로젝트 게이트 확인')\n"
-        "print('RESULT', repr(line))\n",
-    )
-    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert (fake_home / ".namu" / "tasks" / "brand-new-proj" / "namu-1" / "task.md").exists()
-
-
-def test_namu_record_create_known_project_needs_no_flag(fake_home):
-    """이미 다른 task가 있는 프로젝트에 새 task를 더할 때는 new_project 없이도 통과한다
-    — 게이트는 '처음 보는 프로젝트 이름'에만 걸리지, 매번 걸리면 기존 사용이 깨진다."""
+def test_namu_record_create_in_an_existing_project_passes(fake_home):
+    """이미 있는 프로젝트 이름을 주는 것은 그대로 통과한다 — 규칙은 '새 프로젝트가
+    생기는 길'에만 걸리지, 매번 걸리면 기존 사용이 깨진다."""
     _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
 
     result = _run_probe(
@@ -1000,6 +918,74 @@ def test_namu_record_create_known_project_needs_no_flag(fake_home):
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert (fake_home / ".namu" / "tasks" / "proj-x" / "namu-58" / "task.md").exists()
+
+
+def test_namu_record_create_on_web_can_pick_an_existing_room(fake_home):
+    """웹에서도 **이미 있는** 프로젝트 이름을 주면 그 방에 만든다 — 새 폴더가 생기지
+    않으므로, 그 이름으로 할 수 있는 일은 방을 고르는 것뿐이다."""
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-24 09:00:00 hp · 시작\n")
+
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', project='proj-x',"
+        " task='namu-58', create=True, body='생략', purpose='이미 있는 방 고르기',"
+        " ctx=_WEB_CTX)\n"
+        "print('RESULT', repr(line))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert (fake_home / ".namu" / "tasks" / "proj-x" / "namu-58" / "task.md").exists()
+    assert not (fake_home / ".namu" / "tasks" / "web-project").exists()
+
+
+def test_namu_record_create_on_web_unknown_name_lands_in_web_project(fake_home):
+    """웹에서 처음 보는 이름을 주면 그 이름의 방은 생기지 않고 web-project로 간다 —
+    실사고 'blog-summary-bot'이 정확히 이 경로였다."""
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', project='brand-new-proj',"
+        " task='namu-1', create=True, body='생략', purpose='웹 고정 확인',"
+        " ctx=_WEB_CTX)\n"
+        "print('RESULT', repr(line))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert (fake_home / ".namu" / "tasks" / "web-project" / "namu-1" / "task.md").exists()
+    assert not (fake_home / ".namu" / "tasks" / "brand-new-proj").exists()
+    # 준 이름과 다른 자리에 만들었으면 조용히 넘어가지 않고 알린다.
+    assert "web-project" in result.stdout
+
+
+def test_namu_record_create_on_web_without_project_needs_no_name(fake_home):
+    """웹에서는 project를 생략해도 만들어진다 — 자리가 이미 정해져 있어 물을 것이
+    없다(예전에는 '웹에서는 project를 명시하라'며 거절했고, 그 자리를 AI가 지어낸
+    이름으로 채운 것이 사고였다)."""
+    result = _run_probe(
+        fake_home,
+        "line = mcp_server.namu_record(bowl='tasks', task='namu-2', create=True,"
+        " body='생략', purpose='웹 기본값 확인', ctx=_WEB_CTX)\n"
+        "print('RESULT', repr(line))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert (fake_home / ".namu" / "tasks" / "web-project" / "namu-2" / "task.md").exists()
+
+
+def test_namu_record_no_longer_takes_the_confirmation_flag(fake_home):
+    """걷어낸 확인 칸(new_project)이 되살아나지 않게 못을 박는다.
+
+    남겨두면 다음 사람이 새는 자물쇠를 방어선으로 믿는다 — 그 칸은 부르는 쪽이
+    스스로 켤 수 있어 사람의 뜻을 증명한 적이 없다.
+    """
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', task='namu-1',"
+        " create=True, body='생략', purpose='없는 칸', new_project=True)\n"
+        "    print('NO_ERROR')\n"
+        "except TypeError as e:\n"
+        "    print('TYPEERROR', e)\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "TYPEERROR" in result.stdout
+    assert "new_project" in result.stdout
 
 
 # ---------------------------------------------------------------------------

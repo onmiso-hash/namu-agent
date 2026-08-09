@@ -31,9 +31,9 @@ def test_field_names_are_unique():
 def test_field_count_matches_design():
     # 설계서 4장: 19개 → 13개로 줄이는 것이 namu-65의 완료조건 1이었다.
     # +2 = 첨부 기록 그릇 전용 path·bytes(namu-file-upload-download 4단계).
-    # +1 = new_project(작업일지 전용) — 처음 보는 project 이름으로 새 작업을
-    # 만들 때 사용자 확인 없이는 거절하는 게이트의 확인 칸이다.
-    assert len(cfg.FIELDS) == 16
+    # (한때 있던 new_project 확인 칸은 없앴다 — 새 작업이 들어갈 프로젝트는 부르는
+    # 쪽이 켜는 칸이 아니라 규칙으로 정해진다. project_policy 참고.)
+    assert len(cfg.FIELDS) == 15
 
 
 def test_every_field_references_only_declared_bowls():
