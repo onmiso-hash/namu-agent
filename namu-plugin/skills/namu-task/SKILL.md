@@ -45,6 +45,12 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 (namu-62 전에는 이 `tag`/`text`가 조용히 버려졌다 — 지금은 반영되고, 생략하면 반환문이
 누락을 경고한다.)
 
+**project가 지금까지 없던 이름이면 거절된다** — 처음 보는 project로 `create=True`를
+부르면 `namu_record`가 거절하고 기존 프로젝트 목록을 돌려준다. 새 프로젝트를 만드는
+것이 맞는지 사용자에게 먼저 확인하고, 맞으면 `new_project=True`를 함께 줘 다시
+호출한다(실사고: 웹채팅이 확인 없이 "onnamu-security" 같은 프로젝트 이름을 그
+자리에서 지어낸 적이 있다 — 지침이 아니라 코드로 막는다).
+
 2파일 생성·append 직후 `namu_tasks_push.py`(위 "tasks 저장 후 push" 참조) 호출.
 
 **3. recall** — `namu_recall`로 관련 과거 교훈 조회. 신규는 항상 실행.

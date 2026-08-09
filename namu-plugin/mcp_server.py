@@ -392,6 +392,7 @@ def _create_task_entry(
     tag: str | None,
     via: str | None,
     ctx: Context | None,
+    new_project: bool = False,
 ) -> str:
     """bowl='tasks', create=True 경로: 새 task 폴더(task.md+log.md)를 만들고
     `[시작]` 줄을 append한다. `context.<machine>.md`는 만들지 않는다(namu-57 신규
@@ -403,6 +404,23 @@ def _create_task_entry(
     지점을 잃었다. text를 생략하면 반환문에 경고를 붙여 누락이 눈에 보이게 한다.
     """
     resolved_project = _resolve_record_project(project, ctx)
+
+    # 웹은 project를 매번 자유 텍스트로 받는다(cwd가 없어서다) — 그 텍스트를 호출한
+    # AI가 사용자에게 묻지 않고 지어낼 수 있다는 뜻이기도 하다(실사고: onnamu-security,
+    # web-write-test — 둘 다 그 자리에서 즉석으로 지어낸 프로젝트 이름이다). CLI도
+    # project를 명시로 넘기면 같은 문이 열리므로, "지금까지 없던 프로젝트 이름"이면
+    # 플랫폼을 가리지 않고 여기서 한 번 멈춘다(namu-66이 닫는 말을 거절하는 것과 같은
+    # 패턴 — 지침이 아니라 코드로 막아야 어떤 AI 엔진이 불러도 똑같이 막힌다).
+    if resolved_project not in task_resolve.list_projects() and not new_project:
+        existing = task_resolve.list_projects()
+        hint = ", ".join(existing) if existing else "(아직 하나도 없음)"
+        raise ValueError(
+            f"프로젝트 {resolved_project!r}는 지금까지 없던 새 이름입니다 — 만들기 전에 "
+            "사용자에게 먼저 확인하세요: 기존 프로젝트 중 하나에 넣을지, 정말 새 "
+            f"프로젝트를 만들지. 기존 프로젝트: {hint}. 사용자가 새 프로젝트가 맞다고 "
+            "확인했으면 new_project=True를 함께 주고 다시 호출하세요."
+        )
+
     slug = _validate_new_task_slug(task)
 
     purpose = (purpose or "").strip()
@@ -697,6 +715,7 @@ def namu_record(
     supersedes: str | None = None,
     create: bool = False,
     done_when: list[str] | None = None,
+    new_project: bool = False,
     # ── 첨부 기록 전용 2칸 (namu-file-upload-download 4단계) ───────────────
     path: str | None = None,
     bytes: int | None = None,
@@ -745,7 +764,7 @@ def namu_record(
         "bowl": bowl, "summary": summary, "reason": reason, "body": body,
         "topic": topic, "status": status, "category": category, "tags": tags,
         "project": project, "confidence": confidence, "supersedes": supersedes,
-        "create": create, "done_when": done_when,
+        "create": create, "done_when": done_when, "new_project": new_project,
         "path": path, "bytes": bytes,
         "task": task, "outcome": outcome, "task_type": task_type,
         "verified_by": verified_by, "kind": kind, "subject": subject,
@@ -772,6 +791,7 @@ def namu_record(
                 start_point,
                 (v.get("status") or "다음") if start_point else None,
                 via, ctx,
+                new_project=bool(v.get("new_project")),
             )
         else:
             result = _record_task_entry(

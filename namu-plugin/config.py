@@ -474,6 +474,16 @@ FIELDS: tuple[Field, ...] = (
         desc="완료조건 목록. 작업을 새로 만들 때(create) 체크리스트로 적힌다.",
         example="['입력 항목이 13개로 정리된다', '기존 테스트 386개 통과']",
     ),
+    Field(
+        name="new_project",
+        bowls=("tasks",),
+        required_in=(),
+        desc="참이면 이 project 이름이 정말 처음 쓰는 프로젝트임을 확인했다는 뜻이다. "
+             "아직 없는 프로젝트 이름으로 새 작업(create)을 만들 때 이 값 없이는 거절되고 "
+             "기존 프로젝트 목록이 함께 돌아온다 — 사용자에게 묻지 않고 새 프로젝트 이름을 "
+             "지어내는 것을 막는 장치다(namu-66의 닫는 말 거절과 같은 패턴).",
+        example="True",
+    ),
     # ── 첨부 기록 전용(namu-file-upload-download 4단계) ──────────────────────
     Field(
         name="path",
