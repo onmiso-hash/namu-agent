@@ -68,6 +68,9 @@ HTTP_EXPOSED_TOOLS = frozenset({
     # 부르면 "파일이 이 PC에 있으니 file_path로 주라"고 거절한다.
     "namu_create_upload_ticket", "namu_create_download_ticket",
     "namu_check_ticket",
+    # namu_task_move: 이미 있는 방으로만 옮기고(새 방을 못 만들고) 그 사람 자신의
+    # 작업 풀 안에서만 움직인다 — 이미 열려 있는 namu_record와 같은 위험 계열이다.
+    "namu_task_move",
 })
 
 # 디바운스 pull 상태 — 모듈 전역 1개(단일 프로세스 전제, 경로 B 셀프호스팅 스코프와 합치).

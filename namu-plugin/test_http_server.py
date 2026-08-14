@@ -317,6 +317,7 @@ def test_http_exposed_tools_excludes_sync_setup():
             "namu_delete_file",
             "namu_create_upload_ticket", "namu_create_download_ticket",
             "namu_check_ticket",
+            "namu_task_move",
         }
     )
     assert "namu_sync_setup" not in http_server.HTTP_EXPOSED_TOOLS
@@ -339,6 +340,10 @@ def test_http_and_cloud_expose_the_same_tools():
         # 때만 뜻이 있는데, 개인 주소도 웹으로 열 수 있으므로 양쪽에 함께 선다.
         {"namu_create_upload_ticket", "namu_create_download_ticket",
          "namu_check_ticket"}
+    ) | frozenset(
+        # namu_task_move — 이미 있는 방으로만 옮기고 그 사람 자신의 작업 풀
+        # 안에서만 움직이므로, namu_record와 같은 위험 계열이라 함께 연다.
+        {"namu_task_move"}
     )
 
 

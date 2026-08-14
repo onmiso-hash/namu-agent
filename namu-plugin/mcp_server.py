@@ -19,6 +19,7 @@ import memory_sync
 import project_policy
 import profile
 import record_input
+import task_move
 import task_resolve
 import ticket_web
 import tickets
@@ -933,6 +934,86 @@ def namu_task_pin(task: str, project: str | None = None, ctx: Context | None = N
     task_resolve.set_pin(tasks_root, cfg.NAMU_MACHINE, slug, ts)
     memory_sync.sync_push(f"pin: {slug} ({cfg.NAMU_MACHINE})")
     return f"책갈피를 꽂았습니다: {slug} ({cfg.NAMU_MACHINE}, {ts}) — 다음 세션 브리핑 맨 위에 📌로 뜹니다"
+
+
+@mcp.tool()
+def namu_task_move(task: str, to: str, project: str | None = None, ctx: Context | None = None) -> str:
+    """Move a task's whole folder (task.md + log.md) from one project room to another
+    (new-project-rule design doc step 4, `docs/new_project_rule.md` section 7).
+
+    This exists because task creation now refuses to invent new project rooms
+    (`project_policy.py`/`_create_task_entry`) — a task made in the wrong room
+    (typically `web-project` clutter, or work that turned out to belong elsewhere)
+    used to require hand `git mv`. This tool does the same move, plus the two
+    things a bare folder move would silently break:
+
+    - `to` must already be a room that has tasks in it. If it is missing or
+      unknown, the error message IS a numbered room list to show the human —
+      it deliberately never offers "create a new room here", because that
+      option is exactly how the new-project gate got bypassed twice before
+      (see the design doc). Moving can only relocate work, never conjure a
+      room into existence.
+    - Bookmarks (`.pin.<machine>`) live inside the room folder, so a bare move
+      would leave the old room's bookmark pointing at nothing. Every machine's
+      bookmark on this task is carried over (name and timestamp preserved) —
+      unless that machine already has a different bookmark in the destination
+      room, in which case only the source one is dropped (never silently
+      overwriting what another machine already pinned there).
+
+    Closed tasks ([완료]/[중단]) can be moved too — tidying up finished work
+    into the right room is a common, legitimate reason to move, and there is
+    no reason to block it.
+
+    ⚠ Do not call this from two machines on the same task at the same time.
+    log.md is designed for union-merge across machines (each machine only ever
+    appends its own lines) — if one machine is mid-move while another appends
+    to the same task's log.md in the old room, that line either never reaches
+    the new location or collides at the next sync. There is no cross-machine
+    lock (this system has no server to hold one); the only real mitigation is
+    that this tool pushes to the sync remote immediately after moving, to keep
+    the danger window as short as possible.
+
+    Args:
+      task: task slug, or a unique prefix of it (same resolution as recording/pinning).
+      to: destination room name. Must be an existing room (see above).
+      project: source room. Required from the web (no cwd there).
+    """
+    _resolve_via(ctx)
+    resolved_project = _resolve_record_project(project, ctx)
+    slug = _resolve_task_slug(resolved_project, task)
+    dest_project = task_move.resolve_move_destination(
+        to, known=task_resolve.list_projects(), person="사용자"
+    )
+
+    source_root = task_resolve.tasks_root_for(resolved_project)
+    dest_root = task_resolve.tasks_root_for(dest_project)
+    ts = cfg.now().strftime("%Y-%m-%d %H:%M:%S")
+    result = task_move.move_task(
+        source_root=source_root,
+        dest_root=dest_root,
+        slug=slug,
+        machine=cfg.NAMU_MACHINE,
+        ts=ts,
+    )
+
+    # 옮긴 직후 곧바로 밀어 올린다 — 다른 기기가 옛 자리 log.md에 줄을 붙일 수 있는
+    # 창을 좁히는 것이 이 도구가 낼 수 있는 유일한 조치다(기기 간 잠금은 없다).
+    memory_sync.sync_push(
+        f"task move: {slug} ({resolved_project} -> {dest_project}, {cfg.NAMU_MACHINE})"
+    )
+
+    note = ""
+    if result["moved_pins"]:
+        machines = ", ".join(p["machine"] for p in result["moved_pins"])
+        note += f" 책갈피({machines})도 함께 옮겼습니다."
+    if result["dropped_pins"]:
+        machines = ", ".join(p["machine"] for p in result["dropped_pins"])
+        note += (
+            f" {dest_project!r}에 이미 책갈피가 있던 기기({machines})는 원본 책갈피만 뗐습니다"
+            "(덮어쓰지 않았습니다)."
+        )
+
+    return f"작업 {slug!r}를 {resolved_project!r}에서 {dest_project!r}로 옮겼습니다.{note}"
 
 
 @mcp.tool()

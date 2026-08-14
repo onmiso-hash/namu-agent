@@ -126,11 +126,12 @@ that differs is the registration format each engine requires.
   through the AI's output at all. **File sizes are always read from the
   attachment log, never asked of the repository** — asking git makes it fetch
   every missing body and the isolation collapses.
-- **14 MCP tools** — memory: `namu_recall`, `namu_search`, `namu_record`,
-  `namu_memo_remove`, `namu_task_pin`, `namu_task_unpin`, `namu_sync_setup`;
+- **15 MCP tools** — memory: `namu_recall`, `namu_search`, `namu_record`,
+  `namu_memo_remove`, `namu_task_pin`, `namu_task_unpin`, `namu_task_move`,
+  `namu_sync_setup`;
   attachments: `namu_upload_file`, `namu_list_files`, `namu_download_file`,
   `namu_delete_file`, `namu_create_upload_ticket`,
-  `namu_create_download_ticket`, `namu_check_ticket`. Remote MCP exposes 10 —
+  `namu_create_download_ticket`, `namu_check_ticket`. Remote MCP exposes 11 —
   everything except the four plugin-only tools (`namu_memo_remove`,
   `namu_task_pin`, `namu_task_unpin`, `namu_sync_setup`).
 - **Worker layer** — `namu-coder`/`namu-reviewer` subagents exist in each
