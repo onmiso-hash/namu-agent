@@ -1,6 +1,6 @@
 # 새 프로젝트는 누가 만드는가 — 자리 규칙
 
-**상태: 1~4단계 구현 완료 (2026-08-14) · 5단계(배포) 미착수**
+**상태: 1~5단계 전부 완료 (2026-08-14) — 본체 v0.1.68 · 클라우드 v0.1.47 배포됨**
 관련 작업: `web-new-project-gate` · 구현: `namu-plugin/project_policy.py`(1~3단계),
 `namu-plugin/task_move.py` + `mcp_server.namu_task_move`(4단계)
 
@@ -121,6 +121,11 @@
    vendor 서브모듈로 얹어 그대로 import한다. 코어 도구는
    `mcp_server.namu_task_move(task, to, project=None)`. 시험은
    `namu-plugin/test_task_move.py`.
-5. **배포** — 세 저장소 판올림과 웹 실측. 아직 착수 전이다 — 클라우드
-   (`namu-cloud-routing`)의 vendor 서브모듈이 이 커밋을 아직 안 끌어왔고,
-   `routing_server.py`에 이 도구를 노출하는 작업도 하지 않았다.
+5. **배포 (완료, 2026-08-14)** — 본체 v0.1.68 · 클라우드 v0.1.47(코어 핀 v0.1.68) ·
+   배포 저장소 일곱 자리 치환. 웹 실측으로 새 도구가 실제로 보이는 것을 확인했다.
+
+   웹에도 같은 도구를 열었다 — `routing_server.namu_task_move`가 코어 `task_move`를
+   그대로 부르고, 이 저장소가 맡는 것은 회원 격리(목적지 후보를 그 회원 방으로만
+   좁힌다)와 쓰기 배선뿐이다. 개인 self-host 주소(`http_server.HTTP_EXPOSED_TOOLS`)에도
+   함께 열었다 — "클라우드에만 있고 개인 주소에는 없는 도구"를 막는 시험이 이미
+   있어서, 그 시험에 예외를 파는 대신 두 표면을 맞추는 쪽을 골랐다.
