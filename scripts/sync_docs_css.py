@@ -62,9 +62,36 @@ def main() -> int:
     import ui  # type: ignore[import-not-found]
 
     CSS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CSS_PATH.write_text(HEADER + ui.SITE_CSS + EXTRA, encoding="utf-8")
+    css = _bring_the_fonts_along(ui, site_repo)
+    CSS_PATH.write_text(HEADER + css + EXTRA, encoding="utf-8")
     print(f"갱신 완료: {CSS_PATH} ({CSS_PATH.stat().st_size:,}바이트)")
     return 0
+
+
+def _bring_the_fonts_along(ui, site_repo: Path) -> str:
+    """글꼴 파일을 안내서 쪽으로 복사하고, CSS의 주소를 상대 경로로 바꾼다.
+
+    홈페이지는 글꼴을 `/asset/…`이라는 **절대 주소**로 부른다 — 화면마다 주소가
+    달라(`/`, `/start`, …) 상대 경로를 쓸 수 없기 때문이다. 그런데 안내서는
+    다른 서버(GitHub Pages)에 올라가므로 그 절대 주소는 그 서버의 없는 자리를
+    가리켜 404가 된다. 화면은 시스템 글꼴로 멀쩡히 떠서 아무도 눈치채지 못한다.
+
+    안내서 쪽은 CSS가 파일 하나(`assets/namu-docs.css`)라 그 파일 옆을 가리키는
+    상대 경로가 항상 맞는다. 그래서 파일을 같은 폴더로 옮기고 주소만 바꾼다 —
+    남의 서버에서 우리 서버로 글꼴을 받아가게 만들지 않는 것이 요점이다.
+    """
+    css = ui.SITE_CSS
+    src_dir = site_repo / "src" / "assets" / "fonts"
+    for path in getattr(ui, "ASSET_PATHS", ()):
+        name = Path(path).name
+        src = src_dir / name
+        if not src.exists():
+            print(f"  경고: 글꼴 파일이 없습니다 — {src}")
+            continue
+        (CSS_PATH.parent / name).write_bytes(src.read_bytes())
+        css = css.replace(f"url({path})", f"url({name})")
+        print(f"  글꼴 복사: {name} ({src.stat().st_size:,}바이트)")
+    return css
 
 
 if __name__ == "__main__":
