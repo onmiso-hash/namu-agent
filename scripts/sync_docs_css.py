@@ -21,6 +21,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CSS_PATH = REPO_ROOT / "docs" / "assets" / "namu-docs.css"
+TOKENS_PATH = CSS_PATH.parent / "namu-docs-tokens.css"
+JS_PATH = CSS_PATH.parent / "namu-theme.js"
 DEFAULT_SITE_REPO = REPO_ROOT.parent / "namu-cloud-routing"
 
 HEADER = """/* NAMU 안내 문서 공용 스타일.
@@ -63,9 +65,75 @@ def main() -> int:
 
     CSS_PATH.parent.mkdir(parents=True, exist_ok=True)
     css = _bring_the_fonts_along(ui, site_repo)
+    css = _keep_our_own_colors(ui, css)
     CSS_PATH.write_text(HEADER + css + EXTRA, encoding="utf-8")
     print(f"갱신 완료: {CSS_PATH} ({CSS_PATH.stat().st_size:,}바이트)")
+    _bring_the_theme_button_along(ui)
     return 0
+
+
+def _bring_the_theme_button_along(ui) -> None:
+    """밝게/어둡게 단추의 동작을 홈페이지에서 뽑아 파일 한 장으로 만든다.
+
+    홈페이지는 이 조각을 화면 HTML 안에 통째로 박아 넣지만(화면이 서버에서
+    만들어지므로 그럴 수 있다), 안내서는 정적 파일 다섯 장이라 그럴 수 없다 —
+    다섯 장에 같은 조각을 박아 넣으면 한 장만 고치고 넘어가는 날이 온다.
+    그래서 파일 한 장으로 뽑고 다섯 장이 그것을 부른다.
+
+    단추를 켜는 부분은 <head>에서 도는데 그때는 아직 단추가 없으므로,
+    화면이 다 그려진 뒤로 미룬다. 반대로 고른 색을 입히는 부분은 미루면
+    안 된다 — 밝은 화면이 한 번 번쩍인다.
+    """
+    inner = _script_body(ui._THEME_BOOT_SCRIPT)
+    later = _script_body(ui._THEME_TOGGLE_SCRIPT)
+    js = (
+        "/* 밝게/어둡게 단추. namu-cloud-routing/src/ui.py에서 뽑아온 것이다 —\n"
+        "   손대지 말고 scripts/sync_docs_css.py로 다시 뽑을 것. */\n"
+        + inner
+        + "\ndocument.addEventListener('DOMContentLoaded',function(){"
+        + later
+        + "});\n"
+    )
+    JS_PATH.write_text(js, encoding="utf-8")
+    print(f"  단추 동작: {JS_PATH.name} ({JS_PATH.stat().st_size:,}바이트)")
+
+
+def _script_body(tag: str) -> str:
+    """`<script>…</script>`에서 알맹이만 꺼낸다."""
+    start, end = tag.index(">") + 1, tag.rindex("</script>")
+    return tag[start:end]
+
+
+def _keep_our_own_colors(ui, css: str) -> str:
+    """색만 안내서 것으로 바꾼다 — 나머지는 홈페이지에서 따라온다.
+
+    안내서는 첫 나무의 그림이라 청록이고, 나무 클라우드는 그 나무의 열매라
+    자주다. 사용자가 두 곳의 색을 일부러 갈랐다(2026-08-15).
+
+    색만 가르고 글꼴·부품·여백은 계속 홈페이지를 따라간다 — 그래야 부품이
+    새로 생기거나 여백이 바뀌어도 안내서가 저절로 따라온다. 손으로 베끼면
+    반드시 어긋난다는 것이 이 스크립트가 있는 이유이고, 그 이유는 색을
+    가른 뒤에도 그대로다.
+
+    바꿔 넣을 자리는 `ui._TOKENS_CSS` 한 덩어리다. 글자를 찾아 자르지 않고
+    그 변수를 그대로 대조하므로, 홈페이지가 물감통 모양을 바꾸면 조용히
+    비껴가는 게 아니라 여기서 멈춘다.
+    """
+    if not TOKENS_PATH.exists():
+        print(f"  안내서 전용 색 파일이 없습니다 — {TOKENS_PATH}")
+        print("  홈페이지 색을 그대로 씁니다.")
+        return css
+
+    tokens = getattr(ui, "_TOKENS_CSS", None)
+    if not tokens or css.count(tokens) != 1:
+        raise SystemExit(
+            "홈페이지의 물감통(_TOKENS_CSS)을 CSS 안에서 정확히 한 번 찾지 못했습니다.\n"
+            "홈페이지 쪽 구조가 바뀐 것이니 이 스크립트를 함께 고쳐야 합니다."
+        )
+
+    ours = TOKENS_PATH.read_text(encoding="utf-8")
+    print(f"  색 갈아 끼움: {TOKENS_PATH.name} (안내서는 청록을 유지한다)")
+    return css.replace(tokens, ours)
 
 
 def _bring_the_fonts_along(ui, site_repo: Path) -> str:

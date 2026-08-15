@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NAMU 기억 시스템 설계도</title>
+<script src="assets/namu-theme.js"></script>
 <style>
   :root {
     --bg: #F3F5F1;
@@ -233,6 +234,14 @@
     .topbar .menu{ order:3; width:100%; flex:none; margin:0 -16px; padding:0 16px 6px; }
     .topbar .brand{ flex:1; }
   }
+  /* 밝게/어둡게 단추. 이 문서는 공용 CSS를 읽지 않으므로 여기에 적는다.
+     크기·모서리·여백은 위 `.topbar .btn`에서 그대로 받고, 색만 조용하게 되돌린다 —
+     그러지 않으면 [나무 클라우드]와 똑같이 생긴 단추 둘이 나란히 선다. */
+  .topbar .themebtn{ flex:none; font-family:inherit; cursor:pointer;
+    background:var(--surface); border-color:var(--border-strong); color:var(--ink-soft); }
+  .topbar .themebtn:hover{ background:var(--surface-2); border-color:var(--accent); color:var(--ink); }
+  .topbar .themebtn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  @media (max-width:520px){ .themebtn .lab{ display:none; } }
 </style>
 </head>
 <body>
@@ -247,6 +256,7 @@
       <li><a class="on" href="memory_architecture.html">기억 설계도</a></li>
       <li><a href="workflow_architecture.html">절차 설계도</a></li>
     </ul>
+    <button type="button" class="btn themebtn" id="themebtn" hidden aria-label="어둡게 보기"><span class="ico" aria-hidden="true">🌙</span><span class="lab">어둡게</span></button>
     <a class="btn" href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>
   </div>
 </header>
