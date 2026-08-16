@@ -15,7 +15,6 @@ stdin=subprocess.DEVNULL — MCP 서버(stdio)의 stdin은 JSON-RPC 파이프라
 import os
 import subprocess
 import time
-from datetime import datetime
 from pathlib import Path
 
 
@@ -55,15 +54,21 @@ def _append_sync_log(line: str, home: "Path | str | None" = None) -> None:
     home 생략 시 cfg.NAMU_DATA_ROOT(기존 sync_push/sync_pull 호출부와 동일). namu_tasks_push
     CLI(namu-34 ③-b)처럼 대상이 항상 `~/.namu`로 고정된(namu-35 이후로는 cfg.NAMU_DATA_ROOT와
     동일 경로) 호출부도 명시적으로 home을 넘겨 호출 의도를 분명히 한다.
+
+    시각은 `cfg.now()`(기준 시간대)로 찍는다 — 이 파일이 기기 사이에 섞이지 않는데도
+    그렇게 하는 이유는, **같은 기계 안에서 두 시간대가 섞이면 고장을 들여다볼 수 없기
+    때문**이다. 웹 컨테이너의 시계는 UTC라 `datetime.now()`는 한국시간보다 9시간
+    이르게 찍혔고, 바로 옆 작업일지·기억 기록은 `cfg.now()`라 한국시간이었다.
+    2026-08-16 무한 재시작 사고를 뒤쫓을 때 실제로 이 어긋남에 걸렸다.
     """
     try:
-        if home is None:
-            import config as cfg
+        import config as cfg
 
+        if home is None:
             home = cfg.NAMU_DATA_ROOT
         path = Path(home) / "db" / "sync.log"
         path.parent.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        stamp = cfg.now().strftime("%Y-%m-%d %H:%M:%S")
         with path.open("a", encoding="utf-8") as f:
             f.write(f"{stamp} | {line}\n")
     except Exception:

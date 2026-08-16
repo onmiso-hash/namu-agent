@@ -6,7 +6,6 @@ conn은 호출자가 열고 닫는다. 예외는 삼키지 않고 호출자가 �
 import os
 import re
 import subprocess
-from datetime import datetime
 from pathlib import Path
 
 # `_extract_task_title`은 원문 그대로가 필요한 곳(교훈 검색 질의)에서만 쓴다 —
@@ -93,13 +92,19 @@ def _git_check_log_path(project_dir: str | Path) -> Path | None:
 
 
 def _append_git_check_log(project_dir: str | Path, line: str) -> None:
-    """git 체크 실패 사유 1줄 기록. 로깅 실패가 세션 시작을 막으면 안 되므로 전예외 무음."""
+    """git 체크 실패 사유 1줄 기록. 로깅 실패가 세션 시작을 막으면 안 되므로 전예외 무음.
+
+    시각은 `cfg.now()`(기준 시간대)로 찍는다 — 이유는 `memory_sync._append_sync_log`와
+    같다. 같은 기계 안에서 이 로그와 작업일지의 시간대가 갈리면 고장을 뒤쫓을 수 없다.
+    """
+    import config as cfg
+
     try:
         path = _git_check_log_path(project_dir)
         if path is None:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        stamp = cfg.now().strftime("%Y-%m-%d %H:%M:%S")
         with path.open("a", encoding="utf-8") as f:
             f.write(f"{stamp} | {line}\n")
     except Exception:

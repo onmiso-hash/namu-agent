@@ -10,6 +10,7 @@ tasks 로그(log.md)의 시각은 시간대 표기가 없는 벽시계 문자열
 이 케이스에서 UTC 시각을 적으므로 반드시 실패한다(대조군 없이 통과하는 테스트가 되지
 않도록 한 설계, namu-57 3단계 교훈).
 """
+import ast
 import os
 import re
 import subprocess
@@ -300,3 +301,102 @@ def test_yaml_bowls_share_one_clock(tmp_path, host_tz):
     # 문자열을 그대로 사전순 비교하는 코드(db.py의 since/until)가 조용히 어긋나지
     # 않으려면 표기까지 같아야 한다 — 오프셋이 갈리면 같은 순간도 다르게 정렬된다.
     assert len({s[-6:] for s in stamps.values()}) == 1, stamps
+
+
+# ---------------------------------------------------------------------------
+# ④ 진단용 로그(db/sync.log · db/git_check.log)도 같은 시계를 쓴다
+#
+# 이 두 파일은 git 추적 대상이 아니라(db/ 는 .gitignore) 기기 사이에 섞이지 않는다.
+# 그런데도 기준 시간대를 강제하는 이유는 **같은 기계 안에서 시간대가 갈리기 때문**이다:
+# 웹 컨테이너의 시계는 UTC라 `datetime.now()`로 찍으면 sync.log만 9시간 이르게 남고,
+# 바로 옆 작업일지·기억 기록은 서울 벽시계로 남는다. 2026-08-16 무한 재시작 사고를
+# 뒤쫓을 때 실제로 이 어긋남에 걸렸다 — 고장을 들여다보는 바로 그 순간에 걸린다.
+# 고치기 전 코드는 host_tz='UTC' 케이스에서 반드시 실패한다(대조군 없는 통과 방지).
+# ---------------------------------------------------------------------------
+
+
+_LOG_PROBE = """
+import sys
+sys.path.insert(0, {plugin_dir!r})
+import config as cfg
+import memory_sync
+import session_context
+
+memory_sync._append_sync_log('PROBE 동기화 로그')
+session_context._append_git_check_log(str(cfg.NAMU_DATA_ROOT), 'PROBE 점검 로그')
+print('OK')
+"""
+
+
+def _write_diagnostic_logs_with_host_tz(home: Path, host_tz: str) -> dict[str, str]:
+    """호스트 TZ를 지정해 두 진단 로그에 한 줄씩 남기고, 각 줄의 시각을 돌려준다."""
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["TZ"] = host_tz
+    env.pop("NAMU_HOME", None)
+    env.pop("NAMU_TZ", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", _LOG_PROBE.format(plugin_dir=str(_NAMU_PLUGIN_DIR))],
+        cwd=str(_NAMU_PLUGIN_DIR),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+    stamps = {}
+    for name, filename in [("sync", "sync.log"), ("git_check", "git_check.log")]:
+        path = home / ".namu" / "db" / filename
+        assert path.exists(), f"{filename}이 만들어지지 않았습니다"
+        line = path.read_text(encoding="utf-8").splitlines()[-1]
+        stamps[name] = line.split("|", 1)[0].strip()
+    return stamps
+
+
+@pytest.mark.parametrize("host_tz", ["UTC", "America/New_York"])
+def test_diagnostic_logs_share_the_record_clock(tmp_path, host_tz):
+    """진단 로그의 시각이 기억 기록과 같은 기준 시간대(서울)로 찍힌다."""
+    home = tmp_path / "fake_home"
+    home.mkdir()
+
+    stamps = _write_diagnostic_logs_with_host_tz(home, host_tz)
+    expected = datetime.now(_SEOUL).replace(tzinfo=None)
+
+    for name, raw in stamps.items():
+        stamped = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        assert abs(stamped - expected) < timedelta(minutes=2), f"{name}: {raw}"
+
+
+def test_no_module_reaches_for_the_host_clock_directly():
+    """`datetime.now()`를 직접 부르는 자리가 다시 생기지 않게 못 박는다.
+
+    이 검사가 필요한 이유는 새로 쓰는 로그 한 줄이 늘 같은 방식으로 새기 때문이다 —
+    "그냥 로그니까"라고 생각하는 순간 호스트 시계로 돌아간다. 예외는 둘뿐이다:
+    `config.now()` 자신(여기가 기준 시간대를 만드는 자리)과 statusline 계열(config를
+    일부러 안 부르는 plain python3 소비자이고, 개인 PC에서만 도는 화면 표시라
+    호스트 시계와 기준 시간대가 어차피 같다).
+
+    글자로 찾지 않고 구문 트리로 실제 호출만 본다 — 설명문에서 "`datetime.now()`를 쓰면
+    안 된다"고 적어 둔 문장까지 위반으로 잡으면, 규칙을 설명한 주석이 규칙 위반이 되는
+    자가당착이 된다(첫 판에서 실제로 그렇게 걸렸다).
+    """
+    allowed ={"config.py", "namu_setup_statusline.py", "namu_statusline.py"}
+    offenders = []
+    for path in _NAMU_PLUGIN_DIR.rglob("*.py"):
+        if path.name in allowed or path.name.startswith("test_"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or node.args or node.keywords:
+                continue  # datetime.now(tz)처럼 시간대를 넘기는 호출은 대상이 아니다
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr == "now":
+                owner = func.value
+                name = owner.attr if isinstance(owner, ast.Attribute) else getattr(owner, "id", "")
+                if name == "datetime":
+                    offenders.append(f"{path.name}:{node.lineno}")
+    assert not offenders, (
+        "기록 시각은 cfg.now()로 찍어야 합니다(호스트 시계 금지): " + ", ".join(offenders)
+    )
