@@ -172,7 +172,10 @@ def test_recall_returns_memo_key(fake_home):
         "print('RESULT', [m['summary'] for m in r['memo']], sorted(r.keys()))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "RESULT ['첫째', '둘째'] ['learnings', 'memo', 'profile', 'tasks']" in result.stdout
+    assert (
+        "RESULT ['첫째', '둘째'] ['learnings', 'memo', 'profile', 'tasks', 'warnings']"
+        in result.stdout
+    )
 
 
 def test_search_bowl_memo_filters_by_query(fake_home):

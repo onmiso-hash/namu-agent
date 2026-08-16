@@ -521,8 +521,18 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
 
     tasks_dir = cfg.tasks_dir_for(project_dir)
 
-    behind = check_git_behind(project_dir)
     warnings: list[str] = []
+
+    # 시작 동기화 실패 경고를 맨 앞에 둔다(namu-entrypoint-pull-resilience) — 아래
+    # "원격 미동기화"보다 먼저인 이유는, 받아오기가 아예 실패한 상태에서는 "몇 커밋
+    # 뒤처졌다"가 원인이 아니라 증상이기 때문이다. 받아오기가 성공하면 저절로 사라진다.
+    import startup_sync
+
+    startup_warning = startup_sync.warning_markdown(cfg.NAMU_DATA_ROOT)
+    if startup_warning:
+        warnings.append(startup_warning)
+
+    behind = check_git_behind(project_dir)
     if behind is not None and behind > 0:
         warnings.append(
             f"### ⚠ 원격 미동기화 — 원격에 새 커밋 {behind}개\n\n"

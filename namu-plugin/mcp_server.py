@@ -19,6 +19,7 @@ import memory_sync
 import project_policy
 import profile
 import record_input
+import startup_sync
 import task_move
 import task_resolve
 import ticket_web
@@ -103,6 +104,22 @@ _VIA_ERROR_MSG = (
     "append ?client=<your-ai-name> (e.g. claude, chatgpt, gemini). Use the exact "
     "same value later to look up that AI's memories."
 )
+
+
+def _server_warnings() -> list[str]:
+    """이 서버가 지금 성한지 — 기억 그릇이 아니라 서버 상태다(namu-entrypoint-pull-
+    resilience). 정상이면 빈 목록.
+
+    지금 실리는 건 "시작 시 받아오기 실패" 하나뿐이지만 목록으로 두는 이유는, 앞으로
+    같은 성격의 경고(예: 디스크 가득 참)가 생겼을 때 반환 모양이 또 바뀌지 않게 하기
+    위해서다. 어떤 경우에도 예외를 밖으로 내지 않는다 — 경고 하나 때문에 recall 전체가
+    막히면 이 작업이 없애려던 결함(곁가지 실패가 본 기능을 죽이는 것)을 그대로 되풀이한다.
+    """
+    try:
+        warning = startup_sync.warning_text(cfg.NAMU_DATA_ROOT)
+    except Exception:
+        return []
+    return [warning] if warning else []
 
 
 def _resolve_via(ctx: Context | None) -> str | None:
@@ -600,8 +617,13 @@ def namu_recall(
         "current project" on stdio (has a cwd), "all projects merged" on the
         web (no cwd there). project='*' forces "all projects" explicitly on
         either side.
-    Returns: four-bowl dict —
-      {"memo": [...every sticky note currently up, oldest first: {"id",
+    Returns: four-bowl dict plus a "warnings" list —
+      {"warnings": [...strings; usually empty. NOT memory — these are things
+       wrong with this server right now (e.g. its memory store failed to sync
+       with the remote at startup). If non-empty, tell the user in plain
+       language before doing anything else; on the web there is no session
+       hook, so this field is the only way a broken server can say so...],
+       "memo": [...every sticky note currently up, oldest first: {"id",
        "timestamp", "text", "machine", "tags", "via"}. Surface these to the
        user when they are relevant — memos are things they asked you to hold
        on to, and on the web this field is the only way they resurface. Take
@@ -620,7 +642,13 @@ def namu_recall(
     projects = [resolved_project] if resolved_project is not None else None
     with closing(get_conn()) as conn:
         return {
-            # memo가 맨 앞이다 — 스틱노트는 "지금 눈에 띄어야" 의미가 있고,
+            # warnings가 맨 앞이다 — 기억 그릇이 아니라 "이 서버가 지금 성한가"다.
+            # 시작 시 받아오기가 실패해도 서버는 뜨도록 바꾼 이상(namu-entrypoint-pull-
+            # resilience), 그 사실이 사람에게 닿는 길이 반드시 있어야 한다. 웹에는
+            # 세션 시작 훅이 없어 이 반환값이 유일한 통로이고, 사고를 겪은 자리가
+            # 정확히 웹 컨테이너였다. 받아오기가 성공하면 저절로 빈 목록이 된다.
+            "warnings": _server_warnings(),
+            # memo가 그다음이다 — 스틱노트는 "지금 눈에 띄어야" 의미가 있고,
             # 웹에는 세션 훅이 없어 recall 반환이 유일한 노출 경로다(namu-56).
             "memo": memo.load_all(),
             "profile": profile.active(),

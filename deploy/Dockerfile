@@ -27,6 +27,7 @@ WORKDIR /app
 COPY namu-plugin/ ./namu-plugin/
 COPY deploy/entrypoint.sh ./deploy/entrypoint.sh
 COPY deploy/namu_cloud_sync_setup.py ./deploy/namu_cloud_sync_setup.py
+COPY deploy/namu_startup_sync.py ./deploy/namu_startup_sync.py
 RUN chmod +x ./deploy/entrypoint.sh
 
 # 설계 §4: 컨테이너 배포 시 machine=web을 기본값으로 찍는다(NAMU_MACHINE 해석 규칙 —

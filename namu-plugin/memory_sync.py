@@ -100,6 +100,14 @@ def sync_pull() -> bool:
                 f"PULL FAIL rc={result.returncode} err={(result.stderr or '').strip()[:200]}"
             )
             return False
+        # 시작 시 받아오기가 실패해 남은 경고를 여기서 지운다
+        # (namu-entrypoint-pull-resilience). 이 줄이 없으면 컨테이너가 뜬 뒤 런타임
+        # pull로 이미 회복됐는데도 경고가 영영 남아, 다음번 진짜 실패를 사람이
+        # 무시하게 된다. import를 함수 안에서 하는 이유는 startup_sync가 이 모듈을
+        # import하기 때문(모듈 로드 시점 순환 회피 — cfg 지연 import와 같은 관례).
+        import startup_sync
+
+        startup_sync.clear_status(home)
         return True
     except Exception as exc:
         _append_sync_log(f"PULL FAIL {type(exc).__name__}: {exc}")
