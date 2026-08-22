@@ -299,3 +299,108 @@ def test_tool_result_blocks_do_not_trigger_closing(tmp_path):
         },
     }
     assert hook._entry_text(entry) == ""
+
+
+# --- 5. 일한 방과 열려 있는 폴더가 다를 때 (2026-08-23 실사고) ----------------
+#
+# 훅은 열려 있는 폴더의 방 하나만 조회했다. 마스터 지휘석에서 세션을 열고
+# 서브에이전트를 다른 방으로 보내 일을 시키는 규정대로 했더니, 기록은 일한 방에
+# 정상적으로 남았는데도 "남긴 줄이 아예 없습니다"로 막혔다. 아래 두 시험은 반드시
+# 짝으로 본다 — 이 훅은 잘못 고치면 영영 막거나 영영 안 막는다.
+
+
+def _payload_for(tmp_path: Path, transcript: Path, room: str, **extra) -> dict:
+    """cwd를 특정 방 이름으로 지정한 payload(방 이름 = 폴더 basename)."""
+    project_dir = tmp_path / room
+    project_dir.mkdir(exist_ok=True)
+    return {
+        "cwd": str(project_dir),
+        "transcript_path": str(transcript),
+        "hook_event_name": "Stop",
+        **extra,
+    }
+
+
+def test_hook_passes_when_work_was_logged_in_another_room(tmp_path):
+    """통과해야 할 때 통과한다 — 지휘석에서 열었고 기록은 일한 방에 남았다."""
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)  # = 09:00 KST
+    # 열려 있는 폴더의 방: 이번 세션에 남긴 줄이 없다
+    _make_task(home, "master-post", "master-1", "# log\n[시작] 2026-07-20 10:00:00 test · 지난 세션\n")
+    # 실제로 일한 방: 서브에이전트가 [완료]를 남겼다
+    _make_task(
+        home,
+        "worker-room",
+        "cloud-9",
+        "# log\n[완료] 2026-07-27 09:40:00 test · 라우팅 고치고 닫음\n",
+    )
+    transcript = _write_transcript(tmp_path, "마무리해", started)
+
+    result = _run_hook(home, _payload_for(tmp_path, transcript, "master-post"))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "", result.stdout
+
+
+def test_hook_still_blocks_when_no_room_has_a_next_line(tmp_path):
+    """막혀야 할 때 막힌다 — 방을 여럿 두고도 어디에도 [다음]류가 없다.
+
+    범위를 넓힌 변경이 '영영 안 막는' 쪽으로 무너지지 않았는지 보는 대조군이다.
+    다른 방의 [다음]은 **지난 세션** 것이라 이번 마무리를 면제하지 못한다.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    _make_task(home, "master-post", "master-1", "# log\n[단계] 2026-07-27 09:20:00 test · 확인만 함\n")
+    _make_task(
+        home,
+        "worker-room",
+        "cloud-9",
+        "# log\n[다음] 2026-07-26 23:17:00 test · 어제 적어둔 지점\n"
+        "[단계] 2026-07-27 09:30:00 test · 오늘 한 일\n",
+    )
+    transcript = _write_transcript(tmp_path, "마무리해", started)
+
+    result = _run_hook(home, _payload_for(tmp_path, transcript, "master-post"))
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout)
+    assert out["decision"] == "block"
+    # 어느 방의 어느 task인지 함께 지목한다 — 방이 여럿이라 슬러그만으로는 못 찾는다
+    assert "worker-room/cloud-9" in out["reason"], out["reason"]
+    assert "master-post/master-1" in out["reason"], out["reason"]
+
+
+def test_hook_ignores_next_line_stamped_by_another_machine(tmp_path):
+    """다른 기계가 남긴 줄은 이 세션의 마무리로 인정하지 않는다.
+
+    방 전체로 넓힌 대가로 생기는 오인 경로가 이것이다 — 웹 컨테이너·미니PC가
+    남긴 줄이 세션 도중 pull로 딸려 들어와 since 창 안에 앉을 수 있다.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    _make_task(home, "master-post", "master-1", "# log\n[단계] 2026-07-27 09:20:00 test · 확인만 함\n")
+    _make_task(
+        home,
+        "worker-room",
+        "cloud-9",
+        "# log\n[다음] 2026-07-27 09:40:00 web · 웹에서 남긴 남의 줄\n",
+    )
+    transcript = _write_transcript(tmp_path, "마무리해", started)
+
+    result = _run_hook(home, _payload_for(tmp_path, transcript, "master-post"))
+    out = json.loads(result.stdout)
+    assert out["decision"] == "block"
+
+
+def test_hook_counts_an_unstamped_line_rather_than_blocking_forever(tmp_path):
+    """기계 도장이 없는 옛 형식 줄은 통과시킨다 — 걸러내면 영영 막히는 쪽으로 틀린다."""
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    _make_task(home, "worker-room", "cloud-9", "# log\n[다음] 2026-07-27 09:40:00 이어서 여기부터\n")
+    transcript = _write_transcript(tmp_path, "마무리해", started)
+
+    result = _run_hook(home, _payload_for(tmp_path, transcript, "master-post"))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "", result.stdout
