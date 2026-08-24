@@ -286,7 +286,7 @@
   <div class="metarow">
     <span class="chip">데이터 루트 <b>~/.namu</b> (고정)</span>
     <span class="chip">그릇 <b>교훈 · 개인 사실 · 작업일지 · 쪽지 · 첨부 기록</b></span>
-    <span class="chip">인터페이스 <b>MCP · 도구 14종</b> (웹은 10종)</span>
+    <span class="chip">인터페이스 <b>MCP · 도구 15종</b> (웹은 11종)</span>
     <span class="chip">검색 <b>SQLite FTS5 · 다섯 그릇 전부</b></span>
     <span class="chip">기록 <b>3층 — 무엇을 · 왜 · 그때</b></span>
     <span class="chip">동기화 <b>Git (선택)</b></span>
@@ -504,9 +504,9 @@ flowchart TB
     <li><b>search</b> = 판단 중 <b>패턴 분석</b>. 정확히 매칭되는 것만, 없으면 빈 결과 + 항상 <code>{success, failure, partial}</code> 경향 요약 첨부.</li>
   </ul>
 
-  <h3>도구는 열네 개 — 기억 일곱 · 첨부 일곱</h3>
-  <p>기억을 다루는 도구는 <code>namu_recall</code> · <code>namu_search</code> · <code>namu_record</code> · <code>namu_memo_remove</code> · <code>namu_task_pin</code> · <code>namu_task_unpin</code> · <code>namu_sync_setup</code> 일곱이고, 파일을 다루는 도구가 <code>namu_upload_file</code> · <code>namu_list_files</code> · <code>namu_download_file</code> · <code>namu_delete_file</code> · <code>namu_create_upload_ticket</code> · <code>namu_create_download_ticket</code> · <code>namu_check_ticket</code> 일곱입니다(아래 07절).</p>
-  <p><b>웹으로 나가는 것은 열 개</b>입니다 — 기억 앞의 셋과 첨부 일곱 전부. 빠지는 넷(<code>namu_memo_remove</code> · 책갈피 둘 · <code>namu_sync_setup</code>)은 플러그인 전용입니다(아래 08절).</p>
+  <h3>도구는 열다섯 개 — 기억 여덟 · 첨부 일곱</h3>
+  <p>기억을 다루는 도구는 <code>namu_recall</code> · <code>namu_search</code> · <code>namu_record</code> · <code>namu_memo_remove</code> · <code>namu_task_pin</code> · <code>namu_task_unpin</code> · <code>namu_task_move</code> · <code>namu_sync_setup</code> 여덟이고, 파일을 다루는 도구가 <code>namu_upload_file</code> · <code>namu_list_files</code> · <code>namu_download_file</code> · <code>namu_delete_file</code> · <code>namu_create_upload_ticket</code> · <code>namu_create_download_ticket</code> · <code>namu_check_ticket</code> 일곱입니다(아래 07절).</p>
+  <p><b>웹으로 나가는 것은 열한 개</b>입니다 — 기억 쪽 <code>namu_recall</code>·<code>namu_search</code>·<code>namu_record</code>·<code>namu_task_move</code> 넷과 첨부 일곱 전부. 빠지는 넷(<code>namu_memo_remove</code> · 책갈피 둘 · <code>namu_sync_setup</code>)은 플러그인 전용입니다(아래 08절).</p>
   <div class="note"><span class="ic">i</span><p><strong>책갈피가 기록이 아닌 이유(namu-70):</strong> "다음엔 이것부터"는 <code>log.md</code>가 아니라 별도 파일 한 장(<code>.pin.&lt;기기&gt;</code>)에 적습니다. log에 적으면 ① append-only라 뗐다 붙였다를 표현할 수 없고 ② 그 작업의 최종 시각이 갱신돼 <b>화면 순서가 두 경로로 흔들립니다</b>. 파일을 기기마다 가르는 것이 Git 충돌 0의 근거입니다 — 각 기기는 제 파일에만 씁니다.</p></div>
 </div></section>
 
@@ -784,7 +784,7 @@ flowchart TB
       <p>기억의 원천은 <b>사용자 본인의 GitHub 비공개 저장소</b>이고, 서버가 갖는 것은 그 사본뿐입니다. 그만둘 때는 주소만 폐기하면 되고, 저장소는 원래부터 사용자 계정에 있으므로 그대로 남습니다. <code>?client=</code>(어느 AI가 남겼나)는 신원과 별개 축이라 그대로 유지됩니다.</p>
     </div>
   </div>
-  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 14종 중 10종</b>이 노출됩니다 — 기억 <code>recall·record·search</code>와 첨부 7종 전부. 빠지는 넷은 플러그인 전용입니다: <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단하고, 쪽지 떼기·책갈피 둘은 그 PC의 파일을 다루는 도구입니다.</p>
+  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 15종 중 11종</b>이 노출됩니다 — 기억 <code>recall·record·search·task_move</code> 넷과 첨부 7종 전부. 빠지는 넷은 플러그인 전용입니다: <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단하고, 쪽지 떼기·책갈피 둘은 그 PC의 파일을 다루는 도구입니다.</p>
   <p style="margin-top:.6em"><strong>작업일지는 웹에서도 됩니다.</strong> 기억 도구가 3종이라는 것과 담을 수 있는 그릇이 무엇이냐는 별개입니다 — <code>record</code>·<code>recall</code>을 통해 작업일지를 <b>쓰고 읽을 수 있습니다</b>. 다만 기록할 때는 <b>어느 프로젝트인지 반드시 적어야</b> 합니다. 터미널은 현재 폴더가 곧 프로젝트지만 웹에는 그 개념이 없기 때문입니다(조회는 생략 시 전체를 합칩니다).</p></div>
 </div></section>
 
