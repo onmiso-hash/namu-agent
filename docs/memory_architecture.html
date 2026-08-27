@@ -281,7 +281,7 @@
 <div class="hero"><div class="wrap">
   <div class="eyebrow">Memory Architecture · 코드 기준 2026-08</div>
   <h1>기억은 하나, 실행 엔진은 빌려 쓴다</h1>
-  <p class="lede">NAMU의 기억은 <strong>머신마다</strong>, <strong>AI마다</strong>, 그리고 <strong>기억의 종류마다</strong> 남기는 방법과 사는 곳이 다릅니다. 이 문서는 그 전체 구성을 다이어그램으로 한 장에 펼쳐, 매번 다시 묻지 않아도 되게 만든 설계도입니다.</p>
+  <p class="lede">NAMU의 기억은 <strong>머신마다</strong>, <strong>AI마다</strong>, 그리고 <strong>기억의 종류마다</strong> 남기는 방법과 사는 곳이 다릅니다. 이 문서는 그 전체 구성을 다이어그램으로 한 장에 펼쳐, 매번 다시 묻지 않아도 되도록 만든 설계도입니다.</p>
   <p class="lede" style="font-size:.95em"><b>처음이시라면</b> <a href="index.html">나무 안내서</a>부터 보십시오 — 이 문서는 설계를 이미 궁금해하는 분을 위한 것입니다. 설치는 <a href="install_guide.html">설치하기</a>, 웹 연결은 <a href="remote_mcp_guide.html">웹에서 직접 서버 운영하기</a>·<a href="https://namu-cloud.onnamu.kr/">나무 클라우드</a>에 있습니다.</p>
   <div class="metarow">
     <span class="chip">데이터 루트 <b>~/.namu</b> (고정)</span>
@@ -368,12 +368,12 @@ flowchart LR
 <section id="axes"><div class="wrap">
   <div class="kicker"><span class="num">02</span> 세 개의 축</div>
   <h2>"다르게 남긴다"는 건 세 축이 겹쳐 있다는 뜻</h2>
-  <p>기억이 달라지는 방향은 딱 세 가지입니다. 이 셋은 서로 직교(independent)합니다 — 하나의 기록은 세 축의 좌표를 동시에 갖습니다. 예: <em>"hp 머신에서 · Claude Code가 · 교훈(lesson)으로"</em> 남긴 한 줄.</p>
+  <p>기억이 달라지는 방향은 딱 세 가지입니다. 이 셋은 서로 독립적입니다 — 하나의 기록은 세 축의 좌표를 동시에 갖습니다. 예: <em>"hp 머신에서 · Claude Code가 · 교훈(lesson)으로"</em> 남긴 한 줄.</p>
   <div class="cards">
     <div class="card">
       <span class="tag">Axis A · 종류</span>
       <h4>기억의 종류 (그릇)</h4>
-      <p>무엇을 기억하느냐에 따라 사는 그릇이 갈립니다. 다섯 그릇 모두 검색은 같은 색인을 타지만, 정정 방식과 <code>recall</code>에서 나오는 방법은 그릇마다 다릅니다.</p>
+      <p>무엇을 기억하느냐에 따라 사는 그릇이 갈립니다. 다섯 그릇 모두 검색은 같은 색인을 타지만, 정정 방식과 <code>recall</code>에 실려 나오는 방식은 그릇마다 다릅니다.</p>
       <div class="field">필드 <b>bowl</b> = learnings · profile · tasks · memo · attachments</div>
     </div>
     <div class="card">
@@ -476,7 +476,7 @@ flowchart TB
   </table>
   </div>
   <div class="note"><span class="ic">i</span><p><strong>왜 쪽지 그릇이 따로 있나:</strong> "영화 8시 20분" 같은 일회성 정보를 저장하라고 하면, 갈 곳이 없어 <code>learnings.yaml</code>(엔지니어링 지식베이스)로 밀려들어와 검색 품질을 떨어뜨렸습니다. namu-56에서 전용 서랍을 냈고, 이 그릇만 <b>append-only가 아닙니다</b> — 떼면 파일에서 사라집니다. Git 병합도 줄 단위(union)가 아니라 파일 단위입니다. 줄 단위로 합치면 한쪽에서 뗀 메모가 다른 쪽 파일에서 되살아나기 때문입니다.</p>
-  <p style="margin-top:.6em"><strong>쪽지도 색인은 갖습니다(fts5-memo-tasks-index):</strong> 예전 문서에는 "쪽지는 색인 안 함"이라고 적혀 있었는데, namu-56이 금지한 것은 <b>교훈 색인에 섞이는 것</b>이지 색인을 갖는 것이 아니었습니다. 지금은 <b>교훈과 분리된 자기 표</b>를 씁니다 — 지식베이스 오염 0이라는 존재 이유는 그대로 지키면서 찾기는 빨라집니다.</p>
+  <p style="margin-top:.6em"><strong>쪽지도 색인은 갖습니다(fts5-memo-tasks-index):</strong> 예전 문서에는 "쪽지는 색인 안 함"이라고 적혀 있었는데, namu-56이 금지한 것은 <b>교훈 색인에 섞이는 것</b>이지 색인을 갖는 것이 아니었습니다. 지금은 <b>교훈과 분리된 자기 표</b>를 씁니다 — 지식베이스 오염 0이라는 존재 이유를 그대로 지키면서 찾기는 빨라집니다.</p>
   <p style="margin-top:.6em"><strong>첨부 기록 그릇이 다른 점:</strong> 이 그릇은 <b>파일 자체가 아니라 이력</b>을 담습니다. 몸통은 사용자 저장소 <code>attach_file/</code>에 있고 각 PC로는 안 내려옵니다. append-only라 고칠 수 없으므로 "지금 살아 있는 파일 목록"은 <code>status</code>(올림/새 판/지움)를 훑어 <b>계산</b>합니다. 상세는 <a href="#attach">07절</a>.</p></div>
 
   <h3>검색 색인 — 다섯 그릇이 한 길로 (fts5-memo-tasks-index, 2026-08-08)</h3>
@@ -485,7 +485,7 @@ flowchart TB
     <li><b>표 구성</b> — 교훈은 종전의 자기 표(<code>learnings</code> + <code>learnings_fts</code>), 나머지 넷은 같은 모양의 표(<code>bowl_&lt;이름&gt;</code> + <code>bowl_&lt;이름&gt;_fts</code>, trigram)를 하나씩 갖습니다.</li>
     <li><b>낡음 판정</b> — 그릇마다 <b>원본 파일들의 크기·수정시각을 모은 서명 하나</b>로 봅니다. 세션 시작·서버 부팅·pull 직후에 <b>바뀐 그릇만</b> 다시 만듭니다. 검색 진입점에서도 한 번 더 보는데, 안 그러면 <b>방금 남긴 기록이 다음 검색에 안 잡히는</b> 구멍이 생깁니다.</li>
     <li><b>검색어 규칙</b> — 띄어쓴 <b>낱말별 AND</b>(순서 무관). 세 글자 미만 낱말이 섞이면 색인을 건너뛰고 LIKE로 전수 조회합니다 — trigram은 두 글자를 원리상 못 찾기 때문입니다.</li>
-    <li><b>규칙은 함수로 공개한다</b> — <code>db.query_tokens</code>·<code>db.matches_all_tokens</code>. 색인을 못 타는 경로(클라우드의 회원별 작업일지 등)가 규칙을 <b>베껴 가면 두 서버가 갈라지기</b> 때문입니다. 실제로 v0.1.60에서 클라우드 작업일지만 옛 방식으로 남는 사고가 났고, v0.1.61에서 이 함수를 부르는 것으로 해소했습니다.</li>
+    <li><b>규칙은 함수로 공개한다</b> — <code>db.query_tokens</code>·<code>db.matches_all_tokens</code>. 색인을 못 타는 경로(클라우드의 사용자별 작업일지 등)가 규칙을 <b>베껴 가면 두 서버가 갈라지기</b> 때문입니다. 실제로 v0.1.60에서 클라우드 작업일지만 옛 방식으로 남는 사고가 났고, v0.1.61에서 이 함수를 부르도록 고쳐 해소했습니다.</li>
     <li><b>작업 설명서도 검색 대상</b> — <code>task.md</code> 한 장이 <b>결과 한 건</b>으로 들어가며 <code>tag</code>가 <code>설명서</code>입니다. 다만 브리핑의 "최근 활동"과 마무리 검사에는 <b>섞지 않습니다</b> — 섞으면 오늘 아무 일도 없던 작업 전부가 활동 목록에 나타납니다.</li>
     <li><b>첨부 기록의 금지선</b> — 색인 서명은 <code>attachments.yaml</code> 한 장만 봅니다. 사용자 저장소 <code>attach_file/</code>은 건드리지 않습니다(<a href="#attach">07절</a>).</li>
   </ul>
@@ -500,7 +500,7 @@ flowchart TB
 
   <h3>recall vs search — 같은 query, 다른 목적</h3>
   <ul class="clean">
-    <li><b>recall</b> = 작업 <b>시작 전 맥락 로딩</b>. "뭐라도 준다" — 매칭이 약하면 최신순으로 폴백. 붙여둔 쪽지 + <code>profile</code> 전체 + <code>learnings</code> 검색결과 + 열린 작업을 한 번에 반환.</li>
+    <li><b>recall</b> = 작업 <b>시작 전 맥락 로딩</b>. "뭐라도 준다" — 매칭이 약하면 최신순으로 폴백. 붙여둔 쪽지 + <code>profile</code> 전체 + <code>learnings</code> 검색 결과 + 열린 작업을 한 번에 반환.</li>
     <li><b>search</b> = 판단 중 <b>패턴 분석</b>. 정확히 매칭되는 것만, 없으면 빈 결과 + 항상 <code>{success, failure, partial}</code> 경향 요약 첨부.</li>
   </ul>
 
@@ -513,7 +513,7 @@ flowchart TB
 <section id="map"><div class="wrap">
   <div class="kicker"><span class="num">04</span> 저장 지도 (Axis B 상세)</div>
   <h2>모든 것이 사는 곳: <code>~/.namu</code></h2>
-  <p>학습 기억이든 작업 상태든, 물리적으로는 전부 개인 풀 <code>~/.namu</code> 아래 한곳에 모입니다. 무엇이 Git으로 공유되고(초록), 무엇이 기기에만 남는 캐시인지(주황)를 색으로 구분해 보세요.</p>
+  <p>학습 기억이든 작업 상태든, 물리적으로는 전부 개인 풀 <code>~/.namu</code> 아래 한곳에 모입니다. 무엇이 Git으로 공유되는지(초록), 무엇이 기기에만 남는 캐시인지(주황) 색으로 구분해 보세요.</p>
   <div class="sheet">
     <div class="sheet-cap">~/.namu 파일 트리 — 원천 · 캐시 · 작업상태</div>
     <pre class="mermaid">
@@ -549,12 +549,12 @@ flowchart TB
     <div class="card">
       <span class="tag">Git으로 공유</span>
       <h4>PC 간 합류하는 것</h4>
-      <p><code>learnings.yaml</code> · <code>profile.yaml</code> · <code>attachments.yaml</code> · tasks의 <code>log.md</code>·<code>task.md</code>. <code>.gitattributes</code>의 <code>merge=union</code> + ULID 키 덕분에 오프라인 다중 PC 병합 충돌이 0. <code>memo.yaml</code>만 <b>파일 단위 병합</b>입니다 — 줄 단위로 합치면 한쪽에서 뗀 메모가 되살아나기 때문입니다.</p>
+      <p><code>learnings.yaml</code> · <code>profile.yaml</code> · <code>attachments.yaml</code> · tasks의 <code>log.md</code>·<code>task.md</code>. <code>.gitattributes</code>의 <code>merge=union</code> + ULID 키 덕분에 오프라인 다중 PC 병합 충돌이 0입니다. <code>memo.yaml</code>만 <b>파일 단위 병합</b>입니다 — 줄 단위로 합치면 한쪽에서 뗀 메모가 되살아나기 때문입니다.</p>
     </div>
     <div class="card">
       <span class="tag">기기에만</span>
       <h4>재생성되는 캐시</h4>
-      <p><code>db/</code>는 gitignore 대상. <code>namu.db</code>는 그릇마다 원본 파일의 <b>크기·수정시각 서명</b>이 어긋나면 <b>그 그릇만</b> 다시 만들어집니다. 책갈피 <code>.pin.[machine]</code>도 기기별 파일이라 서로 밟지 않습니다.</p>
+      <p><code>db/</code>는 gitignore 대상입니다. <code>namu.db</code>는 그릇마다 원본 파일의 <b>크기·수정시각 서명</b>이 어긋나면 <b>그 그릇만</b> 다시 만들어집니다. 책갈피 <code>.pin.[machine]</code>도 기기별 파일이라 서로 밟지 않습니다.</p>
     </div>
     <div class="card">
       <span class="tag">분류 기준</span>
@@ -567,7 +567,7 @@ flowchart TB
 <section id="flows"><div class="wrap">
   <div class="kicker"><span class="num">05</span> 흐름</div>
   <h2>쓰기 · 읽기 · 동기화가 도는 방식</h2>
-  <p>세 가지 대표 흐름을 플로우차트로 폈습니다. 특히 <strong>동기화</strong>는 "record 직후 push, 세션 시작 시 pull"이 기본이며, 충돌은 union 병합으로 구조적으로 녹입니다.</p>
+  <p>세 가지 대표 흐름을 플로우차트로 펼쳤습니다. 특히 <strong>동기화</strong>는 "record 직후 push, 세션 시작 시 pull"이 기본이며, 충돌은 union 병합으로 구조적으로 해소합니다.</p>
 
   <h3>① 기록 흐름 — <code>namu_record</code></h3>
   <div class="sheet">
@@ -661,7 +661,7 @@ flowchart TB
 <section id="machine"><div class="wrap">
   <div class="kicker"><span class="num">06</span> 머신·AI별 차이 (Axis B·C)</div>
   <h2>같은 풀에 남되, 출처는 필드로 새긴다</h2>
-  <p>기억 풀은 하나지만, 각 항목에는 "어느 기기에서 · 누가" 남겼는지가 필드로 박힙니다. 나중에 <code>GROUP BY machine</code>이나 태그로 기계적 추출이 가능하도록 설계된 구조입니다.</p>
+  <p>기억 풀은 하나지만, 각 항목에는 "어느 기기에서 · 누가" 남겼는지가 필드로 새겨집니다. 나중에 <code>GROUP BY machine</code>이나 태그로 기계적 추출이 가능하도록 설계된 구조입니다.</p>
   <div class="tablewrap">
   <table>
     <thead><tr><th>필드</th><th>축</th><th>어떻게 정해지나</th><th>예시 값</th><th>쓰임</th></tr></thead>
@@ -695,12 +695,12 @@ flowchart TB
 <section id="attach"><div class="wrap">
   <div class="kicker"><span class="num">07</span> 첨부 파일 (namu-file-upload-download)</div>
   <h2>파일은 우리 서버가 아니라 <b>사용자 저장소</b>로 간다</h2>
-  <p>대화 중 만들거나 손에 든 파일을 회원 본인의 GitHub 저장소에 그대로 올리고, 나중에 그 하나만 다시 받습니다. 나무 서버나 개발자 서버에 <b>사본을 두지 않습니다</b>. 뼈대는 셋입니다.</p>
+  <p>대화 중에 만든 파일이나 이미 가지고 있는 파일을 사용자 본인의 GitHub 저장소에 그대로 올리고, 나중에 필요한 것만 다시 받습니다. 나무 서버나 개발자 서버에 <b>사본을 두지 않습니다</b>. 뼈대는 셋입니다.</p>
   <div class="tablewrap">
   <table>
     <thead><tr><th>뼈대</th><th>무엇</th><th>왜 이렇게</th></tr></thead>
     <tbody>
-      <tr><td><b>파일은 회원 저장소로</b></td><td>실물은 저장소의 <code>attach_file/</code> 한 칸에 평평하게(하위 폴더 없음)</td><td>기억과 같은 원칙 — 남의 서버에 갇히지 않는다</td></tr>
+      <tr><td><b>파일은 사용자 저장소로</b></td><td>실물은 저장소의 <code>attach_file/</code> 한곳에 평평하게(하위 폴더 없음)</td><td>기억과 같은 원칙 — 남의 서버에 갇히지 않는다</td></tr>
       <tr><td><b>첨부 폴더는 각 PC에서 격리</b></td><td>sparse-checkout으로 몸통이 안 내려온다</td><td>PC가 늘어도 파일이 그 수만큼 불어나지 않는다</td></tr>
       <tr><td><b>이력은 모든 PC에</b></td><td><code>attachments.yaml</code>(첨부 기록 그릇)</td><td>"무슨 파일이 있고 왜 올렸나"는 어디서나 답한다</td></tr>
     </tbody>
@@ -717,23 +717,23 @@ flowchart TB
       <tr><td><code>namu_download_file</code></td><td>파일 하나를 받는다</td><td>받은 일은 기록하지 않는다</td></tr>
       <tr><td><code>namu_delete_file</code></td><td>파일 하나를 저장소에서 뺀다</td><td>왜 뺐는지가 필수. <b>완전 삭제가 아니다</b> — git 이력에는 그 이전 시점이 남는다</td></tr>
       <tr><td><code>namu_create_upload_ticket</code></td><td>올릴 수 있는 일회용 주소</td><td>이미 파일로 있는 것은 크기·종류와 무관하게 이쪽</td></tr>
-      <tr><td><code>namu_create_download_ticket</code></td><td>내려받을 주소</td><td>회원에게 파일을 건네는 방법</td></tr>
-      <tr><td><code>namu_check_ticket</code></td><td>파일이 도착했는지 본다</td><td>회원이 "올렸어"라고 할 때</td></tr>
+      <tr><td><code>namu_create_download_ticket</code></td><td>내려받을 주소</td><td>사용자에게 파일을 건네는 방법</td></tr>
+      <tr><td><code>namu_check_ticket</code></td><td>파일이 도착했는지 본다</td><td>사용자가 "올렸어"라고 할 때</td></tr>
     </tbody>
   </table>
   </div>
-  <div class="note"><span class="ic">i</span><p><strong>티켓이 있는 이유:</strong> 보통 경로는 파일 몸통이 <b>AI의 출력</b>을 통과합니다 — 그림·PDF 같은 것은 그 자체로 불가능하고, 큰 파일은 느리고 도중에 잘립니다. 티켓은 회원의 브라우저와 서버를 직접 잇는 일회용 주소라, 몸통이 AI를 아예 안 거칩니다. 티켓 주소는 <b>인증 미들웨어 바깥</b>에 섭니다 — 브라우저에는 토큰이 없고, 추측할 수 없는 티켓 번호 자체가 그 자리의 인증이기 때문입니다.</p></div>
+  <div class="note"><span class="ic">i</span><p><strong>티켓이 있는 이유:</strong> 보통 경로에서는 파일 몸통이 <b>AI의 출력</b>을 거칩니다 — 그림·PDF 같은 것은 애초에 불가능하고, 큰 파일은 느리고 도중에 잘립니다. 티켓은 사용자의 브라우저와 서버를 직접 잇는 일회용 주소라, 몸통이 AI를 아예 안 거칩니다. 티켓 주소는 <b>인증 미들웨어 바깥</b>에 섭니다 — 브라우저에는 토큰이 없고, 추측할 수 없는 티켓 번호 자체가 그 자리의 인증이기 때문입니다.</p></div>
 
   <div class="note warn"><span class="ic">⚑</span><p><strong>급소 — 크기를 저장소에 물으면 격리가 뚫린다.</strong> 목록을 만들 때 크기까지 함께 묻는 형태(<code>git ls-tree -l</code>)를 쓰면, git이 크기를 알아내려고 <b>빠진 파일 몸통을 전부 내려받습니다.</b> 2026-08-07 실측에서 파일 2,548개에 7분이 넘도록 안 끝나 중단했습니다. 그래서 <code>attachments.yaml</code>의 <code>bytes</code> 칸이 <b>필수</b>이고, 목록·검색·색인 어느 경로도 크기를 저장소에 묻지 않습니다. 이것은 되돌릴 수 없는 실수입니다 — 한 번 내려오면 그 PC에서 격리가 무너집니다.</p></div>
 
-  <p>터미널은 회원 본인의 <code>~/.namu</code> 사본이 이미 그 저장소에 연결돼 있어 git 명령으로 바로 다루고(<code>git add --sparse</code> → commit → push → <code>sparse-checkout reapply</code>), 클라우드는 GitHub API를 씁니다. <b>올린 뒤 마지막에 격리를 다시 거는 것</b>이 핵심입니다 — 안 하면 방금 올린 파일이 그 PC에 남아 격리가 한 칸씩 무너집니다.</p>
+  <p>터미널에서는 사용자 본인의 <code>~/.namu</code> 사본이 이미 그 저장소에 연결돼 있어 git 명령으로 바로 다루고(<code>git add --sparse</code> → commit → push → <code>sparse-checkout reapply</code>), 클라우드는 GitHub API를 씁니다. <b>올린 뒤 마지막에 격리를 다시 거는 것</b>이 핵심입니다 — 안 하면 방금 올린 파일이 그 PC에 남아 격리가 한 칸씩 무너집니다.</p>
   <p class="muted">상세는 <a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/attach_files.md">첨부 파일 완료 보고서</a>(본체 몫) · <a href="https://github.com/onmiso-hash/namu-cloud-routing/blob/main/docs/namu_attach_files.md">클라우드 몫</a>.</p>
 </div></section>
 
 <section id="remote"><div class="wrap">
   <div class="kicker"><span class="num">08</span> 원격 MCP — 개인 · 공용</div>
   <h2>기억을 네트워크 너머로 여는 두 경로</h2>
-  <p>stdio 로컬 서버가 기본이지만, 웹 Claude(claude.ai) 같은 원격 클라이언트를 붙이려면 HTTP로도 서빙해야 합니다. 여기에 두 갈래가 있고 <strong>둘 다 라이브</strong>입니다 — <strong>경로 B(개인 셀프호스팅)</strong>는 사용자가 직접 띄우고, <strong>경로 A(나무 클라우드)</strong>는 중앙에서 호스팅하며 <a href="https://namu-cloud.onnamu.kr/">전용 사이트</a>에서 GitHub 로그인으로 가입합니다.</p>
+  <p>stdio 로컬 서버가 기본이지만, 웹 Claude(claude.ai) 같은 원격 클라이언트를 붙이려면 HTTP로도 서빙해야 합니다. 여기에 두 갈래가 있고 <strong>둘 다 라이브</strong>입니다 — <strong>경로 B(개인 셀프호스팅)</strong>는 사용자가 직접 띄우고, <strong>경로 A(나무 클라우드)</strong>는 중앙에서 호스팅하며, 가입은 <a href="https://namu-cloud.onnamu.kr/">전용 사이트</a>에서 GitHub 로그인으로 합니다.</p>
   <div class="sheet">
     <div class="sheet-cap">원격 위상 — 경로 B(개인) / 경로 A(공용)</div>
     <pre class="mermaid">
@@ -771,7 +771,7 @@ flowchart TB
     <div class="card">
       <span class="tag">경로 B · 개인</span>
       <h4>두 배포 형태</h4>
-      <p><b>①</b> 자기 PC 상시구동 + 터널(cloudflared)로 공개 HTTPS — 지금 쓰는 그 <code>~/.namu</code> 그대로. <b>②</b> 클라우드 컨테이너(Railway 등) — 부팅 시 GitHub에서 clone. 인증은 토큰 헤더 또는 시크릿 경로.</p>
+      <p><b>①</b> 자기 PC 상시 구동 + 터널(cloudflared)로 공개 HTTPS — 지금 쓰는 그 <code>~/.namu</code> 그대로. <b>②</b> 클라우드 컨테이너(Railway 등) — 부팅 시 GitHub에서 clone. 인증은 토큰 헤더 또는 시크릿 경로.</p>
     </div>
     <div class="card">
       <span class="tag">경로 A · 나무 클라우드</span>
@@ -784,8 +784,8 @@ flowchart TB
       <p>기억의 원천은 <b>사용자 본인의 GitHub 비공개 저장소</b>이고, 서버가 갖는 것은 그 사본뿐입니다. 그만둘 때는 주소만 폐기하면 되고, 저장소는 원래부터 사용자 계정에 있으므로 그대로 남습니다. <code>?client=</code>(어느 AI가 남겼나)는 신원과 별개 축이라 그대로 유지됩니다.</p>
     </div>
   </div>
-  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 건 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 15종 중 11종</b>이 노출됩니다 — 기억 <code>recall·record·search·task_move</code> 넷과 첨부 7종 전부. 빠지는 넷은 플러그인 전용입니다: <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단하고, 쪽지 떼기·책갈피 둘은 그 PC의 파일을 다루는 도구입니다.</p>
-  <p style="margin-top:.6em"><strong>작업일지는 웹에서도 됩니다.</strong> 기억 도구가 4종이라는 것과 담을 수 있는 그릇이 무엇이냐는 별개입니다 — <code>record</code>·<code>recall</code>을 통해 작업일지를 <b>쓰고 읽을 수 있습니다</b>. 다만 기록할 때는 <b>어느 프로젝트인지 반드시 적어야</b> 합니다. 터미널은 현재 폴더가 곧 프로젝트지만 웹에는 그 개념이 없기 때문입니다(조회는 생략 시 전체를 합칩니다).</p></div>
+  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 것은 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 15종 중 11종</b>이 노출됩니다 — 기억 <code>recall·record·search·task_move</code> 넷과 첨부 7종 전부. 빠지는 넷은 플러그인 전용입니다: <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단하고, 쪽지 떼기·책갈피 둘은 그 PC의 파일을 다루는 도구입니다.</p>
+  <p style="margin-top:.6em"><strong>작업일지는 웹에서도 됩니다.</strong> 기억 도구가 4종이라는 것과 담을 수 있는 그릇이 무엇인지는 별개입니다 — <code>record</code>·<code>recall</code>로 작업일지를 <b>쓰고 읽을 수 있습니다</b>. 다만 기록할 때는 <b>어느 프로젝트인지 반드시 적어야</b> 합니다. 터미널은 현재 폴더가 곧 프로젝트지만 웹에는 그 개념이 없기 때문입니다(조회는 생략 시 전체를 합칩니다).</p></div>
 </div></section>
 
 <section id="principles"><div class="wrap">
