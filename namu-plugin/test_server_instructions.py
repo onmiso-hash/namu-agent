@@ -18,8 +18,10 @@ import record_input
 
 _SERVER_SOURCE = (Path(__file__).parent / "mcp_server.py").read_text(encoding="utf-8")
 
-# `@mcp.tool(...)` 바로 다음 줄의 `def 이름(`을 등록된 도구로 본다.
-_REGISTERED = re.findall(r"@mcp\.tool\([^\n]*\)\s*\ndef\s+(\w+)\s*\(", _SERVER_SOURCE)
+# `@mcp.tool(...)` 또는 `@tool(...)`(namu-tool-error-visibility — 안내문을 AI에게
+# 전달하는 껍데기, mcp_server.py의 `tool()` 정의 참고) 바로 다음 줄의 `def 이름(`을
+# 등록된 도구로 본다.
+_REGISTERED = re.findall(r"@(?:mcp\.tool|tool)\([^\n]*\)\s*\ndef\s+(\w+)\s*\(", _SERVER_SOURCE)
 
 
 def test_source_scan_found_the_tools():
