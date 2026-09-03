@@ -9,7 +9,7 @@ NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code
 
 | 파일 | 역할 |
 |------|------|
-| `mcp_server.py` | FastMCP 메모리 서버. MCP 도구 14종 노출, stdio 전송 — 기억 7종(`namu_recall`/`namu_search`/`namu_record`/`namu_memo_remove`/`namu_task_pin`/`namu_task_unpin`/`namu_sync_setup`) + 첨부 7종(`namu_upload_file`/`namu_list_files`/`namu_download_file`/`namu_delete_file`/`namu_create_upload_ticket`/`namu_create_download_ticket`/`namu_check_ticket`) |
+| `mcp_server.py` | MCPServer(구 FastMCP) 메모리 서버. MCP 도구 14종 노출, stdio 전송 — 기억 7종(`namu_recall`/`namu_search`/`namu_record`/`namu_memo_remove`/`namu_task_pin`/`namu_task_unpin`/`namu_sync_setup`) + 첨부 7종(`namu_upload_file`/`namu_list_files`/`namu_download_file`/`namu_delete_file`/`namu_create_upload_ticket`/`namu_create_download_ticket`/`namu_check_ticket`) |
 | `http_server.py` | 셀프호스팅용 HTTP 서버. 같은 코어를 원격에 노출하되 10종으로 제한한다(`HTTP_EXPOSED_TOOLS` — 기억 3종 + 첨부 7종). 빠지는 넷은 플러그인 전용이다: `namu_sync_setup`(서버의 저장소 배선을 바꿔 remote 탈취로 이어짐)과 쪽지 떼기·책갈피 2종 |
 | `db.py` | `~/.namu/memory/learnings.yaml` ↔ SQLite 코어 + **다섯 그릇 색인**(`ensure_indexes`·`_bowl_signature`·`_bowl_rows`·`search_bowl`). 읽기(recall/search)는 conn 인자를 받고, 쓰기(record/init_db/rebuild)는 함수 내부에서 conn을 열고 닫는다. 낱말 규칙(`query_tokens`·`matches_all_tokens`)은 **공개 함수로 내준다** — 색인을 못 타는 경로가 규칙을 베껴 가면 두 서버가 갈라지기 때문(`docs/search_index_unify.md` 10.6) |
 | `config.py` | 경로·`NAMU_MACHINE`·그릇 레지스트리(`BOWLS`)·기록 칸 정의(`FIELDS`) 일원화. 데이터 루트는 고정 상수 `NAMU_DATA_ROOT`(`~/.namu`, namu-35로 환경변수 분기 폐지). 기록 시각은 반드시 `cfg.now()` |

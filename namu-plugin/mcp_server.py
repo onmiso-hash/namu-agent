@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
+# dependencies = ["mcp[cli]>=2.1,<3", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
 # ///
 import base64
 import json
@@ -24,7 +24,7 @@ import task_move
 import task_resolve
 import ticket_web
 import tickets
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 from db import init_db, rebuild_from_yaml, record, cache_is_stale, ensure_indexes
 from db import recall as _recall
 from db import search_bowl as _search_bowl
@@ -32,7 +32,7 @@ from db import search_bowl as _search_bowl
 # 소개문(instructions)은 손으로 쓰지 않는다 — 도구 설명과 같은 선언(config.FIELDS)에서
 # 만들어야 둘이 갈라지지 않는다(namu-65 후속 ②). http_server.py도 이 인스턴스를 그대로
 # 재사용하므로 웹 경로에서도 같은 소개문이 나간다.
-mcp = FastMCP("namu-memory", instructions=record_input.server_instructions())
+mcp = MCPServer("namu-memory", instructions=record_input.server_instructions())
 
 
 def get_conn() -> sqlite3.Connection:
@@ -122,6 +122,26 @@ def _server_warnings() -> list[str]:
     return [warning] if warning else []
 
 
+def _http_request(ctx: Context | None):
+    """ctx에 실린 HTTP 요청 객체를 꺼낸다(없으면 None).
+
+    mcp SDK 2.x에서 `Context.request_context`는 **요청 밖에서 읽으면 ValueError를
+    던지는 property**로 바뀌었다(1.x는 None을 돌려줬다 — SDK 2.1.1 소스 실측).
+    `getattr(..., None)`은 AttributeError만 삼키므로 그대로 두면 stdio 경로가
+    예외로 죽는다. 그래서 접근을 이 한 곳에 모으고 ValueError를 없음으로 읽는다.
+
+    request가 실려 오는 것은 HTTP 전송뿐이라, None인지 아닌지가 그대로 "웹 요청인가"의
+    판정 기준이 된다(`_is_web_request`).
+    """
+    if ctx is None:
+        return None
+    try:
+        request_context = ctx.request_context
+    except (ValueError, AttributeError):
+        return None
+    return getattr(request_context, "request", None)
+
+
 def _resolve_via(ctx: Context | None) -> str | None:
     """URL 쿼리(`?client=`)에서 출처(via) 태그를 읽어 검증한다(namu-50).
 
@@ -129,9 +149,7 @@ def _resolve_via(ctx: Context | None) -> str | None:
     호출/테스트) 검증을 완전히 면제하고 None을 반환한다 — 기존 로컬 동작을 절대
     바꾸지 않기 위함이다.
     """
-    if ctx is None:
-        return None
-    req = getattr(getattr(ctx, "request_context", None), "request", None)
+    req = _http_request(ctx)
     if req is None:
         return None
     client = (req.query_params.get("client") or "").strip()
@@ -144,10 +162,7 @@ def _is_web_request(ctx: Context | None) -> bool:
     """stateless HTTP(웹) 요청인지 판별. request가 도달하면 웹, None이면 stdio/
     직접호출/테스트다 — `_resolve_via`가 쓰는 것과 같은 판정 기준을 재사용한다
     (namu-57 2단계 2단위: project 기본값을 stdio/웹으로 분기하는 데 쓴다)."""
-    if ctx is None:
-        return False
-    req = getattr(getattr(ctx, "request_context", None), "request", None)
-    return req is not None
+    return _http_request(ctx) is not None
 
 
 def _default_search_project(ctx: Context | None) -> str | None:

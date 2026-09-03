@@ -198,9 +198,9 @@ learnings는 경향 요약)"이 핵심 — 뭐라도 돌려주는 `namu_recall`�
 - **언어:** Python 3.12 (기존 코드베이스와 통일)
 - **MCP SDK:** 공식 `mcp` 패키지. 최신 안정판 **1.28.0** (2026-06-16, PyPI 검증). Python 3.10+ 요구 → 3.12 OK
   - ⚠️ **v2가 코앞** — 공식 저장소가 beta 2026-06-30 / 안정 v2 2026-07-27 목표 발표. v2는 전송 계층을 크게 바꿈
-  - → **반드시 상한 핀:** `requirements.txt`에 `mcp[cli]>=1.28,<2` 로 고정
+  - → **반드시 상한 핀:** `mcp[cli]>=2.1,<3` 으로 고정 (2026-09-03 전환 전에는 `>=1.28,<2`였다)
   - `[cli]` extra = `mcp` 명령어 + MCP Inspector(디버깅 툴) 동봉
-- **고수준 API:** SDK 내장 FastMCP 사용 → `from mcp.server.fastmcp import FastMCP`, `@mcp.tool()` 데코레이터로 도구 정의
+- **고수준 API:** SDK 내장 MCPServer 사용 → `from mcp.server.mcpserver import MCPServer`, `@mcp.tool()` 데코레이터로 도구 정의 (SDK 1.x에서는 같은 물건의 이름이 `mcp.server.fastmcp.FastMCP`였고, 2.x에서 옛 경로는 제거됐다)
 - **전송 방식:** stdio (로컬 실행) 우선, 추후 HTTP 고려
 - **ID 생성:** ULID (`python-ulid`) — 시간순 정렬 + 다중 PC 충돌 0. recall 최신순과 궁합 좋음
 

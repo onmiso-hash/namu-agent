@@ -14,7 +14,7 @@
 
 ## 핵심 파일
 
-- `namu-plugin/mcp_server.py` — FastMCP 메모리 서버. 도구 `namu_record`/`namu_recall`/`namu_search`/`namu_sync_setup` 노출, stdio 전송
+- `namu-plugin/mcp_server.py` — MCPServer(구 FastMCP) 메모리 서버. 도구 `namu_record`/`namu_recall`/`namu_search`/`namu_sync_setup` 노출, stdio 전송
 - `namu-plugin/db.py` — `~/.namu/memory/learnings.yaml` ↔ SQLite 코어. 읽기 계열(recall/search)은 conn을 인자로 받고, 쓰기 계열(record/init_db/rebuild)은 함수 내부에서 conn을 열고 닫는다 (의도된 분리, 통일 금지)
 - `namu-plugin/config.py` — 경로·`NAMU_MACHINE`(기기 식별)·**그릇 레지스트리(`BOWLS`)** 일원화. 데이터 루트는 `NAMU_DATA_ROOT = Path.home() / ".namu"` **고정 상수**다(namu-35: 이 repo에서 실행하든 설치형이든 구분 없음, 환경변수로 바꿀 수 없음 — 상세는 아래 "메모리 구조" 참고). `load_dotenv`도 여기서 호출(`NAMU_MACHINE` 등 잔여 환경변수용). **기록 시각은 반드시 `cfg.now()`로 찍는다**(namu-57 5단계) — 이유가 **둘**이고, 하나만 알면 예외를 만들게 된다. ① 여러 기기가 같은 파일에 쓰는 곳(log.md 등)에서 호스트 현지시각을 적으면 시각끼리 비교가 불가능해진다. ② 기기 사이에 섞이지 않는 파일(`db/sync.log`·`db/git_check.log` — git 추적 대상 아님)이라도, **한 기계 안에서 시간대가 갈리면 고장을 들여다볼 수 없다**: 웹 컨테이너의 시계는 UTC라 기억 기록은 한국시간·이 로그는 세계표준시로 9시간 어긋났고, 2026-08-16 무한 재시작 사고를 뒤쫓을 때 실제로 여기 걸렸다(v0.1.70에서 수정). 예외는 statusline 계열뿐이다 — config를 일부러 안 부르는 소비자이고 개인 PC에서만 돈다. `test_record_time.py`가 구문 트리로 `datetime.now()` 직접 호출을 막는다. 기준 시간대는 `NAMU_TZ`(기본 `Asia/Seoul`)
 - `namu-plugin/memo.py` — memo 그릇(스틱노트, namu-56). **유일한 mutable 저장소**로, 떼면 파일에서 사라진다(tombstone 없음). 지식베이스(learnings) 오염 0이 이 그릇의 존재 이유다 — 그래서 검색 색인도 **교훈과 합치지 않고 자기 표를 따로 갖는다**(fts5-memo-tasks-index. namu-56이 금지한 것은 "교훈 색인에 섞이는 것"이지 색인을 갖는 것이 아니었다). 붙이기는 `namu_record(bowl='memo', text=...)`, 떼기는 전용 도구 `namu_memo_remove(id)`(기록과 다른 동사라 인자로 태우지 않는다)
@@ -104,7 +104,7 @@ namu-56에서 `memo`가 이 규약의 첫 수요자가 됐다 — `mutable=True,
 ## 기술 스택
 
 - Python 3.12+
-- MCP / FastMCP (`mcp[cli]>=1.28,<2`) — 메모리 서버 인터페이스
+- MCP / MCPServer (`mcp[cli]>=2.1,<3`) — 메모리 서버 인터페이스. **표준 2026-07-28 판**(무상태 전환)을 말하며, 같은 서버가 옛 판(2025-11-25 이하, 첫 인사 왕복 방식) 클라이언트도 그대로 응대한다 — SDK 2.x가 두 방식을 함께 서비스한다
 - SQLite + FTS5(trigram) — 검색 캐시 (3자 미만 쿼리는 LIKE 폴백)
 - uv + PEP 723 inline 메타데이터 — 플러그인 의존성 자급
 - `python-ulid` / `PyYAML` / `python-dotenv`

@@ -1,12 +1,12 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mcp[cli]>=1.28,<2", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
+# dependencies = ["mcp[cli]>=2.1,<3", "python-ulid>=3.0.0", "PyYAML>=6.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
 # ///
 """NAMU 원격 MCP HTTP 서버 (namu-44, docs/remote_mcp_design.md v4 확정안).
 
 목적: claude.ai(웹) Custom Connector 등 원격 클라이언트가 Streamable HTTP로
 namu_recall/namu_record/namu_search 3종 도구를 쓸 수 있게 한다. 기존 stdio 진입점
-(mcp_server.py)은 절대 건드리지 않는다 — 이 파일은 mcp_server.mcp(FastMCP 인스턴스)를
+(mcp_server.py)은 절대 건드리지 않는다 — 이 파일은 mcp_server.mcp(MCPServer 인스턴스)를
 그대로 재사용하는 얇은 래퍼일 뿐이다(도구 정의 이중 구현 0).
 
 환경변수 (namu-plugin/config.py의 http_settings() 참조):
@@ -16,7 +16,7 @@ namu_recall/namu_record/namu_search 3종 도구를 쓸 수 있게 한다. 기존
   NAMU_HTTP_PORT            바인드 포트 (기본 8765)
   NAMU_HTTP_PULL_INTERVAL   디바운스 pull 간격 초 (기본 60.0, 0=매 요청)
   NAMU_HTTP_ALLOW_NOAUTH    "1"이면 무인증 기동 허용 (로컬 테스트 전용, 공개 노출 금지)
-  NAMU_HTTP_ALLOWED_HOSTS   터널 경유 Host 헤더 허용 목록, 쉼표 구분 (미설정 시 FastMCP
+  NAMU_HTTP_ALLOWED_HOSTS   터널 경유 Host 헤더 허용 목록, 쉼표 구분 (미설정 시 SDK
                             자동 기본값 그대로 — 127.0.0.1/localhost/[::1]만 허용, 터널
                             도메인은 421로 거부됨). "*"이면 DNS rebinding 보호 자체를
                             비활성화(공개 배포에서 도메인이 유동적일 때 opt-out — 인증은
@@ -188,8 +188,9 @@ class PullDebounceMiddleware:
 def restrict_tools(mcp_instance, allowed: frozenset[str]) -> None:
     """mcp_instance에 등록된 도구 중 allowed에 없는 것을 전부 제거한다.
 
-    mcp 1.28.1 SDK 소스 확인 결과 `FastMCP.remove_tool(name)`이 공개 API로 존재하고
-    (server.py:435, 내부적으로 ToolManager.remove_tool에 위임 — 없는 이름을 넘기면
+    mcp SDK 소스 확인 결과 `MCPServer.remove_tool(name)`이 공개 API로 존재하고
+    (1.x의 `FastMCP.remove_tool`과 같은 자리 — 내부적으로 ToolManager.remove_tool에 위임,
+    없는 이름을 넘기면
     ToolError로 실패해 "조용히 안 지워짐"이 성립하지 않는다), 현재 등록된 도구 이름
     목록도 공개 async 메서드 `list_tools()`로 얻을 수 있어 사설(private) `_tool_manager`
     딕셔너리를 직접 건드릴 필요가 없었다 — 애초 계획했던 "사설 API 의존 + 존재
@@ -209,8 +210,10 @@ def restrict_tools(mcp_instance, allowed: frozenset[str]) -> None:
             mcp_instance.remove_tool(tool.name)
 
 
-# FastMCP가 host in (127.0.0.1/localhost/::1)일 때 자동 적용하는 기본값
-# (mcp/server/fastmcp/server.py:178-183, mcp 1.28.1 실측). 터널 경유 요청 허용을 위해
+# SDK가 host in (127.0.0.1/localhost/::1)일 때 자동 적용하는 기본값
+# (mcp/server/lowlevel/server.py:734-740, mcp 2.1.1 실측 — `streamable_http_app(host=...)`의
+# 기본값이 127.0.0.1이라 host를 넘기지 않는 우리 경로에서 이 보호가 자동으로 켜진다).
+# 터널 경유 요청 허용을 위해
 # NAMU_HTTP_ALLOWED_HOSTS를 넣더라도 로컬 curl 스모크가 계속 동작해야 하므로, 이 기본값을
 # "대체"가 아니라 사용자 항목에 "합쳐서" 쓴다.
 _LOCALHOST_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
@@ -221,18 +224,18 @@ def _build_transport_security(allowed_hosts: list[str]) -> TransportSecuritySett
     """NAMU_HTTP_ALLOWED_HOSTS(터널 경유 421 Misdirected Request 수정, namu-44 연장)로부터
     TransportSecuritySettings를 만든다.
 
-    FastMCP는 streamable_http_app() 호출 시점에 self.settings.transport_security를 읽으므로
-    (server.py:834,962 실측) build_app()에서 앱을 만들기 *전에* mcp_server.mcp.settings에
-    설정해야 반영된다.
+    mcp SDK 2.x에서는 이 값을 `streamable_http_app(transport_security=...)` 인자로 넘긴다
+    (1.x는 `mcp.settings.transport_security`에 미리 대입하는 방식이었다 — 앱을 만들기
+    *전에* 넣어야 하는 순서 제약이 인자 전달로 바뀌면서 사라졌다).
 
     - allowed_hosts == ["*"]: DNS rebinding 보호 자체를 끈다 — 공개 배포에서 접속 도메인이
       유동적일 때의 명시적 opt-out. 요청 인증은 기존 토큰/시크릿 경로 미들웨어가 별도로
       담당하므로 이 보호를 꺼도 무인증 노출이 되는 건 아니다.
     - 그 외 비어있지 않은 값: 보호는 유지한 채 FastMCP localhost 기본 3종에 사용자 항목을
-      더한다(대체 금지 — 로컬 curl 스모크가 계속 동작해야 한다). allowed_origins는 FastMCP
+      더한다(대체 금지 — 로컬 curl 스모크가 계속 동작해야 한다). allowed_origins는 SDK
       localhost 기본값 그대로 둔다(Origin 헤더는 부재 시 통과 — 서버-투-서버 호출에는
       영향 없음).
-    - 빈 리스트(미설정): None을 반환해 FastMCP 자동 기본값을 그대로 둔다 — 현행 동작
+    - 빈 리스트(미설정): None을 반환해 SDK 자동 기본값을 그대로 둔다 — 현행 동작
       완전 보존.
     """
     if not allowed_hosts:
@@ -263,10 +266,10 @@ def set_instructions(mcp_instance, allowed: frozenset[str]) -> None:
     둔 7종짜리 그대로였다. 붙은 AI는 없는 도구 4개(쪽지 떼기·책갈피 꽂기·빼기·동기화
     설정)를 있다고 믿고 부르다 실패한다 — 2026-08-05 실측으로 확인한 갭이다.
 
-    mcp 1.28.1 SDK 소스 확인: `FastMCP.instructions`는 읽기 전용 property지만 실제
-    값은 lowlevel `Server`가 `self.instructions = instructions`로 들고 있는 평범한
-    속성이라 대입으로 바꿀 수 있다. 공개 setter가 없어 여기만 `_mcp_server`를 거친다.
-    initialize 응답은 요청이 올 때 이 값을 읽으므로 build_app() 시점 대입으로 충분하다.
+    mcp SDK 2.1.1 소스 실측: `MCPServer.instructions`는 읽기 전용 property지만 실제
+    값은 lowlevel `Server`가 평범한 속성으로 들고 있어 대입으로 바꿀 수 있다. 공개
+    setter가 없어 여기만 사설 속성 `_lowlevel_server`를 거친다(1.x에서는 같은 자리가
+    `_mcp_server`였다). 소개문은 요청이 올 때 읽히므로 build_app() 시점 대입으로 충분하다.
 
     stdio 경로는 이 함수를 부르지 않으므로 소개문이 7종 그대로다(도구도 안 거른다).
 
@@ -275,34 +278,38 @@ def set_instructions(mcp_instance, allowed: frozenset[str]) -> None:
     PC의 경로라 그 AI가 지어낼 수 없다). 소개문이 "디스크의 파일을 올린다"고 말하면
     파일을 든 AI가 넣을 칸을 못 찾아 파일을 읽어 글자로 옮기기 시작한다.
     """
-    mcp_instance._mcp_server.instructions = record_input.server_instructions(
+    mcp_instance._lowlevel_server.instructions = record_input.server_instructions(
         allowed, upload_takes_path=False,
     )
 
 
-def configure_mcp_for_http(mcp_instance, settings: dict) -> None:
-    """FastMCP 인스턴스에 HTTP 서빙에 필요한 settings(경로/stateless/transport_security)를
-    적용한다.
+def http_app_options(settings: dict) -> dict:
+    """streamable_http_app()에 넘길 인자 묶음(경로/stateless/transport_security)을 만든다.
 
-    streamable_http_path/stateless_http/transport_security는 FastMCP.streamable_http_app()
-    호출 시점에 self.settings에서 읽힌다(mcp 1.28.1 SDK 소스 확인 — server.py의
-    streamable_http_app()이 라우트를 만들 때마다 이 값들을 참조하므로, 호출 *전에* 값을
-    바꾸면 그대로 반영된다). 별도 경로 rewrite 미들웨어 같은 대안은 필요 없었다.
+    mcp SDK 2.x에서 이 세 값은 인스턴스의 settings가 아니라 `streamable_http_app()`의
+    키워드 인자로 들어간다(1.x는 앱을 만들기 *전에* `mcp.settings.*`에 대입해야 반영되는
+    구조였고, 그 순서 제약이 인자 전달로 바뀌면서 사라졌다). 별도 경로 rewrite 미들웨어
+    같은 대안은 종전대로 필요 없다.
+
+    `host`는 일부러 넘기지 않는다 — 기본값 127.0.0.1이 SDK의 DNS rebinding 자동 보호를
+    켜는 조건이라(lowlevel/server.py:734-740), 넘기지 않는 것이 1.x 때의 동작을 그대로
+    유지하는 길이다. 실제 바인드 주소(NAMU_HTTP_HOST)는 uvicorn에만 준다.
     """
+    options: dict = {
+        # 원격 클라이언트(claude.ai)는 요청마다 새 세션일 수 있어 세션 고정을 강제하지
+        # 않는 stateless 모드가 안전하다(v4 §4 스코프 — 단일 사용자 셀프호스팅 전제).
+        # 표준 2026-07-28 판이 세션 자체를 없앤 방향과도 같다.
+        "stateless_http": True,
+    }
     if settings["path_secret"]:
-        mcp_instance.settings.streamable_http_path = resolve_streamable_path(settings)
-    # 원격 클라이언트(claude.ai)는 요청마다 새 세션일 수 있어 세션 고정을 강제하지
-    # 않는 stateless 모드가 안전하다(v4 §4 스코프 — 단일 사용자 셀프호스팅 전제).
-    mcp_instance.settings.stateless_http = True
+        options["streamable_http_path"] = resolve_streamable_path(settings)
 
-    # 터널 경유 421 Misdirected Request 수정 (v4 연장): FastMCP는 host가
+    # 터널 경유 421 Misdirected Request 수정 (v4 연장): SDK는 host가
     # 127.0.0.1/localhost/::1이면 DNS rebinding 보호를 자동 켜고 allowed_hosts를 localhost
-    # 3종으로 제한한다 — 터널 도메인의 Host 헤더가 이 목록에 없어 거부된다. 앱 빌드
-    # *전에* settings.transport_security를 갈아끼워야 반영된다(streamable_http_app()
-    # 호출 시점에 읽힘).
+    # 3종으로 제한한다 — 터널 도메인의 Host 헤더가 이 목록에 없어 거부된다.
     transport_security = _build_transport_security(settings.get("allowed_hosts", []))
     if transport_security is not None:
-        mcp_instance.settings.transport_security = transport_security
+        options["transport_security"] = transport_security
         if transport_security.enable_dns_rebinding_protection:
             logger.info(
                 "namu-http: allowed_hosts 확장 적용 (localhost 기본 3종 + 사용자 %d개)",
@@ -310,18 +317,17 @@ def configure_mcp_for_http(mcp_instance, settings: dict) -> None:
             )
         else:
             logger.info("namu-http: DNS rebinding 보호 비활성화 (NAMU_HTTP_ALLOWED_HOSTS=*)")
+    return options
 
 
 def build_app(settings: dict):
-    """FastMCP 인스턴스를 재사용해 Starlette ASGI 앱을 만들고 미들웨어로 감싼다."""
+    """MCPServer 인스턴스를 재사용해 Starlette ASGI 앱을 만들고 미들웨어로 감싼다."""
     import mcp_server  # 지연 import: 여기서 실제 ~/.namu 부팅 로직(_ensure_db 등)이 실행됨
 
     restrict_tools(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 설계 §8: sync_setup 등 원격 미노출
     set_instructions(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 거른 목록 그대로 소개문에
 
-    configure_mcp_for_http(mcp_server.mcp, settings)
-
-    app = mcp_server.mcp.streamable_http_app()
+    app = mcp_server.mcp.streamable_http_app(**http_app_options(settings))
     app = PullDebounceMiddleware(app, settings["pull_interval"])
     app = AuthMiddleware(app, settings["token"])  # 인증 실패 시 pull까지 도달하지 않도록 가장 바깥
 
