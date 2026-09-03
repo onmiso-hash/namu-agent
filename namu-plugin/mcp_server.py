@@ -8,6 +8,7 @@ import re
 import sqlite3
 import time
 from contextlib import closing
+from functools import wraps
 from pathlib import Path
 
 import attach_local
@@ -25,6 +26,7 @@ import task_resolve
 import ticket_web
 import tickets
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from db import init_db, rebuild_from_yaml, record, cache_is_stale, ensure_indexes
 from db import recall as _recall
 from db import search_bowl as _search_bowl
@@ -33,6 +35,45 @@ from db import search_bowl as _search_bowl
 # 만들어야 둘이 갈라지지 않는다(namu-65 후속 ②). http_server.py도 이 인스턴스를 그대로
 # 재사용하므로 웹 경로에서도 같은 소개문이 나간다.
 mcp = MCPServer("namu-memory", instructions=record_input.server_instructions())
+
+
+def tool(*d_args, **d_kwargs):
+    """`mcp.tool()` 대신 쓴다 — 안내문이 AI에게 실제로 닿게 하는 껍데기.
+
+    SDK 2.x는 도구가 던진 예외를 두 갈래로 나눈다. `ToolError`는 "예상한 실패"라
+    문구가 그대로 AI에게 전달되고, 그 밖의 예외는 "고장"으로 취급되어
+    `UnexpectedToolError`에 감싸인다 — 이때 AI가 받는 것은
+    `Error executing tool <이름>` 한 줄뿐이고 원래 문구는 서버 로그에만 남는다
+    (mcp/server/mcpserver/tools/base.py 의 call 참조).
+
+    나무는 거절 사유를 전부 `ValueError`로 던진다. 코드 전체에 일흔 곳이 넘고,
+    그 하나하나가 "어느 그릇으로 가야 하는지"까지 적어 둔 안내문이다. 그런데 그것이
+    한 줄도 전달되지 않아, AI는 왜 거절당했는지 모른 채 아무 데나 고쳐 다시
+    시도하게 된다(2026-09-03 실제 사고: 제목 길이 초과와 그릇에 없는 칸이 원인인데
+    본문 길이 탓으로 잘못 짚었다).
+
+    그래서 던지는 자리를 일흔 곳 넘게 고치는 대신 등록하는 자리 한 곳을 감싼다.
+    앞으로 새로 쓰는 코드가 `ValueError`를 써도 자동으로 덮인다.
+
+    **`ValueError`만 바꾼다.** 이름을 잘못 부르거나 없는 칸을 읽는 진짜 고장은
+    지금처럼 감싸인 채 두어야, 안내문과 결함이 섞이지 않는다.
+    """
+
+    def decorator(fn):
+        @wraps(fn)
+        def guarded(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except ValueError as exc:
+                raise ToolError(str(exc)) from exc
+
+        mcp.tool(*d_args, **d_kwargs)(guarded)
+        # 등록하는 것은 감싼 쪽이지만, 모듈에 남기는 이름은 **원본**이다. 파이썬으로
+        # 직접 부르는 자리(검사 항목 등)는 지금처럼 `ValueError`를 받아야 한다 —
+        # 바꿔치면 `except ValueError`로 잡던 코드가 조용히 안 잡히게 된다.
+        return fn
+
+    return decorator
 
 
 def get_conn() -> sqlite3.Connection:
@@ -601,7 +642,7 @@ def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
     return [tags]
 
 
-@mcp.tool()
+@tool()
 def namu_recall(
     query: str | None = None,
     task_type: str | None = None,
@@ -672,7 +713,7 @@ def namu_recall(
         }
 
 
-@mcp.tool()
+@tool()
 def namu_search(
     query: str | None = None,
     bowl: str = "learnings",
@@ -744,7 +785,7 @@ def namu_search(
         )
 
 
-@mcp.tool(description=record_input.tool_description())
+@tool(description=record_input.tool_description())
 def namu_record(
     # ── 새 이름 13칸 (namu-65) ────────────────────────────────────────────
     bowl: str | None = None,
@@ -913,7 +954,7 @@ def _with_notices(result: str, notices: list) -> str:
     return str(result) + "\n" + "\n".join(f"※ {n}" for n in notices)
 
 
-@mcp.tool()
+@tool()
 def namu_memo_remove(id: str, ctx: Context | None = None) -> str:
     """Take down one sticky note (namu-56). This DELETES it — memo is the only
     mutable bowl, so the entry is removed from memo.yaml with no tombstone and
@@ -945,7 +986,7 @@ def _pin_target(project: str | None, task: str | None, ctx: Context | None) -> t
     return (task_resolve.tasks_root_for(resolved_project), slug)
 
 
-@mcp.tool()
+@tool()
 def namu_task_pin(task: str, project: str | None = None, ctx: Context | None = None) -> str:
     """Put a bookmark on the task to resume next ("start here next time", namu-70).
 
@@ -979,7 +1020,7 @@ def namu_task_pin(task: str, project: str | None = None, ctx: Context | None = N
     return f"책갈피를 꽂았습니다: {slug} ({cfg.NAMU_MACHINE}, {ts}) — 다음 세션 브리핑 맨 위에 📌로 뜹니다"
 
 
-@mcp.tool()
+@tool()
 def namu_task_move(task: str, to: str, project: str | None = None, ctx: Context | None = None) -> str:
     """Move a task's whole folder (task.md + log.md) from one project room to another
     (new-project-rule design doc step 4, `docs/new_project_rule.md` section 7).
@@ -1059,7 +1100,7 @@ def namu_task_move(task: str, to: str, project: str | None = None, ctx: Context 
     return f"작업 {slug!r}를 {resolved_project!r}에서 {dest_project!r}로 옮겼습니다.{note}"
 
 
-@mcp.tool()
+@tool()
 def namu_task_unpin(project: str | None = None, ctx: Context | None = None) -> str:
     """Take this machine's bookmark off (namu-70). Other machines' bookmarks are
     left alone — that file belongs to that machine, and clearing it here would
@@ -1078,7 +1119,7 @@ def namu_task_unpin(project: str | None = None, ctx: Context | None = None) -> s
     return f"책갈피를 뺐습니다: {removed} ({cfg.NAMU_MACHINE})"
 
 
-@mcp.tool()
+@tool()
 def namu_sync_setup(remote_url: str) -> str:
     """Enable git auto-sync for the standalone (~/.namu) learnings install.
 
@@ -1182,7 +1223,7 @@ def fetch_file(conn, user_key: str, name: str) -> bytes:
     return attach_local.download(name)
 
 
-@mcp.tool()
+@tool()
 def namu_upload_file(
     summary: str,
     reason: str,
@@ -1266,7 +1307,7 @@ def namu_upload_file(
     return store_file(None, ticket_web.LOCAL_USER, stored_name, content, meta, via)
 
 
-@mcp.tool()
+@tool()
 def namu_list_files(include_removed: bool = False, ctx: Context | None = None) -> dict:
     """List the files uploaded to the user's repository, with sizes and the note
     recorded at upload time.
@@ -1313,7 +1354,7 @@ def namu_list_files(include_removed: bool = False, ctx: Context | None = None) -
     return {"files": rows, "count": len(rows)}
 
 
-@mcp.tool()
+@tool()
 def namu_download_file(
     name: str,
     save_to: str | None = None,
@@ -1380,7 +1421,7 @@ def namu_download_file(
     return out
 
 
-@mcp.tool()
+@tool()
 def namu_delete_file(name: str, reason: str, ctx: Context | None = None) -> dict:
     """Remove one uploaded file from the user's GitHub repository and log why.
 
@@ -1459,7 +1500,7 @@ def _require_origin(ctx: "Context | None", instead: str) -> str:
     return origin
 
 
-@mcp.tool()
+@tool()
 def namu_create_upload_ticket(
     name: str,
     summary: str,
@@ -1527,7 +1568,7 @@ def namu_create_upload_ticket(
     }
 
 
-@mcp.tool()
+@tool()
 def namu_create_download_ticket(name: str, ctx: Context | None = None) -> dict:
     """Create a download link for one uploaded file.
 
@@ -1573,7 +1614,7 @@ def namu_create_download_ticket(name: str, ctx: Context | None = None) -> dict:
     }
 
 
-@mcp.tool()
+@tool()
 def namu_check_ticket(ticket_id: str, ctx: Context | None = None) -> dict:
     """Check whether a file has arrived through an upload link yet.
 
