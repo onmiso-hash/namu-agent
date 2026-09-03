@@ -560,6 +560,163 @@ def test_short_title_is_left_alone(tmp_path):
     assert "…" not in out
 
 
+# ---------------------------------------------------------------------------
+# 폴더 칸 = 프로젝트 뿌리 이름 (namu-statusline-folder-root)
+#
+# 실물 사고: 2026-09-03 세션이 `cd namu-agent/namu-plugin`으로 한 칸 내려간 뒤,
+# 화면에는 namu-plugin이 찍히는데 기록은 namu-agent 방으로 들어갔다. 두 이름이
+# 갈리면 "기록이 어디로 갔는지" 화면만 보고는 알 수 없다. 방 이름은 namu-73에서
+# 이미 프로젝트 뿌리 기준으로 고쳤으므로, 남은 것은 화면을 같은 규칙에 붙이는 일이다.
+# ---------------------------------------------------------------------------
+
+
+def _render_at(script: Path, fake_home: Path, started_at: Path, current_dir: Path = None) -> str:
+    env = os.environ.copy()
+    env.pop("NAMU_HOME", None)
+    env["HOME"] = str(fake_home)
+    env["USERPROFILE"] = str(fake_home)
+    workspace = {"project_dir": str(started_at)}
+    if current_dir is not None:
+        workspace["current_dir"] = str(current_dir)
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        input=json.dumps({"model": {"display_name": "TEST"}, "workspace": workspace}),
+        capture_output=True,
+        encoding="utf-8",
+        env=env,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_subdir_shows_project_root_name_in_both_copies(tmp_path):
+    """프로젝트 하위 폴더에서 렌더해도 폴더 칸은 뿌리 이름이 나온다 — 두 사본 모두.
+
+    대조군: 고치기 전 코드는 basename(현재 폴더)라 'namu-plugin'을 찍으므로 실패한다.
+    """
+    for i, script in enumerate((_SCRIPT, _BUNDLED_SCRIPT)):
+        base = tmp_path / f"copy{i}"
+        fake_home = base / "fake_home"
+        fake_home.mkdir(parents=True)
+        root = base / "namu-agent"
+        (root / ".git").mkdir(parents=True)
+        subdir = root / "namu-plugin"
+        subdir.mkdir()
+
+        out = _render_at(script, fake_home, subdir)
+        folder = out.split("] ", 2)[-1].split(" | ", 1)[0]
+        assert folder == "namu-agent", f"{script.name}: 폴더 칸이 {folder!r}"
+
+
+def test_project_dir_beats_current_dir(tmp_path):
+    """세션 도중 `cd`로 폴더가 옮겨져도 화면은 **세션을 연 폴더**를 유지한다.
+
+    대조군: current_dir을 보던 코드는 옮겨 간 폴더 이름을 찍으므로 실패한다.
+    실사고(2026-09-03) 그대로의 배치 — project에서 열고 namu-agent/namu-plugin으로
+    내려간 상황이다.
+    """
+    for i, script in enumerate((_SCRIPT, _BUNDLED_SCRIPT)):
+        base = tmp_path / f"copy{i}"
+        fake_home = base / "fake_home"
+        fake_home.mkdir(parents=True)
+        started_at = base / "project"
+        started_at.mkdir()
+        wandered_to = started_at / "namu-agent" / "namu-plugin"
+        (started_at / "namu-agent" / ".git").mkdir(parents=True)
+        wandered_to.mkdir()
+
+        env = os.environ.copy()
+        env.pop("NAMU_HOME", None)
+        env["HOME"] = str(fake_home)
+        env["USERPROFILE"] = str(fake_home)
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            input=json.dumps(
+                {
+                    "model": {"display_name": "TEST"},
+                    "workspace": {
+                        "project_dir": str(started_at),
+                        "current_dir": str(wandered_to),
+                    },
+                }
+            ),
+            capture_output=True,
+            encoding="utf-8",
+            env=env,
+            timeout=15,
+        )
+
+        assert result.returncode == 0, result.stderr
+        folder = result.stdout.strip().split("] ", 2)[-1].split(" | ", 1)[0]
+        assert folder == "project", f"{script.name}: 폴더 칸이 {folder!r}"
+
+
+def test_pinned_task_also_follows_the_starting_folder(tmp_path):
+    """책갈피도 세션을 연 폴더의 방에서 찾는다 — 기록이 가는 방과 같아야 한다.
+
+    실사고에서는 화면이 옮겨 간 폴더(namu-agent) 방의 작업을 띄웠는데, 기록은
+    세션을 연 폴더(project) 방으로 들어가고 있었다.
+    """
+    fake_home = tmp_path / "fake_home"
+    started_at = tmp_path / "project"
+    started_at.mkdir()
+    wandered_to = started_at / "namu-agent"
+    (wandered_to / ".git").mkdir(parents=True)
+
+    _make_active_task(fake_home / ".namu" / "tasks" / "project", "start-room-task", "hp")
+    _make_active_task(fake_home / ".namu" / "tasks" / "namu-agent", "wandered-room-task", "hp")
+
+    out = _render_at(
+        _SCRIPT,
+        fake_home,
+        started_at,
+        current_dir=wandered_to,
+    )
+
+    assert "📌 start-room-task" in out, out
+    assert "wandered-room-task" not in out, out
+
+
+def test_folder_and_task_room_never_diverge(tmp_path):
+    """화면의 폴더 칸과 기록이 들어가는 방 이름이 같은 함수에서 나온다.
+
+    두 값이 갈리면 사용자는 화면을 보고 기록 위치를 오해한다 — 실물 사고가 그랬다.
+    """
+    from task_resolve import project_key_for, tasks_root_for
+
+    base = tmp_path / "ws"
+    root = base / "namu-agent"
+    (root / ".git").mkdir(parents=True)
+    subdir = root / "namu-plugin"
+    subdir.mkdir()
+
+    assert project_key_for(subdir) == tasks_root_for(subdir).name == "namu-agent"
+
+
+def test_empty_workspace_falls_back_to_question_mark(tmp_path):
+    """작업 폴더 정보가 아예 없으면 '?'로 간다 — 스크립트가 제 현재 폴더를 집어
+    엉뚱한 이름을 찍으면 안 된다(project_key_for에 빈 문자열을 넘길 때의 함정)."""
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+
+    env = os.environ.copy()
+    env.pop("NAMU_HOME", None)
+    env["HOME"] = str(fake_home)
+    env["USERPROFILE"] = str(fake_home)
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT)],
+        input=json.dumps({"model": {"display_name": "TEST"}}),
+        capture_output=True,
+        encoding="utf-8",
+        env=env,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split("] ", 2)[-1].startswith("? |"), result.stdout
+
+
 if __name__ == "__main__":
     import pytest
 

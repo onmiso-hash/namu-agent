@@ -13,7 +13,6 @@ NAMU_HOME 폐지) — statusLine 미동기화 증상이 재발하면 이 로그�
 """
 import sys
 import json
-import os
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +20,13 @@ from pathlib import Path
 # namu-plugin을 path에 추가 — task_resolve는 stdlib only이므로 plain python3로 import 가능
 sys.path.insert(0, str(Path(__file__).parent.parent / "namu-plugin"))
 
-from task_resolve import TITLE_LINE_LIMIT, one_line, resolve_active_task, tasks_root_for
+from task_resolve import (
+    TITLE_LINE_LIMIT,
+    one_line,
+    project_key_for,
+    resolve_active_task,
+    tasks_root_for,
+)
 
 # cp949 파이프 안전망 — 호출 측이 -X utf8 없이 부르면 📌(비BMP 이모지) print가
 # UnicodeEncodeError로 죽고, 한글만 있는 '진행 task 없음'은 살아남아
@@ -160,8 +165,23 @@ def main() -> None:
         data = {}
 
     model = (data.get("model") or {}).get("display_name") or "?"
-    ws = (data.get("workspace") or {}).get("current_dir") or data.get("cwd") or ""
-    folder = os.path.basename(ws.rstrip("/\\")) or "?"
+    # 기준은 **세션을 연 폴더**(workspace.project_dir = 본체의 project.originalCwd)다.
+    # current_dir을 따라가면 안 되는 이유가 확실하다 — Bash의 `cd`는 다음 호출까지
+    # 남아서 세션 도중에 폴더가 옮겨 다니는데, 기억 서버는 제 프로세스의 폴더
+    # (= 세션을 연 자리, config.tasks_dir_for의 Path.cwd())로 방을 정하기 때문에
+    # 화면만 따라 움직이면 "보이는 방"과 "기록이 가는 방"이 갈린다. 2026-09-03 실사고:
+    # project에서 연 세션이 `cd namu-agent/namu-plugin` 뒤로 화면에는 namu-plugin과
+    # namu-agent의 책갈피를 띄웠지만, 기록은 내내 project 방으로 들어가고 있었다
+    # (mcp_server 프로세스의 cwd를 /proc으로 실측). project_dir이 없는 호스트(agy 등)를
+    # 위해 종전 값으로 차례로 물러난다.
+    workspace = data.get("workspace") or {}
+    ws = workspace.get("project_dir") or workspace.get("current_dir") or data.get("cwd") or ""
+    # 폴더 칸은 방 이름과 **같은 규칙**(project_key_for = basename(프로젝트 뿌리))으로
+    # 정한다 — 세션을 하위 폴더에서 열었더라도 기억 서버(tasks_root_for)와 같은 답이
+    # 나와야 화면과 기록이 어긋나지 않는다. ws가 비면 판정할 근거가 없으므로 탐색하지
+    # 않고 종전 폴백 '?'로 간다(빈 문자열을 넘기면 이 스크립트 프로세스의 현재 폴더를
+    # 뒤져 엉뚱한 이름을 집는다).
+    folder = (project_key_for(ws) if ws else "") or "?"
     ver = _plugin_version()
     namu_badge = f"[Namu {ver}] " if ver else ""
     pct = (data.get("context_window") or {}).get("used_percentage")
