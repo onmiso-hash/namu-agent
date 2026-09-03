@@ -1,6 +1,6 @@
 {
   "name": "namu",
-  "version": "0.1.75",
+  "version": "0.1.76",
   "agents": [
     "./cc-agents/namu-coder.md",
     "./cc-agents/namu-reviewer.md"
