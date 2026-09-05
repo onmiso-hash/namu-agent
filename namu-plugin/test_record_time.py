@@ -66,7 +66,7 @@ import sys
 sys.path.insert(0, {plugin_dir!r})
 import mcp_server
 print('LINE', mcp_server.namu_record(
-    bowl='tasks', project='p1', task='t1', text='시간대 확인', reason='생략', body='생략'))
+    bowl='tasks', project='p1', topic='t1', summary='시간대 확인', reason='생략', body='생략'))
 """
 
 
@@ -141,7 +141,7 @@ import sys
 sys.path.insert(0, {plugin_dir!r})
 import mcp_server
 print('OUT', mcp_server.namu_record(
-    bowl='tasks', project='p1', task='t-new', create=True, body='생략', purpose='시간대 확인'))
+    bowl='tasks', project='p1', topic='t-new', create=True, body='생략', reason='시간대 확인'))
 """.format(plugin_dir=str(_NAMU_PLUGIN_DIR))
 
     env = os.environ.copy()

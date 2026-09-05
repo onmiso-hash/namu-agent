@@ -259,7 +259,7 @@ def _resolve_task_slug(project: str, task: str | None) -> str:
     log만 생기면 유령 task가 된다.
     """
     if not task or not task.strip():
-        raise ValueError("task(슬러그)는 필수입니다")
+        raise ValueError("topic(작업 슬러그)은 필수입니다")
     task = task.strip()
 
     tasks_root = task_resolve.tasks_root_for(project)
@@ -317,7 +317,7 @@ def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str
         raise ValueError("tag에는 ']'나 개행을 쓸 수 없습니다")
     if tag.lower() in _CLOSING_SYNONYMS:
         raise ValueError(
-            f"tag={tag!r}는 작업을 닫지 못합니다 — 닫는 말은 '완료'(다 끝냄)와 "
+            f"status={tag!r}는 작업을 닫지 못합니다 — 닫는 말은 '완료'(다 끝냄)와 "
             "'중단'(더 안 함) 둘뿐입니다. 정말 닫는 것이면 그 둘 중 하나로 다시 "
             "적고, 한 단계만 끝난 것이면 '기록'처럼 닫지 않는 말을 쓰세요"
         )
@@ -451,10 +451,10 @@ def _validate_new_task_slug(task: str | None) -> str:
     """
     task = (task or "").strip()
     if not task:
-        raise ValueError("task(슬러그)는 필수입니다")
+        raise ValueError("topic(작업 슬러그)은 필수입니다")
     if not _NEW_SLUG_RE.match(task):
         raise ValueError(
-            f"task 슬러그 {task!r}가 올바르지 않습니다 — 영문/숫자/하이픈(-)/언더스코어(_)만 "
+            f"topic(작업 슬러그) {task!r}가 올바르지 않습니다 — 영문/숫자/하이픈(-)/언더스코어(_)만 "
             "허용되고 첫 글자는 영문/숫자여야 합니다(경로 문자 금지: '/', '\\\\', '..' 등)"
         )
     return task
@@ -510,9 +510,9 @@ def _create_task_entry(
     else:
         if (tag or "").strip():
             raise ValueError(
-                f"tag={tag!r}만 주고 text가 비었습니다 — 남길 내용이 없으면 줄을 쓸 수 "
-                "없습니다. tag와 text를 함께 주세요(예: tag='다음', text='다음 세션이 "
-                "시작할 지점')"
+                f"status={tag!r}만 주고 body가 비었습니다 — 남길 내용이 없으면 줄을 쓸 "
+                "수 없습니다. status와 body를 함께 주세요(예: status='다음', body='다음 "
+                "세션이 시작할 지점')"
             )
         follow_tag = follow_text = None
 
@@ -540,7 +540,7 @@ def _create_task_entry(
         raise ValueError(
             f"제목이 너무 깁니다({len(display_title)}자 > "
             f"{task_resolve.TITLE_LINE_LIMIT}자) — 제목은 statusLine 한 줄에 실리는 "
-            "'이름'입니다. 짧은 이름만 남기고 설명은 purpose(목적) 칸으로 옮기세요. "
+            "'이름'입니다. 짧은 이름만 남기고 목적은 reason, 경위는 body로 옮기세요. "
             f"받은 제목: {display_title!r}"
         )
 
@@ -587,8 +587,8 @@ def _create_task_entry(
             "\n⚠ 이어갈 지점([다음] 줄)이 비어 있습니다 — 브리핑에 "
             '"다음: (기록 없음)"으로 뜨고, 다음 세션은 어디서 시작할지 모릅니다. '
             f"지금 바로 namu_record(bowl='tasks', project={resolved_project!r}, "
-            f"task={slug!r}, tag='다음', text='<다음 세션이 시작할 지점>')을 한 번 더 "
-            "호출하세요(생성 호출에 tag/text를 함께 주면 한 번에 들어갑니다)."
+            f"topic={slug!r}, status='다음', body='<다음 세션이 시작할 지점>')을 한 번 더 "
+            "호출하세요(생성 호출에 status/body를 함께 주면 한 번에 들어갑니다)."
         )
 
     return summary
@@ -804,19 +804,12 @@ def namu_record(
     # ── 첨부 기록 전용 2칸 (namu-file-upload-download 4단계) ───────────────
     path: str | None = None,
     bytes: int | None = None,
-    # ── 옛 이름 (그대로 불러도 새 칸으로 옮겨 저장한다) ───────────────────
-    task: str | None = None,
-    outcome: str | None = None,
-    task_type: str | None = None,
-    verified_by: str | None = None,
-    kind: str | None = None,
-    subject: str | None = None,
-    statement: str | None = None,
-    source: str | None = None,
-    text: str | None = None,
-    tag: str | None = None,
-    title: str | None = None,
-    purpose: str | None = None,
+    # 옛 이름(task·purpose·title·text 등 12개)은 2026-09-05에 이 목록에서 뺐다.
+    # 이유: 한 달간 실측에서 **옛 이름만으로 부른 호출이 0건**인데, 목록에 보인다는
+    # 이유만으로 새 이름과 함께 채워져 거절을 불렀다(기록 거절 113건 중 36건, 1위).
+    # 받아 주려고 남긴 다리를 아무도 건너지 않고 걸려 넘어지기만 한 셈이다.
+    # record_input.normalize의 이관 로직은 그대로 살아 있어, 다른 진입점에서 옛
+    # 이름이 들어오면 여전히 새 칸으로 옮겨 저장한다 — 감춘 것이지 없앤 것이 아니다.
     ctx: Context | None = None,
 ):
     """기억 한 건을 남긴다. 자세한 칸 설명은 도구 설명문(표에서 자동 생성)에 있다.
@@ -851,10 +844,6 @@ def namu_record(
         "project": project, "confidence": confidence, "supersedes": supersedes,
         "create": create, "done_when": done_when,
         "path": path, "bytes": bytes,
-        "task": task, "outcome": outcome, "task_type": task_type,
-        "verified_by": verified_by, "kind": kind, "subject": subject,
-        "statement": statement, "source": source, "text": text, "tag": tag,
-        "title": title, "purpose": purpose,
     })
     v = parsed.values
     resolved_bowl = parsed.bowl

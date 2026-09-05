@@ -95,10 +95,14 @@ def test_record_bowl_memo_does_not_touch_learnings(fake_home):
 
 def test_record_bowl_memo_ignores_default_kind(fake_home):
     """kind 기본값('lesson')이 그대로 넘어와도 memo 경로는 모순으로 보지 않는다 —
-    호출자가 memo에 kind를 줄 이유가 없다(tasks와 같은 취급)."""
+    호출자가 memo에 kind를 줄 이유가 없다(tasks와 같은 취급).
+
+    kind는 2026-09-05에 도구 칸 목록에서 뺐으므로 입력 경계에 직접 넣어 확인한다."""
     result = _run_probe(
         fake_home,
-        "mid = mcp_server.namu_record(bowl='memo', summary='kind 무관', reason='생략', body='kind 무관', kind='lesson')\n"
+        "p = mcp_server.record_input.normalize({'bowl': 'memo', 'summary': 'kind 무관',"
+        " 'reason': '생략', 'body': 'kind 무관', 'kind': 'lesson'})\n"
+        "mid = mcp_server.namu_record(**{k: v for k, v in p.values.items()})\n"
         "print('RESULT', bool(mid))\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
