@@ -255,6 +255,13 @@ def _check_values(bowl: str, values: dict) -> None:
             )
 
 
+# 붙는 쪽(MCP 클라이언트)이 도구 설명을 잘라 쓰는 한도. 2026-09-05 실측으로 확인한
+# 값이며, 넘으면 뒤쪽이 AI에게 아예 닿지 않는다 — 그때 사라진 것이 "옛 이름을 쓰지
+# 말라"는 유일한 경고문이었고, 그 뒤 한 달간 거절 113건 중 36건이 옛 이름 때문이었다.
+# 칸을 늘리다 이 한도를 조용히 넘는 것을 test_record_input이 막는다.
+DESCRIPTION_LIMIT = 2048
+
+
 def tool_description() -> str:
     """`namu_record` 도구 설명문을 **표에서 만들어** 돌려준다(완료조건 2).
 
@@ -262,6 +269,12 @@ def tool_description() -> str:
     이번 사고(잘못된 그릇에 담아 유실)다. 칸마다 ①어느 그릇이 받는지 ②어디서 필수인지
     ③예시 한 줄을 적는다. 나중에 MCP 서버 소개문(instructions)도 이 함수를 쓰면
     도구 설명과 소개문이 갈라지지 않는다.
+
+    **순서가 중요하다.** 붙는 쪽(MCP 클라이언트)은 도구 설명을 앞에서부터 잘라 쓰고,
+    잘린 뒤는 AI에게 아예 닿지 않는다. 2026-09-05 실측: 설명문 3,226자 중 2,048자만
+    전달되어 뒤 36%가 사라졌고, 하필 그 뒤에 "옛 이름을 새로 쓰지 말라"는 유일한
+    경고문이 있었다. 그래서 **꼭 지킬 규칙은 칸 목록보다 앞에** 둔다 — 잘려도 규칙은
+    살아남는다. 상한은 DESCRIPTION_LIMIT이며 test가 넘침을 막는다.
     """
     lines = [
         "기억 한 건을 남긴다(append-only). "
@@ -270,9 +283,15 @@ def tool_description() -> str:
         + _all_bowls_ko()
         + ".",
         "",
-        "모든 그릇이 3층을 갖는다 — summary(무엇을) · reason(왜) · body(그때 무슨 일이). "
+        "꼭 지킬 것 — 거절의 대부분이 이 넷에서 난다:",
+        f"1. 모든 그릇이 3층을 갖는다 — summary(무엇을) · reason(왜) · body(그때 무슨 일이). "
         f"셋 다 필수이고, 적을 게 없으면 '{cfg.OMITTED}' 한 단어를 넣는다.",
-        "그릇이 받지 않는 칸을 주면 저장하지 않고 거절하며 어느 그릇으로 가야 하는지 알린다.",
+        "2. 아래 '칸 목록'에 있는 이름만 쓴다. 옛 이름("
+        + "·".join(_legacy_field_names())
+        + ")은 새 이름으로 옮겨 저장하지만, 새 이름과 함께 주면 거절한다.",
+        f"3. 새 작업을 만들 때(create) summary가 그 작업의 이름이 되므로 "
+        f"{_title_limit()}자 이내여야 한다 — 목적은 reason에, 경위는 body에 넣는다.",
+        "4. 그 그릇이 받지 않는 칸을 주면 거절한다 — 칸마다 받는 그릇을 아래에 적었다.",
         "",
         "칸 목록:",
     ]
@@ -282,14 +301,28 @@ def tool_description() -> str:
             need = "필수: " + "·".join(cfg.bowl_label(b) for b in field.required_in)
         else:
             need = "선택"
-        lines.append(f"- {field.name} ({bowls} / {need}) — {field.desc} 예) {field.example}")
-    lines.append("")
-    lines.append(
-        "옛 이름(task·subject·statement·source·outcome·tag·text·task_type·"
-        "verified_by·kind·title·purpose)으로 불러도 새 이름으로 옮겨 저장하고 "
-        "어디로 옮겼는지 반환문에 알린다. 새로 쓸 때는 위 칸 이름만 쓴다."
-    )
+        lines.append(
+            f"- {field.name} ({bowls} / {need}) — {_first_sentence(field.desc)}. "
+            f"예) {field.example}"
+        )
     return "\n".join(lines)
+
+
+def _legacy_field_names() -> tuple:
+    """살아 있는 옛 이름 목록을 표에서 뽑는다.
+
+    손으로 적어 두면 칸이 바뀔 때마다 어긋난다 — 실제로 어긋난 채로 한 달을 지났다.
+    없앤 칸(new is None)은 새 이름이 없으므로 이 경고의 대상이 아니다.
+    """
+    return tuple(sorted({e.old for e in cfg.FIELD_ALIASES if e.new}))
+
+
+def _title_limit() -> int:
+    """새 작업 제목의 글자 상한. 이 값을 어긴 거절이 두 번째로 많았는데, 설명문
+    어디에도 적혀 있지 않아 부딪혀 봐야만 알 수 있었다."""
+    from task_resolve import TITLE_LINE_LIMIT
+
+    return TITLE_LINE_LIMIT
 
 
 # ---------------------------------------------------------------------------
@@ -575,9 +608,37 @@ def normalize(provided: dict) -> RecordInput:
             "다음 세션이 시작할 지점을 적거나 status를 빼세요."
         )
 
-    _reject_foreign_fields(bowl, values)
-    _check_required(bowl, values)
-    _check_omitted(bowl, values)
-    _check_values(bowl, values)
+    _run_all_checks(bowl, values)
 
     return RecordInput(bowl=bowl, values=values, notices=notices)
+
+
+def _run_all_checks(bowl: str, values: dict) -> None:
+    """남은 검사를 전부 돌려 걸린 것을 **모아서** 거절한다.
+
+    예전에는 넷을 차례로 불러 첫 번째에서 멈췄다. 그래서 호출자는 하나를 고쳐 다시
+    부르고 다음 것에 걸리기를 되풀이했다 — 2026-09-05 실측으로 실패한 기록 시도
+    60건이 평균 1.9회, 많게는 5회까지 거절당했고, 사용자에게는 "고쳤는데 또 난다"로
+    보였다. 판정 함수들은 values를 읽기만 하므로 한꺼번에 돌려도 서로를 망치지 않는다.
+    """
+    problems: list = []
+    for check in (
+        _reject_foreign_fields,
+        _check_required,
+        _check_omitted,
+        _check_values,
+    ):
+        try:
+            check(bowl, values)
+        except ValueError as exc:
+            problems.append(str(exc))
+
+    if not problems:
+        return
+    if len(problems) == 1:
+        raise ValueError(problems[0])
+    raise ValueError(
+        f"고칠 것이 {_COUNT_KO.get(len(problems), str(len(problems)))} 가지입니다 — "
+        "한 번에 고쳐서 다시 부르세요:\n"
+        + "\n".join(f"{i}. {msg}" for i, msg in enumerate(problems, 1))
+    )
