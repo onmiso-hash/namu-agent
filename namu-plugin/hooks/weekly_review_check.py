@@ -23,34 +23,25 @@
 
 무엇을 점검으로 보는가: 교훈 그릇에 `나무점검` 꼬리표가 붙은 기록.
 
-측정 도구는 나이테 저장소에 있는데, 그 저장소가 어느 자리에 내려받혀 있는지는
-기계마다 다르다. 그래서 세 자리를 차례로 찾아본다. 셋 다 없으면 조용히 넘어가지
-않고 내려받으라고 알린다 — 도구가 없다는 이유로 아무 일도 일어나지 않으면
-점검 시기가 지난 것조차 모르게 되기 때문이다.
+측정 도구(나이테)는 2026-09-09에 이 플러그인 안(`naite/`)으로 들어왔다. 그
+전에는 별도 저장소였고 기계마다 내려받힌 자리가 달라 세 자리를 차례로 찾았는데,
+그러면 도구가 없는 기계에서는 점검이 아예 일어나지 않고 낡은 판이 있는 기계에서는
+옛 판정 규칙으로 잰 숫자가 그대로 기억에 남았다. 자체 개선 고리를 나무가 맡는
+이상 그것을 재는 도구도 나무와 함께 퍼져야 한다는 것이 이 이동의 이유다.
 """
 
-import os
 import pathlib
 from datetime import datetime, timedelta, timezone
 
 주기_일수 = 7
 점검_꼬리표 = "나무점검"
-나이테_주소 = "https://github.com/onmiso-hash/naite.git"
 교훈_경로 = pathlib.Path.home() / ".namu" / "memory" / "learnings.yaml"
 
 
 def 측정_도구_찾기():
-    """나이테의 weekly_check.py 가 있는 자리. 셋 다 없으면 None."""
-    자리들 = []
-    일감_폴더 = os.environ.get("CLAUDE_PROJECT_DIR")
-    if 일감_폴더:
-        자리들.append(pathlib.Path(일감_폴더) / "naite" / "weekly_check.py")
-    자리들.append(pathlib.Path.home() / "project" / "naite" / "weekly_check.py")
-    자리들.append(pathlib.Path.home() / "naite" / "weekly_check.py")
-    for 자리 in 자리들:
-        if 자리.exists():
-            return 자리
-    return None
+    """나이테의 weekly_check.py 가 있는 자리. 플러그인 안에 함께 실려 있다."""
+    자리 = pathlib.Path(__file__).resolve().parent.parent / "naite" / "weekly_check.py"
+    return 자리 if 자리.exists() else None
 
 
 def 마지막_점검():
@@ -90,19 +81,19 @@ def main():
 
     측정_도구 = 측정_도구_찾기()
     if 측정_도구 is None:
-        # 때는 됐는데 도구가 없다 — 조용히 넘어가면 점검이 영영 일어나지 않는다
+        # 플러그인 안에 함께 실려 있어야 할 파일이 없다 — 설치본이 깨졌다는 뜻이다.
+        # 조용히 넘어가면 점검 시기가 지난 것조차 모르게 되므로 알린다.
         print("\n".join([
             "### 🌳 나무 주간 점검을 할 때가 됐습니다",
             "",
-            "%s. 그런데 이 기계에는 측정 도구가 없습니다. "
-            "`git clone %s` 으로 내려받은 뒤 다시 시작하십시오."
-            % (지난_말, 나이테_주소),
+            "%s. 그런데 측정 도구가 설치본 안에 없습니다. 나무 플러그인의 "
+            "`naite/weekly_check.py` 가 빠져 있으니 설치본을 다시 받아야 합니다."
+            % 지난_말,
             "",
             "세션 기록은 약 28일치만 남으므로, 그 안에 재서 숫자를 남기지 않으면 "
             "나아졌는지를 나중에 답할 수 없습니다.",
             "",
-            "**사용자에게 지금 내려받을지 먼저 물어보십시오.** 내려받는 자리는 "
-            "`~/project/naite` 또는 `~/naite` 입니다.",
+            "**사용자에게 알리고 플러그인을 다시 설치할지 물어보십시오.**",
         ]))
         return
 
