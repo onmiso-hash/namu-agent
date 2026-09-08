@@ -412,13 +412,22 @@ def sync_push(message: str) -> bool:
     required가 아니라 optional인 이유: 아직 `.gitattributes`가 없는 신규 환경(첫 부팅
     전)에서 `git add`가 대상 부재로 실패하면 안 되기 때문 — `_add_targets()`가
     `Path(home)/rel` 존재 여부로 걸러주므로 파일에도 디렉터리와 동일하게 그대로
-    동작한다."""
+    동작한다.
+
+    config/를 optional로 추가한 이유: 세션 시작 검사 훅이 감시 대상을
+    `~/.namu/config/version_targets.json`에서 읽는데, 이 폴더가 add 대상에 없으면
+    설정이 만든 기계에만 남고 다른 기계에서는 검사가 대상 없이 조용히 끝난다.
+    기계마다 다른 값을 코드가 아니라 설정에 두기로 한 이상, 그 설정도 기억과
+    같은 경로로 따라가야 한다."""
     import config as cfg
 
     if not sync_enabled():
         return False
 
-    return _push(str(cfg.NAMU_DATA_ROOT), message, ["memory/"], ["tasks/", ".gitattributes"])
+    return _push(
+        str(cfg.NAMU_DATA_ROOT), message, ["memory/"],
+        ["tasks/", ".gitattributes", "config/"],
+    )
 
 
 def tasks_pool_git_ready(home: "Path | str") -> bool:
@@ -446,7 +455,10 @@ def push_tasks_pool(home: "Path | str", message: str) -> bool:
     서버 부팅 시 append된 union 라인이 이 경로로도 커밋 누락되지 않게 함)."""
     if not tasks_pool_git_ready(home):
         return False
-    return _push(str(home), message, [], ["tasks/", "memory/", ".gitattributes"])
+    return _push(
+        str(home), message, [],
+        ["tasks/", "memory/", ".gitattributes", "config/"],
+    )
 
 
 def sync_setup(remote_url: str) -> str:

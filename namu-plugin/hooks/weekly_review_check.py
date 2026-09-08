@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["PyYAML>=6.0"]
+# ///
+"""나무 주간 점검을 할 때가 됐는지 알린다.
+
+왜 만들었나
+-----------
+2026-09-08에 교훈 264건을 부류로 나눠 재고 상시 규칙을 셋으로 줄였다. 그런데 그
+측정이 일어난 이유는 사용자가 물어봤기 때문이었다. 물어보지 않았으면 아무것도
+재지 않았을 것이다. 이 훅은 **그 질문을 사람 대신 던지는 자리**다.
+
+급한 이유가 하나 더 있다. 세션 기록은 약 28일치만 남는다(2026-09-08 실측: 몇
+시간 사이에 파일 98개가 94개로 줄었고 가장 오래된 날이 08-09에서 08-11로 밀렸다).
+어긋남 건수는 기록 습관과 무관한 유일한 신호인데 원재료가 4주면 사라지므로,
+그 안에 재서 숫자를 남기지 않으면 나아졌는지를 영영 답할 수 없다.
+
+동작
+----
+마지막 나무점검 기록으로부터 7일이 지났으면 세션 시작 때 한 번 알린다. 아직
+안 됐으면 아무 말도 하지 않는다. 알리기만 하고 막지 않는다.
+
+무엇을 점검으로 보는가: 교훈 그릇에 `나무점검` 꼬리표가 붙은 기록.
+
+측정 도구는 나이테 저장소에 있는데, 그 저장소가 어느 자리에 내려받혀 있는지는
+기계마다 다르다. 그래서 세 자리를 차례로 찾아본다. 셋 다 없으면 조용히 넘어가지
+않고 내려받으라고 알린다 — 도구가 없다는 이유로 아무 일도 일어나지 않으면
+점검 시기가 지난 것조차 모르게 되기 때문이다.
+"""
+
+import os
+import pathlib
+from datetime import datetime, timedelta, timezone
+
+주기_일수 = 7
+점검_꼬리표 = "나무점검"
+나이테_주소 = "https://github.com/onmiso-hash/naite.git"
+교훈_경로 = pathlib.Path.home() / ".namu" / "memory" / "learnings.yaml"
+
+
+def 측정_도구_찾기():
+    """나이테의 weekly_check.py 가 있는 자리. 셋 다 없으면 None."""
+    자리들 = []
+    일감_폴더 = os.environ.get("CLAUDE_PROJECT_DIR")
+    if 일감_폴더:
+        자리들.append(pathlib.Path(일감_폴더) / "naite" / "weekly_check.py")
+    자리들.append(pathlib.Path.home() / "project" / "naite" / "weekly_check.py")
+    자리들.append(pathlib.Path.home() / "naite" / "weekly_check.py")
+    for 자리 in 자리들:
+        if 자리.exists():
+            return 자리
+    return None
+
+
+def 마지막_점검():
+    """마지막 나무점검 기록의 시각. 없으면 None."""
+    if not 교훈_경로.exists():
+        return None
+    try:
+        import yaml
+    except Exception:
+        return None
+    try:
+        with 교훈_경로.open(encoding="utf-8") as f:
+            docs = [d for d in yaml.safe_load_all(f) if d]
+    except Exception:
+        return None
+    때들 = []
+    for d in docs:
+        if 점검_꼬리표 not in (d.get("tags") or []):
+            continue
+        try:
+            때들.append(datetime.fromisoformat(
+                str(d.get("timestamp")).replace("Z", "+00:00")))
+        except Exception:
+            pass
+    return max(때들) if 때들 else None
+
+
+def main():
+    마지막 = 마지막_점검()
+    지금 = datetime.now(timezone.utc)
+    if 마지막 and 지금 - 마지막 < timedelta(days=주기_일수):
+        return          # 아직 때가 아니다 — 조용히 넘어간다
+
+    지난_말 = ("마지막 점검이 %s이라 %d일이 지났습니다"
+              % (마지막.astimezone().strftime("%Y-%m-%d"), (지금 - 마지막).days)
+              if 마지막 else "아직 한 번도 점검하지 않았습니다")
+
+    측정_도구 = 측정_도구_찾기()
+    if 측정_도구 is None:
+        # 때는 됐는데 도구가 없다 — 조용히 넘어가면 점검이 영영 일어나지 않는다
+        print("\n".join([
+            "### 🌳 나무 주간 점검을 할 때가 됐습니다",
+            "",
+            "%s. 그런데 이 기계에는 측정 도구가 없습니다. "
+            "`git clone %s` 으로 내려받은 뒤 다시 시작하십시오."
+            % (지난_말, 나이테_주소),
+            "",
+            "세션 기록은 약 28일치만 남으므로, 그 안에 재서 숫자를 남기지 않으면 "
+            "나아졌는지를 나중에 답할 수 없습니다.",
+            "",
+            "**사용자에게 지금 내려받을지 먼저 물어보십시오.** 내려받는 자리는 "
+            "`~/project/naite` 또는 `~/naite` 입니다.",
+        ]))
+        return
+
+    print("\n".join([
+        "### 🌳 나무 주간 점검을 할 때가 됐습니다",
+        "",
+        "%s. 세션 기록은 약 28일치만 남으므로, 그 안에 재서 숫자를 남기지 않으면 "
+        "나아졌는지를 나중에 답할 수 없습니다." % 지난_말,
+        "",
+        "**사용자에게 지금 점검할지 먼저 물어보십시오.** 하겠다고 하면 이렇게 합니다.",
+        "",
+        "1. `python3 %s` 를 실행한다 — 숫자와 함께 **이번에 볼 것**을 뽑아 준다" % 측정_도구,
+        "2. 부류가 안 붙은 실패가 있으면 부류를 붙이고 `lesson_classes.json`의 `배정`에 넣는다",
+        "3. 뽑힌 후보 중 하나를 골라 **실제로 조치한다** — 검사를 만들거나, 상시 규칙을 "
+        "고치거나, 이미 있는 검사가 왜 못 막았는지 찾아 고친다",
+        "4. 결과를 `namu_record`로 남긴다 — 그릇은 교훈, 꼬리표에 `나무점검`을 넣고, "
+        "본문에는 도구가 알려주는 다섯 줄을 그대로 넣는다",
+        "",
+        "**`이번 조치:` 줄을 반드시 채우십시오.** 고칠 것이 없다고 판단했으면 "
+        "`없음 — 이유`라고 적습니다. 비워 두면 다음 점검이 그것을 잡아내 경고합니다. "
+        "재고 넘어가기만 하면 이 장치는 보고서일 뿐 개선 장치가 아닙니다.",
+        "",
+        "무엇을 고칠지 고르는 일과 승인은 사용자가 합니다.",
+    ]))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        pass    # 검사가 실패해도 세션을 막지 않는다

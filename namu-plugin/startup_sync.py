@@ -42,7 +42,9 @@ STALE_LOCK_AGE_SECONDS = 3600
 # 쓰지 않는 이유: ~/.namu는 첨부 폴더(attach_file/)를 sparse-checkout으로 격리해 두고
 # 있어서, 전체 add는 격리 규칙과 부딪힐 여지가 있다. 셋 다 optional인 이유는 아직
 # 아무것도 안 생긴 신규 환경에서 `git add`가 대상 부재로 실패하면 안 되기 때문이다.
-_COMMIT_TARGETS = ["memory/", "tasks/", ".gitattributes"]
+# config/에는 세션 시작 검사 훅이 읽는 감시 대상 설정이 들어 있다 — 이 목록에 없으면
+# 설정이 만든 기계에만 남는다(memory_sync.sync_push의 설명 참조).
+_COMMIT_TARGETS = ["memory/", "tasks/", ".gitattributes", "config/"]
 
 _STATUS_FILENAME = "startup_sync.json"
 

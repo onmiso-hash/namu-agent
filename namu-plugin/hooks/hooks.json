@@ -6,6 +6,24 @@
           {
             "type": "command",
             "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/session_recall.py"
+          },
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/repo_sync_check.py session",
+            "timeout": 45,
+            "statusMessage": "코드 저장소가 최신인지 확인하는 중"
+          },
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/version_drift_check.py",
+            "timeout": 40,
+            "statusMessage": "배포된 판이 최신인지 확인하는 중"
+          },
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/weekly_review_check.py",
+            "timeout": 20,
+            "statusMessage": "나무 점검할 때가 됐는지 확인하는 중"
           }
         ]
       }
@@ -16,6 +34,18 @@
           {
             "type": "command",
             "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/prompt_reminder.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/repo_sync_check.py pretool",
+            "timeout": 20
           }
         ]
       }
