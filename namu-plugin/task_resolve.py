@@ -83,6 +83,14 @@ def strip_slug_prefix(title: str, slug: str) -> str:
 # 표시가 같은 줄을 나눠 쓰므로 그보다 넉넉할 이유가 없기 때문이다.
 TITLE_LINE_LIMIT = 40
 
+# `[다음]` 줄의 글자 상한. 그 줄은 task가 열려 있는 동안 브리핑의 `다음:` 칸으로
+# **전문 그대로** 실려, 세션마다 그만큼을 다시 컨텍스트로 넣는다. 2026-09-10 실측:
+# 1,550자짜리 줄 하나가 브리핑 71줄 4,041자 중 30줄 1,550자를 차지했다.
+# 여기(task_resolve)에 두는 이유는 참조하는 쪽이 둘이고 서로를 부르기 때문이다 —
+# mcp_server가 거절 검사에 쓰고 record_input이 안내문에 쓰는데, record_input이
+# mcp_server를 부르면 순환 참조가 된다(2026-09-10 실측으로 확인).
+NEXT_LINE_LIMIT = 300
+
 
 def one_line(text: str, limit: int = 70) -> str:
     """여러 줄을 한 줄로 접고 limit자에서 자른다(잘리면 … 표시).
