@@ -478,6 +478,61 @@ def test_build_markdown_top_task_next_splits_into_multiple_lines(tmp_path):
     assert "v0.1.39" in md
 
 
+def test_build_markdown_top_task_shows_detail_pointer_line(tmp_path):
+    """▸ task에 `[기록]` 항목이 있으면 브리핑이 `상세:` 줄을 **스스로** 붙인다
+    (2026-09-10). 이 문장을 모델이 `[다음]` 줄에 손으로 적으면 300자 상한을 매번
+    같은 문장이 나눠 써, 정작 요약이 들어갈 자리가 줄어든다."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "top-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-09-01 09:00:00 hp · 시작",
+            "[기록] 2026-09-08 10:00:00 hp · 옛 기록",
+            "[기록] 2026-09-10 11:00:00 hp · 기준선과 측정값",
+            "[다음] 2026-09-10 12:00:00 hp · 2단계 착수",
+        ],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert (
+        "  - 상세: 이 작업의 2026-09-10 `기록`의 상세 칸에 있다(namu_search로 꺼낸다)."
+        in md
+    )
+
+
+def test_build_markdown_no_detail_line_without_record_entry(tmp_path):
+    """`[기록]` 항목이 하나도 없으면 `상세:` 줄을 붙이지 않는다 — 가리킬 곳이
+    없는데 가리키는 문장을 내면 거짓말이 된다."""
+    tasks_root = _cfg.tasks_dir_for(tmp_path)
+    _make_task(
+        tasks_root, "top-task", "hp", "무시되는 context",
+        log_lines=[
+            "[시작] 2026-09-01 09:00:00 hp · 시작",
+            "[다음] 2026-09-01 12:00:00 hp · 2단계 착수",
+        ],
+    )
+    conn = _setup_mem_db([])
+    md = _sc.build_context_markdown(conn, "hp", tmp_path)
+    conn.close()
+    assert md is not None
+    assert "  - 상세:" not in md
+
+
+def test_build_next_block_line_order_is_next_why_detail():
+    """세 줄의 차례는 `다음:` → `왜:` → `상세:`다(2026-09-10). 차례가 두 파일로
+    갈리면 한쪽만 고쳐지므로 `_build_next_block` 한 곳에서 정한다."""
+    block = _sc._build_next_block(
+        "1단계 착수. 그 다음 실측한다.", "기준선이 필요하다", "2026-09-10"
+    )
+    lines = [ln for ln in block.split("\n") if ln.strip()]
+    labels = [ln.strip().split(":")[0] for ln in lines if ln.strip().startswith("- ")]
+    assert labels[0] == "- 다음"
+    assert labels[-2:] == ["- 왜", "- 상세"]
+    assert block.index("- 다음:") < block.index("- 왜:") < block.index("- 상세:")
+
+
 def test_split_sentences_does_not_split_version_string():
     """`v0.1.39`, `0.1.26` 같은 버전 문자열은 문장 경계로 오인해 쪼개지지 않는다."""
     text = "이번 배포는 v0.1.39 확인. 다음 릴리즈는 0.1.40이다."
