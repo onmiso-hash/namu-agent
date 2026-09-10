@@ -3,6 +3,7 @@ import pytest
 from pathlib import Path
 from task_resolve import (
     TASK_DOC_TAG,
+    latest_record_date,
     _parse_log_line,
     _parse_log_ts,
     _line_tag,
@@ -919,3 +920,38 @@ def test_open_tasks_briefing_next_none_when_no_next_tag(fake_home):
     rows = open_tasks_briefing(["proj-x"])
     assert len(rows) == 1
     assert rows[0]["next"] is None
+
+
+def test_latest_record_date_picks_last_record_entry(fake_home):
+    """`[기록]` 항목이 여럿이면 **마지막** 것의 날짜를 쓴다 — `next_note()`가 마지막
+    `[다음]` 줄을 고르는 방식과 같다."""
+    task_dir = _make_pool_task(
+        fake_home,
+        "proj-x",
+        "namu-99",
+        "# log\n"
+        "[시작] 2026-09-01 09:00:00 hp · 시작\n"
+        "[기록] 2026-09-02 10:00:00 hp · 첫 기록\n"
+        "[단계] 2026-09-05 10:00:00 hp · 중간 단계\n"
+        "[기록] 2026-09-10 11:00:00 hp · 기준선과 측정값\n"
+        "[다음] 2026-09-10 12:00:00 hp · 2단계 착수\n",
+    )
+    assert latest_record_date(task_dir) == "2026-09-10"
+
+
+def test_latest_record_date_none_without_record_entry(fake_home):
+    """`[기록]` 항목이 하나도 없으면 None — 가리킬 곳이 없으면 가리키지 않는다."""
+    task_dir = _make_pool_task(
+        fake_home,
+        "proj-x",
+        "namu-99",
+        "# log\n"
+        "[시작] 2026-09-01 09:00:00 hp · 시작\n"
+        "[다음] 2026-09-01 12:00:00 hp · 2단계 착수\n",
+    )
+    assert latest_record_date(task_dir) is None
+
+
+def test_latest_record_date_none_when_log_missing(tmp_path):
+    """log.md 자체가 없어도 예외 없이 None(브리핑이 죽으면 안 된다)."""
+    assert latest_record_date(tmp_path / "no-such-task") is None

@@ -471,6 +471,37 @@ def next_note(task_dir: Path) -> str | None:
     return None
 
 
+# 브리핑이 `상세:` 줄로 가리키는 항목의 태그. 그날의 경위·기준선·측정값은 `[다음]`
+# 줄이 아니라 이 태그로 남긴 항목의 `상세` 칸에 들어간다(안내문 3종이 그렇게 지시한다).
+_DETAIL_TAG = "기록"
+
+
+def latest_record_date(task_dir: Path) -> str | None:
+    """이 task의 마지막 `[기록]` 항목의 날짜(`YYYY-MM-DD`). 하나도 없으면 None.
+
+    브리핑이 "경위는 이 작업의 <날짜> `기록`에 있다"는 줄을 **스스로** 만들어 붙이기
+    위한 값이다. 그 문장은 매번 같은 모양으로 붙는데 모델이 직접 쓰면 `[다음]` 줄의
+    글자 상한(NEXT_LINE_LIMIT)을 그 문장이 나눠 쓴다 — 2026-09-10 실측으로 `project`
+    방 `namu-self-improvement-loop`의 `[다음]` 136자 가운데 66자가 그 안내 문장이었다.
+    상한을 요약에만 쓰게 하려면 가리키는 문장은 나무가 만들어야 한다.
+
+    고르는 방식은 `next_note()`가 마지막 `[다음]` 줄을 고르는 것과 같다 — 파일 순서
+    그대로 훑어 조건에 맞는 **마지막** 줄을 쓴다. 규칙을 여기서만 다르게 하면 같은
+    log를 읽고도 두 줄이 서로 다른 항목을 가리키게 된다.
+    """
+    try:
+        lines = (task_dir / "log.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    found: str | None = None
+    for line in lines:
+        parsed = _parse_log_line(line)
+        if parsed is not None and parsed["tag"] == _DETAIL_TAG and parsed["text"]:
+            found = (parsed["ts"] or "")[:10] or None
+    return found
+
+
 # 세 줄 묶음(namu-65 4단계)의 이어지는 줄. 머리줄 다음에 오는 **들여쓴** 줄들이며,
 # 라벨은 셋뿐이다. `요약:`은 이관된 옛 줄에만 있다 — 그때는 머리줄이 이미 긴 원문이라
 # 요약을 아래에 덧붙였기 때문이고, 새로 적히는 줄은 머리줄 자체가 요약이다.

@@ -19,6 +19,7 @@ from task_resolve import (
     find_open_tasks,
     has_legacy_tasks,
     journal,
+    latest_record_date,
     next_note,
     next_why,
     one_line as _one_line,
@@ -241,20 +242,47 @@ def _split_sentences(text: str) -> list[str]:
     return sentences
 
 
-def _build_next_block(note: str) -> str:
+def _detail_pointer(record_date: str) -> str:
+    """`상세:` 줄의 본문 — "경위는 저기 있다"고 가리키는 한 문장(2026-09-10).
+
+    이 문장은 매번 같은 모양이라 모델이 쓸 이유가 없는데, 지금까지는 모델이 `[다음]`
+    줄 안에 손으로 적었다. 그 줄에는 300자 상한(`task_resolve.NEXT_LINE_LIMIT`)이
+    걸려 있고 상한은 모델이 쓴 글 **전체**를 세므로, 매번 똑같은 안내 문장이 요약이
+    쓸 자리를 갉아먹었다(실측: `namu-self-improvement-loop`의 136자 중 66자).
+    문장을 나무가 만들어 붙이면 상한은 요약만 세게 된다 — 상한 값도, 상한이 걸리는
+    대상도 그대로 두고 모델이 그 문장을 쓸 필요만 없앴다.
+    """
+    return f"이 작업의 {record_date} `기록`의 상세 칸에 있다(namu_search로 꺼낸다)."
+
+
+def _build_next_block(
+    note: str, why: str | None = None, record_date: str | None = None
+) -> str:
     """▸(맨 위) task의 `다음:` 블록 — 문장을 하위 목록 항목으로 한 줄씩 나눠 렌더.
 
     첫 문장은 기존과 같은 `- 다음: <문장>` 줄에 싣고, 이후 문장은 같은 계층
     (`  - <문장>`)의 후속 줄로 이어 붙인다 — 목록 서식이 깨지지 않게 기존
     `- 다음: ...` 하위 줄과 들여쓰기를 맞춘다(namu-64). 문장이 하나뿐이면
     기존(namu-57 1-2) 전문 한 줄 표시와 동일한 결과가 나온다(회귀 없음).
+
+    `왜:`·`상세:` 두 줄도 여기서 붙인다(2026-09-10). `왜:`는 원래 부르는 쪽이
+    문자열 뒤에 이어 붙였는데, 그 자리에 `상세:`까지 더하면 줄 차례(다음→왜→상세)가
+    두 파일에 나뉘어 한쪽만 고쳐지는 종류의 결함이 된다. 차례를 한 함수 안에 둔다.
+    `record_date`가 None이면(그 task에 `[기록]` 항목이 하나도 없으면) `상세:` 줄은
+    아예 붙지 않는다 — 가리킬 곳이 없는데 가리키는 문장을 내면 거짓말이 된다.
     """
     sentences = _split_sentences(note)
-    if not sentences:
-        return "\n  - 다음: (기록 없음)"
-    lines = [f"\n  - 다음: {sentences[0]}"]
-    for s in sentences[1:]:
-        lines.append(f"\n  - {s}")
+    if sentences:
+        lines = [f"\n  - 다음: {sentences[0]}"]
+        for s in sentences[1:]:
+            lines.append(f"\n  - {s}")
+    else:
+        lines = ["\n  - 다음: (기록 없음)"]
+    # ▸는 이어받는 지점이라 '왜'까지 한 줄 더 붙인다(namu-65, 사용자 결정).
+    if why:
+        lines.append(f"\n  - 왜: {_one_line(why)}")
+    if record_date:
+        lines.append(f"\n  - 상세: {_detail_pointer(record_date)}")
     return "".join(lines)
 
 
@@ -326,11 +354,11 @@ def _build_this_room_lines(
             f"{_one_line(_title_without_slug(task_dir), _TITLE_LIMIT)}  `{date}`{pin_mark}"
         )
         if i == 0:
-            next_block = _build_next_block(note) if note else "\n  - 다음: (기록 없음)"
-            # ▸는 이어받는 지점이라 '왜'까지 한 줄 더 붙인다(namu-65, 사용자 결정).
-            why = next_why(task_dir)
-            if why:
-                next_block += f"\n  - 왜: {_one_line(why)}"
+            # 세 줄(다음·왜·상세)의 차례는 `_build_next_block` 안에 있다 — 여기서
+            # 문자열을 이어 붙이면 차례가 두 파일로 갈린다.
+            next_block = _build_next_block(
+                note or "", next_why(task_dir), latest_record_date(task_dir)
+            )
             head = "📌" if pin else "▸"
             lines.append(f"\n#### {head} {title}\n{next_block}")
         else:
