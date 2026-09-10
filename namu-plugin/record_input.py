@@ -290,7 +290,11 @@ def tool_description() -> str:
         + "·".join(_legacy_field_names())
         + ")은 새 이름으로 옮겨 저장하지만, 새 이름과 함께 주면 거절한다.",
         f"3. 새 작업을 만들 때(create) summary가 그 작업의 이름이 되므로 "
-        f"{_title_limit()}자 이내여야 한다 — 목적은 reason에, 경위는 body에 넣는다.",
+        f"{_title_limit()}자 이내여야 한다. 목적은 reason에 넣고, body에는 "
+        f"**다음 세션이 무엇부터 할지만** 요약해 적는다({_next_line_limit()}자 이내 — "
+        "이 칸이 매 세션 브리핑에 실리는 `[다음]` 줄이 된다). 그날의 상세 내용은 "
+        "작업을 만든 뒤 status='기록'으로 한 건 더 남겨 그 body에 넣는다(그쪽 body는 "
+        "브리핑에 실리지 않아 길이 제한이 없다).",
         "4. 그 그릇이 받지 않는 칸을 주면 거절한다 — 칸마다 받는 그릇을 아래에 적었다.",
         "",
         "칸 목록:",
@@ -323,6 +327,16 @@ def _title_limit() -> int:
     from task_resolve import TITLE_LINE_LIMIT
 
     return TITLE_LINE_LIMIT
+
+
+def _next_line_limit() -> int:
+    """`[다음]` 줄의 글자 상한. 안내문 3번이 "경위는 body에 넣는다"고만 적어 두었을
+    때, 작업을 만들며 그 말을 그대로 따른 결과가 1,550자짜리 `[다음]` 줄이었다
+    (2026-09-08). 그 줄은 매 세션 브리핑에 전문으로 실리므로, 상한을 안내문에
+    적어 두지 않으면 부딪혀 봐야만 알게 된다."""
+    from task_resolve import NEXT_LINE_LIMIT
+
+    return NEXT_LINE_LIMIT
 
 
 # ---------------------------------------------------------------------------

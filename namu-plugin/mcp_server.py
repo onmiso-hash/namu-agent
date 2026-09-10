@@ -308,7 +308,7 @@ _CLOSING_SYNONYMS = (
 # 상한을 두는 자리를 여기로 고른 이유: `[다음]` 줄을 만드는 경로가 둘(작업 생성 시
 # body, 이후 기록 시 summary)인데 둘 다 _validate_task_tag_text를 지나므로
 # 한 곳만 막으면 양쪽이 함께 막힌다.
-NEXT_LINE_LIMIT = 300
+NEXT_LINE_LIMIT = task_resolve.NEXT_LINE_LIMIT
 _NEXT_TAG = "다음"
 
 
