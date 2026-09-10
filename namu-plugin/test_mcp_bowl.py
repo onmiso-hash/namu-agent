@@ -528,6 +528,79 @@ def test_namu_record_rejects_closing_synonym_tags(fake_home, bad_tag):
     assert bad_tag not in log  # 거절했으면 줄도 남지 않아야 한다
 
 
+def test_namu_record_rejects_overlong_next_line(fake_home):
+    """`[다음]` 줄은 상한을 넘으면 거절한다 — 그 줄만 브리핑의 `다음:` 칸으로 전문
+    그대로 실려, 작업이 열려 있는 동안 세션마다 다시 컨텍스트로 들어가기 때문이다.
+
+    실물(2026-09-10): namu-self-improvement-loop의 `[다음]` 줄이 1,550자였고 브리핑
+    71줄 4,041자 중 30줄 1,550자를 혼자 차지했다. 요약과 인계 파일 가리키기로 바꾸자
+    브리핑이 44줄 2,674자가 됐다.
+    """
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n")
+
+    long_text = "가" * (mcp_server_next_line_limit(fake_home) + 1)
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        f"    mcp_server.namu_record(bowl='tasks', project='proj-x', topic='namu-57', status='다음',"
+        f" summary={long_text!r}, reason='생략', body='생략')\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    # 어떻게 고치면 되는지를 함께 알려준다 — 거절만 하면 같은 길이로 다시 시도한다.
+    assert "요약" in result.stdout and "작업 폴더" in result.stdout
+
+    log = (fake_home / ".namu" / "tasks" / "proj-x" / "namu-57" / "log.md").read_text(encoding="utf-8")
+    assert "[다음]" not in log  # 거절했으면 줄도 남지 않아야 한다
+
+
+def test_namu_record_allows_long_text_on_other_tags(fake_home):
+    """상한은 `[다음]`에만 걸린다 — 다른 태그의 한 줄 요약은 브리핑의 최근 활동에
+    최근 몇 건만 실리고 작업이 닫히면 사라지므로, 같은 이유가 성립하지 않는다."""
+    _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n")
+
+    long_text = "가" * (mcp_server_next_line_limit(fake_home) + 1)
+    result = _run_probe(
+        fake_home,
+        f"mcp_server.namu_record(bowl='tasks', project='proj-x', topic='namu-57', status='progress',"
+        f" summary={long_text!r}, reason='생략', body='생략')\n"
+        "print('OK')\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "OK" in result.stdout
+
+
+def test_namu_record_rejects_overlong_next_line_on_create(fake_home):
+    """작업을 새로 만들 때는 body가 `[다음]` 줄이 되므로 같은 상한이 걸려야 한다 —
+    2026-09-08의 1,550자 줄이 실제로 이 경로에서 나왔다."""
+    long_text = "가" * (mcp_server_next_line_limit(fake_home) + 1)
+    result = _run_probe(
+        fake_home,
+        "try:\n"
+        "    mcp_server.namu_record(bowl='tasks', project='proj-x', topic='new-task',"
+        " create=True, summary='새 작업', reason='목적',"
+        f" status='다음', body={long_text!r})\n"
+        "    print('NO_ERROR')\n"
+        "except ValueError as e:\n"
+        "    print('VALUEERROR', str(e))\n",
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "VALUEERROR" in result.stdout
+    # 폴더를 만들기 전에 검증하므로 껍데기 작업이 남지 않아야 한다.
+    assert not (fake_home / ".namu" / "tasks" / "proj-x" / "new-task").exists()
+
+
+def mcp_server_next_line_limit(fake_home) -> int:
+    """mcp_server.NEXT_LINE_LIMIT를 서브프로세스로 읽는다 — 이 파일의 다른 시험과
+    같은 이유로 in-process import를 피한다(import 시점에 홈을 건드린다)."""
+    result = _run_probe(fake_home, "print('LIMIT', mcp_server.NEXT_LINE_LIMIT)")
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    return int(result.stdout.split("LIMIT")[1].strip().split()[0])
+
+
 def test_namu_record_allows_normal_and_closing_tags(fake_home):
     """'완료'·'중단'·일반 태그는 그대로 통과한다(과잉 거절 방지)."""
     _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n")

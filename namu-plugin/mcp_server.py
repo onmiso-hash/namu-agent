@@ -298,6 +298,18 @@ _CLOSING_SYNONYMS = (
     "종료", "마무리", "끝", "종결", "완결", "닫음", "닫기", "done", "close", "closed", "finish",
 )
 
+# `[다음]` 줄만 갖는 상한. 이 줄은 브리핑의 `다음:` 칸으로 **전문 그대로** 실린다
+# (session_context._build_next_block은 문장 단위로 나눠 렌더할 뿐 자르지 않는다).
+# 즉 여기에 적은 글자는 그 task가 열려 있는 동안 세션마다 다시 컨텍스트로 들어간다.
+# 2026-09-10 실측: namu-self-improvement-loop의 `[다음]` 줄이 1,550자였고 브리핑
+# 71줄 4,041자 중 30줄 1,550자를 혼자 차지했다. 사용자 지적으로 요약 한두 줄과
+# 인계 파일 가리키기로 바꾸자 브리핑이 44줄 2,674자가 됐다.
+# 상한을 두는 자리를 여기로 고른 이유: `[다음]` 줄을 만드는 경로가 둘(작업 생성 시
+# body, 이후 기록 시 summary)인데 둘 다 _validate_task_tag_text를 지나므로
+# 한 곳만 막으면 양쪽이 함께 막힌다.
+NEXT_LINE_LIMIT = 300
+_NEXT_TAG = "다음"
+
 
 def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str]:
     """tag/text 입력 정리: strip, 빈 값 거절, tag에 ']'·개행 금지, text 개행은
@@ -308,6 +320,10 @@ def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str
     저장은 성공하지만 판정은 '완료'/'중단'만 보므로, 적은 쪽은 닫았다고 믿고
     목록에는 계속 열려 있는 상태가 된다. 조용히 어긋나느니 그 자리에서 거절하는 게
     낫다("닫았다고 생각했는데 안 닫힘"은 몇 주 뒤에야 발견된다).
+
+    tag가 '다음'이면 text에 NEXT_LINE_LIMIT 상한을 걸어 넘치면 거절한다 — 그 줄만
+    브리핑에 전문으로 실려 세션마다 컨텍스트를 다시 쓰기 때문이다(상세는 상수
+    선언부의 주석에 적었다).
     """
     tag = "기록" if tag is None else tag.strip()
     text = (text or "").strip()
@@ -324,6 +340,16 @@ def _validate_task_tag_text(tag: str | None, text: str | None) -> tuple[str, str
     if not text:
         raise ValueError("text는 필수입니다(빈 값 불가)")
     text = " ".join(text.split())
+    if tag == _NEXT_TAG and len(text) > NEXT_LINE_LIMIT:
+        raise ValueError(
+            f"[다음] 줄이 너무 깁니다({len(text)}자 > {NEXT_LINE_LIMIT}자) — 이 줄은 "
+            "그 task가 열려 있는 동안 세션이 열릴 때마다 브리핑에 전문 그대로 실려 "
+            "매번 컨텍스트를 씁니다. 여기에는 다음 세션이 무엇부터 할지만 요약해서 "
+            "적고, 그날의 경위·측정값·설계 내용은 작업 폴더 안의 파일"
+            "(예: 인계-YYYYMMDD.md)에 넣은 뒤 그 파일 이름을 이 줄에서 가리키세요. "
+            "받은 글자 수를 줄이려고 문장 성분을 빼지는 마세요 — 다루는 항목의 수를 "
+            "줄이고, 남긴 문장은 그 자체로 완결되게 씁니다."
+        )
     return tag, text
 
 
