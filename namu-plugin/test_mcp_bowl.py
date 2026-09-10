@@ -533,8 +533,8 @@ def test_namu_record_rejects_overlong_next_line(fake_home):
     그대로 실려, 작업이 열려 있는 동안 세션마다 다시 컨텍스트로 들어가기 때문이다.
 
     실물(2026-09-10): namu-self-improvement-loop의 `[다음]` 줄이 1,550자였고 브리핑
-    71줄 4,041자 중 30줄 1,550자를 혼자 차지했다. 요약과 인계 파일 가리키기로 바꾸자
-    브리핑이 44줄 2,674자가 됐다.
+    71줄 4,041자 중 30줄 1,550자를 혼자 차지했다. 요약 한두 줄로 바꾸자 브리핑이
+    44줄 2,674자가 됐다.
     """
     _make_pool_task(fake_home, "proj-x", "namu-57", "# log\n[시작] 2026-07-30 09:00:00 hp · 시작\n")
 
@@ -551,7 +551,7 @@ def test_namu_record_rejects_overlong_next_line(fake_home):
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "VALUEERROR" in result.stdout
     # 어떻게 고치면 되는지를 함께 알려준다 — 거절만 하면 같은 길이로 다시 시도한다.
-    assert "요약" in result.stdout and "작업 폴더" in result.stdout
+    assert "요약" in result.stdout and "body" in result.stdout
 
     log = (fake_home / ".namu" / "tasks" / "proj-x" / "namu-57" / "log.md").read_text(encoding="utf-8")
     assert "[다음]" not in log  # 거절했으면 줄도 남지 않아야 한다
