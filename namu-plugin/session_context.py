@@ -341,8 +341,25 @@ def _build_this_room_lines(
     return lines, missing_next
 
 
+# `다음:` 칸에는 요약만 들어간다(mcp_server.NEXT_LINE_LIMIT이 300자로 막는다). 길게
+# 적힌 인계 내용은 작업 폴더 안의 파일로 옮겨 두고 이 칸이 그 파일을 가리킨다. 그러니
+# "이어서 하자"는 말을 받았을 때 이 칸만 읽고 착수하면 그 파일에 있는 기준선·측정값·
+# 미결 사항을 모르는 채로 시작한다. 2026-09-10 사용자 요청으로 읽기를 먼저 지시한다.
+_RESUME_READ_FIRST_NOTE = (
+    "`다음:` 칸에는 **요약만** 들어 있습니다(300자 상한). 그 요약이 작업 폴더 안의 "
+    "파일(예: `인계-YYYYMMDD.md`)을 가리키고 있으면 **착수하기 전에 그 파일을 먼저 "
+    "읽으세요** — 기준선·측정값·미결 사항이 그쪽에 있습니다. 작업 폴더 위치는 "
+    "`~/.namu/tasks/<방 이름>/<task 이름>/` 입니다."
+)
+
+
 def _open_task_explain_lines(missing_next: int, pinned: bool = False) -> list[str]:
     """맨 위 항목 설명 문단 + "다음" 기록 없는 task 경고. 이 방에 열린 task가 있을 때만 붙인다.
+
+    `다음:` 칸은 300자 상한(mcp_server.NEXT_LINE_LIMIT)이 걸려 요약만 실린다. 그래서
+    그 요약이 인계 파일을 가리키는 경우가 생기고, 그때 파일을 읽지 않고 착수하면
+    기준선과 측정값을 모른 채 시작한다 — 읽으라는 지시를 함께 낸다(2026-09-10 사용자
+    요청). 상세는 _RESUME_READ_FIRST_NOTE 선언부에 적었다.
 
     (namu-70) **왜 이게 맨 위인지**를 반드시 적는다 — 지금까지 정렬 기준이 화면
     어디에도 없어서, 26초 늦게 만든 사소한 작업이 앞자리를 차지한 것을 사용자가
@@ -356,6 +373,7 @@ def _open_task_explain_lines(missing_next: int, pinned: bool = False) -> list[st
             "하면 **되묻지 말고 📌의 `다음:`부터 착수하세요**. 책갈피를 옮기려면 "
             "`namu_task_pin`, 빼려면 `namu_task_unpin`입니다(작업을 닫으면 자동으로 빠집니다)."
         ]
+        lines.append(_RESUME_READ_FIRST_NOTE)
     else:
         lines = [
             "이 목록은 **최근 활동순**입니다(중요도순이 아닙니다) — ▸는 가장 최근 활동한 "
@@ -366,6 +384,7 @@ def _open_task_explain_lines(missing_next: int, pinned: bool = False) -> list[st
             "이것부터\"라고 정해두면 `namu_task_pin`으로 책갈피를 꽂으세요 — 다음 세션부터 "
             "📌로 맨 위에 섭니다."
         ]
+        lines.append(_RESUME_READ_FIRST_NOTE)
     if missing_next:
         lines.append(
             f"⚠ \"다음\" 기록이 없는 task {missing_next}개 — 세션 끝에 log.md에 "

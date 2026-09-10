@@ -184,6 +184,18 @@ def _lines_since(since_ts: str, machine: str | None) -> tuple[list[str], list[st
     return touched, satisfied
 
 
+# `[다음]` 줄은 그 task가 열려 있는 동안 세션마다 브리핑에 전문으로 실린다. 그래서
+# 마무리 안내에서 길이를 함께 요구한다 — 안내가 없으면 "다음 세션이 알아야 할 것"을
+# 그 줄에 통째로 적게 되고, 실제로 2026-09-10에 1,550자짜리 줄이 나와 브리핑 71줄
+# 가운데 30줄을 혼자 차지했다. 상한 자체는 mcp_server.NEXT_LINE_LIMIT이 거절로 막는다.
+_NEXT_LINE_LENGTH_NOTE = (
+    "`[다음]` 줄에는 **다음 세션이 무엇부터 할지만 요약해서** 적으세요(300자 이내). "
+    "그날의 경위·측정값·설계 내용은 작업 폴더 안의 파일(예: `인계-YYYYMMDD.md`)에 "
+    "넣고, 그 파일 이름을 `[다음]` 줄에서 가리키면 됩니다. 이 줄은 세션마다 브리핑에 "
+    "전문 그대로 실리므로, 길게 적으면 그만큼을 매 세션 다시 읽습니다.\n"
+)
+
+
 def _block_reason(project: str, touched: list[str]) -> str:
     head = (
         "⛔ 마무리 전 확인 — 이번 세션에서 `[다음]` 줄을 남기지 않았습니다.\n\n"
@@ -200,14 +212,16 @@ def _block_reason(project: str, touched: list[str]) -> str:
             "text='<다음 세션이 정확히 어디서부터 시작하면 되는지>')`\n"
             "**방 이름은 일한 방으로 적으세요** — 지금 열려 있는 폴더"
             f"(`{project}`)와 다를 수 있습니다.\n"
-            "task가 진짜로 끝났다면 `tag='완료'`(또는 '중단')로 닫으세요."
+            + _NEXT_LINE_LENGTH_NOTE
+            + "task가 진짜로 끝났다면 `tag='완료'`(또는 '중단')로 닫으세요."
         )
     else:
         body = (
             "이번 세션에는 작업 로그에 남긴 줄이 아예 없습니다.\n"
             "진행한 일이 있으면 `namu_record(bowl='tasks', "
             f"project='{project}', task='<슬러그>', tag='다음', text='<재진입 지점>')`로 "
-            "남기고, 정말 남길 것이 없는 세션이면 그렇다고 한 줄로 답한 뒤 마치세요."
+            "남기고, 정말 남길 것이 없는 세션이면 그렇다고 한 줄로 답한 뒤 마치세요.\n"
+            + _NEXT_LINE_LENGTH_NOTE.rstrip("\n")
         )
     return head + body
 
