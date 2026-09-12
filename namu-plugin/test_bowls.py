@@ -43,13 +43,14 @@ def _read_module_level_tuple_constant(module_path: Path, name: str) -> tuple:
 # BOWLS 레지스트리 자체 (① 스펙 확인)
 # ---------------------------------------------------------------------------
 
-def test_bowls_contains_exactly_five_bowls_in_declared_order():
+def test_bowls_contains_exactly_six_bowls_in_declared_order():
     # 순서 보증: memory_sync._gitattributes_union_lines()가 기존 3줄(learnings+tasks)이
     # 앞서 나오게 의존하는 순서라 여기서도 못 박아 회귀를 잡는다. 새 그릇은 반드시
     # 끝에 붙는다 — 앞에 끼우면 기존 설치본의 .gitattributes가 통째로 재작성된다.
-    # memo(namu-56) 다음이 attachments(namu-file-upload-download 4단계)다.
+    # memo(namu-56) 다음이 attachments(namu-file-upload-download 4단계)이고,
+    # 그 다음이 sessions(namu-self-improvement-loop)다.
     assert [bowl.name for bowl in cfg.BOWLS] == [
-        "learnings", "tasks", "profile", "memo", "attachments",
+        "learnings", "tasks", "profile", "memo", "attachments", "sessions",
     ]
 
 
@@ -61,13 +62,18 @@ def test_bowls_field_values_match_spec():
     assert by_name["profile"].git_patterns == ("memory/profile.yaml",)
     assert by_name["memo"].git_patterns == ("memory/memo.yaml",)
     assert by_name["attachments"].git_patterns == ("memory/attachments.yaml",)
+    assert by_name["sessions"].git_patterns == ("memory/sessions.yaml",)
 
-    for name in ("learnings", "tasks", "profile", "attachments"):
+    for name in ("learnings", "tasks", "profile", "attachments", "sessions"):
         assert by_name[name].mutable is False
         assert by_name[name].merge == "union"
 
-    for bowl in cfg.BOWLS:
-        assert bowl.web_exposed is True
+    # sessions(namu-self-improvement-loop)만 손으로 쓸 수 없는 그릇이다 — 세션 종료
+    # 훅이 잰 숫자만 들어간다. 사람이나 AI가 적을 수 있으면 잰 값과 지어낸 값이 같은
+    # 자리에 섞여, 주간 점검이 무엇을 믿어야 할지 알 수 없게 된다.
+    for name in ("learnings", "tasks", "profile", "memo", "attachments"):
+        assert by_name[name].web_exposed is True
+    assert by_name["sessions"].web_exposed is False
 
     # memo(namu-56)는 유일한 mutable 그릇이고, 그래서 줄 단위 union이 아니라
     # 파일 단위다 — union을 걸면 한쪽에서 뗀 메모가 병합 때 되살아난다.
@@ -77,8 +83,13 @@ def test_bowls_field_values_match_spec():
     # fts5-memo-tasks-index — 다섯 그릇 전부 SQLite 검색 색인을 탄다. 교훈만
     # 색인을 타고 나머지는 질의마다 파일을 통째로 읽던 구조를 하나로 모았다
     # (판단 근거는 성능이 아니라 통일성 — docs/search_index_unify.md 2장).
-    for bowl in cfg.BOWLS:
-        assert bowl.cached is True, bowl.name
+    for name in ("learnings", "tasks", "profile", "memo", "attachments"):
+        assert by_name[name].cached is True, name
+
+    # sessions는 색인에 넣지 않는다. 이 그릇의 몸통은 사람 발화 원문이고, 그것을
+    # 낱말로 찾는 자리는 교훈·작업일지이지 이 그릇이 아니다. 읽는 곳도 주간 점검
+    # 하나뿐이라 yaml을 그대로 훑으면 된다.
+    assert by_name["sessions"].cached is False
 
 
 def test_bowl_is_frozen():
@@ -92,14 +103,18 @@ def test_bowl_is_frozen():
 # ---------------------------------------------------------------------------
 
 def test_bowls_names_match_db_valid_bowls():
-    bowl_names = {bowl.name for bowl in cfg.BOWLS}
-    assert bowl_names == set(_db._VALID_BOWLS)
+    """색인을 타는 그릇(`cached=True`)의 집합이 db의 검색 대상과 같아야 한다.
+
+    등록된 그릇 전부와 견주지 않는 이유: 색인에 안 넣기로 한 그릇(sessions)까지
+    db가 받아들이면, 검색은 되는데 결과가 영영 비어 있는 그릇이 생긴다.
+    """
+    assert set(cfg.INDEXED_BOWL_NAMES) == set(_db._VALID_BOWLS)
 
 
 def test_bowls_names_match_mcp_server_valid_record_bowls():
-    bowl_names = {bowl.name for bowl in cfg.BOWLS}
+    """손으로 쓸 수 있는 그릇(`web_exposed=True`)의 집합이 기록 도구와 같아야 한다."""
     mcp_server_path = _NAMU_PLUGIN_DIR / "mcp_server.py"
     valid_record_bowls = _read_module_level_tuple_constant(
         mcp_server_path, "_VALID_RECORD_BOWLS"
     )
-    assert bowl_names == set(valid_record_bowls)
+    assert set(cfg.BOWL_NAMES) == set(valid_record_bowls)

@@ -59,6 +59,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/session_end_naite.py",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

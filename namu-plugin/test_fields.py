@@ -287,4 +287,13 @@ def test_bowl_labels_are_filled_for_every_bowl():
 
 
 def test_bowl_names_match_registry():
-    assert cfg.BOWL_NAMES == tuple(bowl.name for bowl in cfg.BOWLS)
+    """세 목록이 각자의 뜻대로 파생되는가.
+
+    `BOWL_NAMES`는 등록된 그릇 전부가 아니라 **`namu_record`가 받는 그릇**이다
+    (namu-self-improvement-loop에서 갈랐다). 손으로 쓸 수 없는 그릇이 여기 섞이면
+    칸 배치표·거절 메시지·도구 설명문이 전부 쓸 수 없는 이름을 권하게 된다.
+    """
+    assert cfg.ALL_BOWL_NAMES == tuple(bowl.name for bowl in cfg.BOWLS)
+    assert cfg.BOWL_NAMES == tuple(b.name for b in cfg.BOWLS if b.web_exposed)
+    assert cfg.INDEXED_BOWL_NAMES == tuple(b.name for b in cfg.BOWLS if b.cached)
+    assert set(cfg.BOWL_NAMES) <= set(cfg.ALL_BOWL_NAMES)
