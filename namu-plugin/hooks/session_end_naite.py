@@ -39,10 +39,15 @@
 세션이 끝날 때 그 세션의 대화 기록 한 장만 읽어 어긋남을 세고, 사람 발화 원문과
 함께 `~/.namu/memory/sessions.yaml`에 한 건 남긴 뒤 원격에 올린다.
 
+그 일을 훅 프로세스에서 직접 하지 않고 떼어낸 프로세스에 맡긴다 — 까닭은
+`일꾼_띄우기`에 적었다.
+
 어떤 에러가 나도 exit 0 — 훅이 세션 종료를 인질로 잡으면 안 된다.
 """
 import json
+import os
 import pathlib
+import subprocess
 import sys
 
 _훅_폴더 = pathlib.Path(__file__).resolve().parent
@@ -97,20 +102,69 @@ def 이미_남겼나(세션_id, 이번_발화수):
         return False
 
 
-def main():
+def 입력_읽기():
+    """들어온 값을 읽고 일할 거리가 되는지만 본다. 아니면 None."""
     try:
         들어온값 = json.load(sys.stdin)
     except Exception:
-        return
+        return None
 
     기록_경로 = (들어온값.get("transcript_path") or "").strip()
     세션_id = (들어온값.get("session_id") or "").strip()
     if not 기록_경로 or not 세션_id:
-        return
+        return None
+    if not pathlib.Path(기록_경로).exists():
+        return None
+    return 들어온값
 
-    기록_파일 = pathlib.Path(기록_경로)
-    if not 기록_파일.exists():
-        return
+
+def _분리_옵션() -> dict:
+    """부모가 끝나도 자식이 따라 죽지 않게 하는 옵션.
+
+    POSIX에서는 자식에게 세션을 새로 열어 주면 프로세스 그룹이 갈라져서, 부모가
+    받는 종료 신호를 함께 받지 않는다. 윈도우에는 그런 개념이 없으므로 같은 구실을
+    하는 생성 표지 두 개를 쓴다.
+    """
+    if hasattr(os, "setsid"):
+        return {"start_new_session": True}
+
+    DETACHED_PROCESS = 0x00000008
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    return {"creationflags": DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP}
+
+
+def 일꾼_띄우기(들어온값) -> None:
+    """재고 남기고 올리는 일을 떼어낸 프로세스에 맡기고 곧바로 돌아온다.
+
+    세션 종료 훅에 주어지는 시간이 1.5초다. 공식 문서는 "SessionEnd 훅들이 1.5초
+    예산을 나눠 쓰고, **설정**에 더 긴 timeout을 적으면 예산을 거기 맞춰 올린다"고
+    적고 있는데, 그 '설정'이 플러그인이 가진 hooks.json까지 가리키는지는 밝히지
+    않았다. 이 훅은 hooks.json에 timeout 30을 적어 두었는데도 실제로 끊겼다.
+
+    2026-09-12에 관측한 것은 이렇다. 파일 추가와 커밋까지는 0.1초 안에 끝나
+    커밋이 정상으로 남았고, 2.3초가 걸리는 원격 올리기는 수행 기록조차 남기지
+    못한 채 사라졌다. 1.5초 예산과 각 단계의 소요가 정확히 들어맞는다.
+
+    올리기만 떼어내지 않고 재는 일까지 전부 떼어내는 까닭은, 대화 기록이 길어지면
+    재는 일 자체가 1.5초를 넘길 수 있고 그때는 측정값조차 남지 않기 때문이다.
+    """
+    자식 = subprocess.Popen(
+        [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        **_분리_옵션(),
+    )
+    # 자식을 기다리지 않는다. 들어온 값은 수백 바이트라 파이프 버퍼에 그대로
+    # 들어가므로, 이 프로세스가 곧바로 끝나도 자식이 읽는 데 지장이 없다.
+    자식.stdin.write(json.dumps(들어온값, ensure_ascii=False).encode("utf-8"))
+    자식.stdin.close()
+
+
+def 일하기(들어온값) -> None:
+    """떼어낸 프로세스에서 도는 본체 — 재고, 남기고, 올린다."""
+    기록_파일 = pathlib.Path(들어온값["transcript_path"].strip())
+    세션_id = 들어온값["session_id"].strip()
 
     잰값 = 재기(기록_파일, 세션_id, (들어온값.get("reason") or "").strip() or None)
     if 잰값 is None:
@@ -131,6 +185,16 @@ def main():
         ))
     except Exception:
         pass
+
+
+def main():
+    들어온값 = 입력_읽기()
+    if 들어온값 is None:
+        return
+    if "--worker" in sys.argv[1:]:
+        일하기(들어온값)
+    else:
+        일꾼_띄우기(들어온값)
 
 
 if __name__ == "__main__":
