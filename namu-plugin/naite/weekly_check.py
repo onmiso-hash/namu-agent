@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["PyYAML>=6.0", "python-ulid>=3.0.0", "python-dotenv>=1.0.0", "tzdata>=2024.1"]
+# ///
 """나무 주간 점검 — 지난주보다 나아졌는지 답할 수 있게 숫자를 재고 남긴다.
 
 왜 만들었나
@@ -24,7 +28,13 @@ A와 B가 주된 지표다. C는 혼자 읽으면 오해한다 — 실패 기록
 
 쓰는 법
 -------
-    python3 weekly_check.py
+    uv run --script weekly_check.py
+
+`python3`가 아니라 `uv run --script`인 이유: 이 도구는 세션 측정 그릇을 읽으려고
+나무의 `sessions`·`config`를 들여오고, 그 둘이 `python-dotenv`와 `python-ulid`를
+요구한다. 기본 파이썬에는 그 둘이 없어서 `python3`로 부르면 불러오기에서 멈춘다.
+위쪽 스크립트 선언이 필요한 꾸러미를 스스로 챙긴다(플러그인 훅 전부가 쓰는 방식과
+같다).
 
 이 도구는 재서 보여주기만 한다. **기록은 사람이나 AI가 namu_record로 남긴다.**
 기억 저장소에 직접 쓰면 동기화 장치를 건너뛰게 되므로 그렇게 하지 않는다.
@@ -43,7 +53,9 @@ except Exception:                       # tz 자료가 없는 기계에서는 �
     기준_시간대 = None
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import naite  # noqa: E402
+import sessions  # noqa: E402
 
 기억_뿌리 = pathlib.Path.home() / ".namu" / "memory"
 부류_파일 = pathlib.Path(__file__).parent / "lesson_classes.json"
@@ -52,18 +64,64 @@ import naite  # noqa: E402
 
 
 def 어긋남_재기():
-    """나이테로 어긋남을 센다. (건수, 세션수, 구조표지수)를 돌려준다."""
-    전체, 세션수, 표지 = 0, 0, 0
+    """어긋남을 센다. (건수, 세션수, 구조표지수, 대화기록으로_채운수)를 돌려준다.
+
+    자료는 두 군데서 온다.
+
+    첫째는 **세션 측정 그릇**(`memory/sessions.yaml`)이다. 세션 종료 훅이 세션이
+    끝날 때마다 그 세션 하나를 재서 남긴다. 이쪽이 주된 자료인 이유는 둘이다.
+    대화 기록은 동기화되지 않아 이 기계에서 연 세션만 있고, 약 28일이 지나면
+    사라진다. 기억은 동기화되고 지워지지 않으므로, 웹에서 연 세션이든 다른 PC에서
+    연 세션이든 여기로 모인다.
+
+    둘째는 **대화 기록**이다. 그릇에 없는 세션만 여기서 직접 재서 채운다. 세션이
+    비정상으로 끝나면 종료 훅이 돌지 않아 그 세션의 값이 빠지는데, 대화 기록이
+    아직 남아 있는 동안에는 이렇게 메울 수 있다. 몇 건을 메웠는지 함께 돌려주는
+    것은 훅이 얼마나 자주 빠지는지를 사람이 볼 수 있게 하기 위해서다.
+
+    기간은 두 자료 모두 최근 `최근_일수`로 자른다. 그릇은 계속 쌓이는데 대화
+    기록만 28일이면, 자르지 않을 경우 기간이 해마다 늘어나 지난 점검의 숫자와
+    견줄 수 없게 된다.
+    """
+    기준 = datetime.now(timezone.utc) - timedelta(days=최근_일수)
+
+    잰것 = {}   # session_id -> (어긋남, 구조표지)
+    for 항목 in sessions.since(기준):
+        잰것[str(항목["session_id"])] = (
+            int(항목.get("misalignments") or 0),
+            int(항목.get("structural_marks") or 0),
+        )
+    그릇에서 = len(잰것)
+
     for 파일 in sorted(naite.기록_뿌리.rglob("*.jsonl")):
+        세션_id = 파일.stem
+        if 세션_id in 잰것:
+            continue
         세션 = naite.세션_읽기(파일)
+        if not 세션["발화"]:
+            # 사람이 한 마디도 안 한 세션. 종료 훅도 이런 세션은 남기지 않는다 —
+            # 세션 수에 넣으면 분모만 늘어 평균이 실제보다 낮게 보인다.
+            continue
+        if not _때(세션["발화"][0][0], 기준):
+            continue
         건들 = naite.되돌림_찾기(세션)
-        if 건들:
-            세션수 += 1
-        for 건 in 건들:
-            전체 += 1
-            if 건["갈래"] in ("요청 중단", "도구 거절"):
-                표지 += 1
-    return 전체, 세션수, 표지
+        잰것[세션_id] = (
+            len(건들),
+            sum(1 for 건 in 건들 if 건["갈래"] in ("요청 중단", "도구 거절")),
+        )
+
+    전체 = sum(어긋남 for 어긋남, _ in 잰것.values())
+    표지 = sum(표 for _, 표 in 잰것.values())
+    세션수 = sum(1 for 어긋남, _ in 잰것.values() if 어긋남)
+    return 전체, 세션수, 표지, len(잰것) - 그릇에서
+
+
+def _때(시각글, 기준):
+    """그 발화가 기준 시각 이후인가. 읽을 수 없는 시각은 뺀다."""
+    try:
+        return datetime.fromisoformat(str(시각글).replace("Z", "+00:00")) >= 기준
+    except ValueError:
+        return False
 
 
 def 교훈_읽기():
@@ -208,7 +266,7 @@ def 주된흐름():
     docs = 교훈_읽기()
     지난 = 지난_점검(docs)
 
-    건수, 세션수, 표지 = 어긋남_재기()
+    건수, 세션수, 표지, 채운수 = 어긋남_재기()
     A = 건수 / 세션수 if 세션수 else 0.0
     B = 표지 / 세션수 if 세션수 else 0.0
     교훈수, 실패수, 실패들 = 교훈_재기(docs)
@@ -233,7 +291,11 @@ def 주된흐름():
     print("  ■ 주된 지표 — 기록 습관에 영향받지 않는다")
     print("    세션당 어긋남: %.2f 건   %s" % (A, 화살(A, 지난값(지난, "세션당 어긋남"))))
     print("    세션당 구조 표지: %.2f 건   %s" % (B, 화살(B, 지난값(지난, "세션당 구조 표지"))))
-    print("    (어긋남 %d건 / 세션 %d개, 세션 기록 보존 %s)" % (건수, 세션수, 보존))
+    print("    (어긋남 %d건 / 세션 %d개, 최근 %d일, 대화 기록 보존 %s)"
+          % (건수, 세션수, 최근_일수, 보존))
+    if 채운수:
+        print("    세션 %d개는 측정 그릇에 없어 대화 기록에서 직접 셌습니다 —"
+              " 그 세션들은 종료 훅이 돌지 않은 것입니다." % 채운수)
     print()
     print("  ■ 참고 지표 — 적는 습관에 영향받으므로 혼자 읽으면 오해한다")
     print("    최근 %d일 교훈: %d건 (그중 실패 %d건)" % (최근_일수, 교훈수, 실패수))

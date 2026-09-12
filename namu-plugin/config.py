@@ -109,6 +109,23 @@ ATTACH_SPARSE_PATTERNS: tuple[str, ...] = ("/*", f"!/{ATTACH_DIR_NAME}/")
 # 않고 status='새 판'/'지움' 항목을 덧붙여 표현한다).
 ATTACHMENTS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "attachments.yaml"
 
+# 세션 측정 그릇(namu-self-improvement-loop). 세션이 끝날 때 나이테를 그 세션 하나에만
+# 돌려 어긋남 건수와 사람 발화 원문을 남기는 자리다.
+#
+# 왜 따로 두나: 대화 기록(~/.claude/projects)은 동기화되지 않고 약 28일이 지나면
+# 사라진다. 그래서 그때그때 재서 남겨 두지 않으면 "지난주보다 나아졌나"를 영영 답할
+# 수 없다. 기억은 동기화되므로, 이 그릇에 남기면 어느 기계에서 연 세션이든(웹 포함)
+# 한자리에서 합산된다.
+#
+# 왜 교훈 그릇에 안 담나: 교훈은 다시 쓸 배움을 담는 창고이고 이것은 기계가 잰
+# 숫자다. 섞이면 "최근 28일 교훈 몇 건"이 잰 횟수만큼 부풀고, 사람 발화 원문이
+# 교훈 검색에 걸려 창고가 흐려진다.
+#
+# append-only 다중 문서 형식이다(profile.yaml·attachments.yaml과 같다). 같은 세션을
+# 이어서 열면 항목이 하나 더 붙으므로, 합산하는 쪽은 session_id마다 **마지막 항목
+# 하나만** 센다(sessions.latest_by_session).
+SESSIONS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "sessions.yaml"
+
 
 @dataclass(frozen=True)
 class DataPaths:
@@ -129,6 +146,9 @@ class DataPaths:
     # **클라우드에서 이 값이 빠지면 남의 첨부 이력을 읽는다** — 요청마다 사용자
     # 폴더가 다르므로, 읽고 쓰는 쪽은 반드시 paths를 타고 내려온 값을 써야 한다.
     attachments_yaml: Path | None = None
+    # 세션 측정 그릇. 위와 같은 규약이다(None이면 모듈 상수). 클라우드에서 이 값이
+    # 빠지면 남의 세션 측정값에 섞여 들어간다.
+    sessions_yaml: Path | None = None
 
 
 def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
@@ -149,6 +169,7 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
             db_path=NAMU_DB_PATH,
             memo_yaml=MEMO_YAML_PATH,
             attachments_yaml=ATTACHMENTS_YAML_PATH,
+            sessions_yaml=SESSIONS_YAML_PATH,
         )
     root = Path(root)
     return DataPaths(
@@ -157,6 +178,7 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
         db_path=root / "db" / "namu.db",
         memo_yaml=root / "memory" / "memo.yaml",
         attachments_yaml=root / "memory" / "attachments.yaml",
+        sessions_yaml=root / "memory" / "sessions.yaml",
     )
 
 
@@ -259,10 +281,42 @@ BOWLS: tuple[Bowl, ...] = (
         web_exposed=True,
         label="첨부 기록",
     ),
+    # sessions(namu-self-improvement-loop) — 세션이 끝날 때 기계가 잰 값. 앞의 다섯
+    # 그릇과 두 가지가 다르고, 둘 다 의도한 것이다.
+    #
+    # web_exposed=False — namu_record로 손으로 쓰는 그릇이 아니다. 사람이나 AI가
+    # 적으면 잰 값과 지어낸 값이 같은 자리에 섞여, 주간 점검이 무엇을 믿어야 할지
+    # 알 수 없게 된다. 쓰는 곳은 세션 종료 훅 하나뿐이다.
+    #
+    # cached=False — 검색 색인에 넣지 않는다. 이 그릇의 몸통은 사람 발화 원문이고,
+    # 그것을 낱말로 찾는 자리는 교훈·작업일지이지 이 그릇이 아니다. 읽는 곳도
+    # 주간 점검 하나뿐이라 yaml을 그대로 훑으면 된다.
+    #
+    # merge="union"·mutable=False는 앞 그릇들과 같다 — 기계마다 제 세션을 덧붙이므로
+    # 줄 단위 병합이 맞고, 한 번 잰 값은 고치지 않는다.
+    Bowl(
+        name="sessions",
+        git_patterns=("memory/sessions.yaml",),
+        mutable=False,
+        merge="union",
+        cached=False,
+        web_exposed=False,
+        label="세션 측정",
+    ),
 )
 
 
-BOWL_NAMES: tuple[str, ...] = tuple(bowl.name for bowl in BOWLS)
+# 등록된 그릇 전부. 동기화(.gitattributes 파생)처럼 "저장소에 쌓이는 자리"를 훑는
+# 쪽이 쓴다.
+ALL_BOWL_NAMES: tuple[str, ...] = tuple(bowl.name for bowl in BOWLS)
+
+# `namu_record`가 받는 그릇. 손으로 적을 수 없는 그릇(sessions — 기계가 잰 값만
+# 들어간다)은 여기서 빠진다. 칸 배치표·거절 메시지·도구 설명문이 전부 이 목록에서
+# 파생되므로, 못 쓰는 그릇이 섞이면 안내문이 쓸 수 없는 이름을 권하게 된다.
+BOWL_NAMES: tuple[str, ...] = tuple(bowl.name for bowl in BOWLS if bowl.web_exposed)
+
+# 검색 색인(SQLite)에 들어가는 그릇. db.py가 훑는 대상이다.
+INDEXED_BOWL_NAMES: tuple[str, ...] = tuple(bowl.name for bowl in BOWLS if bowl.cached)
 
 
 def bowl_label(name: str) -> str:
