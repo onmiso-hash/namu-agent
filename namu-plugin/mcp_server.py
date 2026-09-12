@@ -291,6 +291,42 @@ def _resolve_task_slug(project: str, task: str | None) -> str:
 # 작업을 닫는 태그는 이 둘뿐이다(task_resolve._log_says_closed가 보는 것도 이 둘).
 _CLOSING_TAGS = ("완료", "중단")
 
+# 마무리할 때 거의 반드시 남기는 줄들. `[다음]`은 다음 세션의 재진입 지점이라
+# 마무리의 본체이고, `[완료]`/`[중단]`은 작업을 닫는 줄이다.
+_WRAPPING_UP_TAGS = ("다음",) + _CLOSING_TAGS
+
+_WEB_SESSION_RECORD_HINT = (
+    "\n💡 대화를 마치는 중이라면 `namu_record_session`으로 이 대화의 측정값을 "
+    "남기세요(사용자 발화 원문을 그대로, 하나도 빼지 말고). 클로드 코드에서는 훅이 "
+    "알아서 하지만 웹 대화창에는 훅이 없어, 부르지 않으면 이 대화는 주간 점검에 "
+    "잡히지 않습니다. 이미 남겼으면 서버가 건너뛰므로 두 번 불러도 괜찮습니다."
+)
+
+
+def _web_session_record_hint(tag: str, ctx: "Context | None") -> str:
+    """웹에서 마무리성 줄을 남길 때 세션 측정을 상기시킨다(namu-self-improvement-loop).
+
+    왜 여기인가. 클로드 코드는 Stop 훅(`closing_guard`)이 마무리 선언을 알아보고
+    그 자리에서 직접 측정까지 하지만, 웹 대화창에는 훅 자체가 없어 AI가 도구를
+    스스로 불러야 한다. 안내가 서버 설명문과 도구 설명문에만 있으면 그것은 대화
+    맨 앞에 한 번 실릴 뿐이라, 정작 마무리하는 시점에는 멀어져 있다. 2026-09-12
+    기준 웹에서 이 도구가 불린 기록은 한 건도 없었다(남아 있던 세션 측정 2건이
+    모두 stdio 쪽 기계에서 온 것이었다).
+
+    `[다음]`·`[완료]`·`[중단]`은 마무리할 때 거의 반드시 남기는 줄이므로, 그
+    반환문에 붙이면 클로드 코드의 마무리 검사와 같은 자리를 차지한다.
+
+    stdio에서는 붙이지 않는다 — 그쪽은 훅이 이미 하므로 잡음일 뿐이다.
+
+    이 대화가 이미 기록됐는지는 여기서 알 수 없다(서버는 session_id를 모른다).
+    그래서 조건 없이 안내만 하고, 중복 호출은 `sessions.already_recorded`가 막는다.
+    """
+    if tag not in _WRAPPING_UP_TAGS:
+        return ""
+    if not _is_web_request(ctx):
+        return ""
+    return _WEB_SESSION_RECORD_HINT
+
 # "닫는다"는 뜻으로 흔히 쓰이지만 닫히지 **않는** 말들(namu-66). 실물 로그에서
 # '종료' 1건·'마무리' 1건이 나왔고, 그중 namu-37은 기록만 보면 닫힌 적이 없는
 # 상태로 남았다 — 옛 형식 파일이 우연히 닫아 주고 있었을 뿐이다.
@@ -428,7 +464,11 @@ def _record_task_entry(
     task_dir = tasks_root / slug
     _append_task_log_line(task_dir, block)
     _unpin_if_closing(tasks_root, slug, tag)
-    return block + _unmet_done_when_warning(task_dir, tag)
+    return (
+        block
+        + _unmet_done_when_warning(task_dir, tag)
+        + _web_session_record_hint(tag, ctx)
+    )
 
 
 def _unpin_if_closing(tasks_root: Path, slug: str, tag: str) -> None:
