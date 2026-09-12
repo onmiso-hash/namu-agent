@@ -56,50 +56,26 @@ sys.path.insert(0, str(_훅_폴더.parent / "naite"))
 
 
 def 재기(기록_파일, 세션_id, 끝난_이유):
-    """대화 기록 한 장을 읽어 남길 값을 만든다. 남길 것이 없으면 None."""
-    import naite
+    """대화 기록 한 장을 읽어 남길 값을 만든다. 남길 것이 없으면 None.
 
-    세션 = naite.세션_읽기(기록_파일)
-    발화 = 세션["발화"]
-    if not 발화:
-        # 사람이 한 마디도 안 한 세션이다. 세션 수에 넣으면 분모만 늘어 평균이
-        # 실제보다 낮게 보인다.
-        return None
-
-    건들 = naite.되돌림_찾기(세션)
-    구조_표지 = sum(1 for 건 in 건들 if 건["갈래"] in ("요청 중단", "도구 거절"))
-
-    return {
-        "session_id": 세션_id,
-        "misalignments": len(건들),
-        "structural_marks": 구조_표지,
-        "utterances": [{"at": 시각, "text": 글} for 시각, 글 in 발화],
-        "interrupts": list(세션["중단"]),
-        "denials": list(세션["거절"]),
-        "project": naite.방이름(세션),
-        "title": naite.세션이름(세션),
-        "started_at": 발화[0][0],
-        "ended_at": 발화[-1][0],
-        "end_reason": 끝난_이유,
-    }
-
-
-def 이미_남겼나(세션_id, 이번_발화수):
-    """같은 세션의 값이 이미 있고 더 자랄 것이 없으면 참.
-
-    `--resume`으로 이어서 열면 같은 session_id로 한 번 더 끝난다. 그때는 발화가
-    늘어 있으므로 새로 남기고, 합산하는 쪽이 마지막 항목만 세어 겹치지 않게 한다.
-    반대로 발화가 안 늘었으면 같은 값을 또 쌓을 뿐이라 남기지 않는다.
+    재는 규칙 자체는 `sessions.measure`에 한 벌만 있다 — 웹 대화창의
+    `namu_record_session`도 같은 함수를 쓴다. 여기서 하는 일은 대화 기록 파일에서
+    그 함수가 받을 모양으로 발화를 뽑아 주는 것뿐이다. 규칙이 두 벌이 되면 같은
+    대화도 어디서 넣었느냐에 따라 숫자가 달라진다.
     """
+    import naite
     import sessions
 
-    앞선 = sessions.latest_by_session().get(세션_id)
-    if 앞선 is None:
-        return False
-    try:
-        return int(앞선.get("utterance_count") or 0) >= 이번_발화수
-    except (TypeError, ValueError):
-        return False
+    세션 = naite.세션_읽기(기록_파일)
+    return sessions.measure(
+        session_id=세션_id,
+        utterances=[{"at": 시각, "text": 글} for 시각, 글 in 세션["발화"]],
+        interrupts=list(세션["중단"]),
+        denials=list(세션["거절"]),
+        project=naite.방이름(세션),
+        title=naite.세션이름(세션),
+        end_reason=끝난_이유,
+    )
 
 
 def 입력_읽기():
@@ -166,14 +142,14 @@ def 일하기(들어온값) -> None:
     기록_파일 = pathlib.Path(들어온값["transcript_path"].strip())
     세션_id = 들어온값["session_id"].strip()
 
+    import memory_sync
+    import sessions
+
     잰값 = 재기(기록_파일, 세션_id, (들어온값.get("reason") or "").strip() or None)
     if 잰값 is None:
         return
-    if 이미_남겼나(세션_id, len(잰값["utterances"])):
+    if sessions.already_recorded(세션_id, len(잰값["utterances"])):
         return
-
-    import memory_sync
-    import sessions
 
     sessions.record_session(**잰값)
 

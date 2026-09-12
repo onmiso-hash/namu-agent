@@ -1140,6 +1140,88 @@ def namu_task_unpin(project: str | None = None, ctx: Context | None = None) -> s
 
 
 @tool()
+def namu_record_session(
+    session_id: str,
+    utterances: list,
+    project: str | None = None,
+    title: str | None = None,
+    interrupts: list | None = None,
+    denials: list | None = None,
+    end_reason: str | None = None,
+    ctx: Context | None = None,
+):
+    """Measure THIS conversation for misalignments and store the result.
+
+    CALL THIS ONCE when the conversation is wrapping up — the user says goodbye,
+    thanks you, says the work is done, or asks you to save and finish.
+
+    In Claude Code a SessionEnd hook does this automatically, so you do not need
+    to call it there. In a web chat there is no hook and the server cannot reach
+    the conversation on its own, so nothing is measured unless you call this. A
+    conversation that is never recorded is invisible to the weekly self-review.
+
+    You do NOT judge anything here — the server runs the measurement. Hand over
+    what the user actually said, verbatim. Never summarize, paraphrase, translate
+    or drop a message: a shortened transcript produces a wrong count, and the
+    stored text is what future re-measurements run on.
+
+    Args:
+      session_id: A stable id for this conversation. Reuse the SAME value if you
+        call this twice in one conversation (only the last one is counted).
+      utterances: Every user message, oldest first, as
+        [{"at": "<timestamp>", "text": "<verbatim message>"}, ...].
+        Include ALL of them, short ones like "ok" or "no" included.
+        `at` is when that message was sent; pass "" if you do not know it.
+      project: Which project room this conversation belongs to, if known.
+      title: A short title for this conversation.
+      interrupts: Timestamps where the user cut you off mid-response, if known.
+      denials: Timestamps where the user rejected a tool call, if known.
+      end_reason: Why the conversation ended (e.g. "user said goodbye").
+
+    Returns: dict with the stored id and the counts, or `skipped` saying why
+      nothing was stored (no user messages, or already recorded unchanged).
+    """
+    import memory_sync
+    import sessions
+
+    session_id = (session_id or "").strip()
+    if not session_id:
+        raise ValueError("session_id는 필수입니다 / session_id is required")
+
+    잰값 = sessions.measure(
+        session_id=session_id,
+        utterances=utterances,
+        interrupts=interrupts,
+        denials=denials,
+        project=project,
+        title=title,
+        end_reason=end_reason,
+    )
+    if 잰값 is None:
+        return {"skipped": "사람이 한 마디도 없어 남기지 않았습니다 / no user messages"}
+    if sessions.already_recorded(session_id, len(잰값["utterances"])):
+        return {"skipped": "이미 같은 값이 남아 있습니다 / already recorded"}
+
+    new_id = sessions.record_session(**잰값)
+
+    # 올리기가 실패해도 값은 이미 파일에 있다 — 다음 기록의 올리기가 함께 싣고 간다
+    # (세션 종료 훅과 같은 판단).
+    try:
+        memory_sync.sync_push("session: 어긋남 %d건 (%s)" % (
+            잰값["misalignments"], 잰값["project"] or "?",
+        ))
+    except Exception:
+        pass
+
+    return {
+        "id": new_id,
+        "misalignments": 잰값["misalignments"],
+        "structural_marks": 잰값["structural_marks"],
+        "utterance_count": len(잰값["utterances"]),
+    }
+
+
+@tool()
 def namu_sync_setup(remote_url: str) -> str:
     """Enable git auto-sync for the standalone (~/.namu) learnings install.
 

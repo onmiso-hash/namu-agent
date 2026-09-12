@@ -1,8 +1,14 @@
 """sessions.yaml 스토어 — 세션 측정 그릇(namu-self-improvement-loop).
 
-세션이 끝날 때 나이테를 **그 세션 하나에만** 돌려 나온 값을 담는다. 쓰는 곳은 세션
-종료 훅(hooks/session_end_naite.py) 하나뿐이고, 읽는 곳은 주간 점검
-(naite/weekly_check.py) 하나뿐이다.
+세션이 끝날 때 나이테를 **그 세션 하나에만** 돌려 나온 값을 담는다. 읽는 곳은 주간
+점검(naite/weekly_check.py) 하나뿐이고, 쓰는 곳은 셋이다.
+
+- 세션 종료 훅(hooks/session_end_naite.py) — 클로드 코드에서 대화 기록 파일을 읽는다.
+- 개인 주소와 나무 클라우드의 `namu_record_session` — 웹 대화창에는 훅이 없어서,
+  대화 안의 AI가 발화를 넘겨준다.
+
+셋이 재는 규칙은 `measure()` 한 벌을 함께 쓴다. 규칙이 갈라지면 같은 대화도 어디서
+넣었느냐에 따라 숫자가 달라져, 합산한 값이 무엇을 뜻하는지 알 수 없게 된다.
 
 왜 이 그릇이 필요한가
 ---------------------
@@ -35,6 +41,7 @@ profile.yaml·attachments.yaml과 같은 append-only 다중 문서(`---` 구분)
 쪽은 session_id마다 **마지막 항목 하나만** 세어야 한다(`latest_by_session`).
 """
 from datetime import datetime
+from pathlib import Path
 
 import yaml
 from ulid import ULID
@@ -45,6 +52,103 @@ import config as cfg
 def _sessions_path(paths: "cfg.DataPaths | None" = None):
     p = paths or cfg.data_paths_for()
     return p.sessions_yaml or cfg.SESSIONS_YAML_PATH
+
+
+def _naite():
+    """나이테 모듈을 불러온다.
+
+    `naite/`에는 `__init__.py`가 없어 꾸러미가 아니다. 그래서 그 폴더 자체를 불러오기
+    경로에 넣어야 `import naite`가 `naite.py`를 찾는다(훅이 쓰는 방식과 같다).
+    맨 위에서 불러오지 않는 이유는, 이 그릇을 읽기만 하는 쪽(주간 점검·검색)이
+    나이테까지 함께 불러오게 되기 때문이다.
+    """
+    import sys
+
+    폴더 = Path(__file__).resolve().parent / "naite"
+    if str(폴더) not in sys.path:
+        sys.path.insert(0, str(폴더))
+    import naite
+
+    return naite
+
+
+def measure(
+    session_id: str,
+    utterances: list,
+    interrupts: list | None = None,
+    denials: list | None = None,
+    project: str | None = None,
+    title: str | None = None,
+    end_reason: str | None = None,
+) -> "dict | None":
+    """발화 목록을 나이테로 재서 `record_session`에 그대로 넣을 값을 만든다.
+
+    남길 것이 없으면 None을 돌려준다 — 사람이 한 마디도 안 한 대화가 그렇다. 그런
+    대화를 세면 분모만 늘어 세션당 평균이 실제보다 낮게 보인다.
+
+    `utterances`는 `{"at": 시각, "text": 원문}` 목록이며 오래된 것부터 온다. 시각은
+    대화 기록에 적힌 형식을 그대로 옮긴다 — 나이테가 그 형식을 전제로 정렬하므로
+    여기서 바꾸면 재측정 결과가 원래와 달라진다. 시각을 모르면 빈 문자열로 둔다
+    (None을 넣으면 나이테의 정렬에서 예외가 난다).
+
+    쓰는 곳이 셋이라(모듈 설명 참고) 이 함수가 그 셋의 유일한 판정 자리다.
+    """
+    naite = _naite()
+
+    발화 = []
+    for 한마디 in utterances or []:
+        if not isinstance(한마디, dict):
+            continue
+        글 = (한마디.get("text") or "").strip()
+        if not 글:
+            continue
+        발화.append((str(한마디.get("at") or ""), 글))
+
+    if not 발화:
+        return None
+
+    세션 = {
+        "제목": (title or "").strip() or None,
+        "작업위치": None,
+        "발화": 발화,
+        "중단": [str(t) for t in (interrupts or [])],
+        "거절": [str(t) for t in (denials or [])],
+        "파일": None,
+    }
+    건들 = naite.되돌림_찾기(세션)
+
+    return {
+        "session_id": session_id,
+        "misalignments": len(건들),
+        "structural_marks": sum(
+            1 for 건 in 건들 if 건["갈래"] in ("요청 중단", "도구 거절")
+        ),
+        "utterances": [{"at": 시각, "text": 글} for 시각, 글 in 발화],
+        "interrupts": 세션["중단"],
+        "denials": 세션["거절"],
+        "project": (project or "").strip() or None,
+        "title": 세션["제목"],
+        "started_at": 발화[0][0] or None,
+        "ended_at": 발화[-1][0] or None,
+        "end_reason": (end_reason or "").strip() or None,
+    }
+
+
+def already_recorded(session_id: str, 이번_발화수: int, paths=None) -> bool:
+    """같은 대화의 값이 이미 있고 더 자랄 것이 없으면 참.
+
+    클로드 코드에서 `--resume`으로 이어 열면 같은 대화가 한 번 더 끝나고, 웹에서는
+    AI가 한 대화에서 이 저장을 두 번 부를 수 있다. 어느 쪽이든 발화가 늘었으면 새로
+    남기고(합산하는 쪽이 대화마다 마지막 항목만 센다), 안 늘었으면 같은 값을 또 쌓을
+    뿐이라 남기지 않는다.
+    """
+    앞선 = latest_by_session(paths).get(session_id)
+    if 앞선 is None:
+        return False
+    try:
+        return int(앞선.get("utterance_count") or 0) >= 이번_발화수
+    except (TypeError, ValueError):
+        return False
 
 
 def record_session(

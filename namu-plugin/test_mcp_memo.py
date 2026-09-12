@@ -158,7 +158,7 @@ def test_memo_remove_is_exposed_as_its_own_tool(fake_home):
     #      + 작업 옮기기 1종(namu-new-project-rule 4단계)
     #      + 첨부 4종(namu-file-upload-download: 올리기·목록·받기·지우기)
     #      + 티켓 3종(올리기 링크·받기 링크·도착 확인)
-    assert "RESULT True 15" in result.stdout
+    assert "RESULT True 16" in result.stdout
 
 
 # ---------------------------------------------------------------------------
