@@ -11,13 +11,18 @@
 3. **사람이 한 마디도 안 한 세션은 남기지 않는다.** 세션 수에 넣으면 분모만 늘어
    평균이 실제보다 낮게 보인다.
 4. **훅은 어떤 에러에도 세션 종료를 막지 않는다.**
+5. **훅 자체는 1.5초 안에 끝나고, 떼어낸 쪽이 그 뒤에도 살아남아 일을 마친다.**
+   세션 종료 훅에 주어지는 시간이 1.5초다. 2026-09-12에 커밋만 남고 원격 올리기가
+   통째로 빠진 것이 이 시간을 넘긴 탓이었다.
 
 config.py는 import 시점 부작용이 없어 직접 import한다(test_attachments.py와 같다).
 """
 import importlib.util
 import json
+import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -225,13 +230,30 @@ def test_발화가_안_늘었으면_다시_남기지_않는다(훅, tmp_path, mo
 # 훅을 실제로 실행했을 때
 # ---------------------------------------------------------------------------
 
-def _훅_실행(들어온값):
-    """훅을 별도 프로세스로 돌린다. 종료값과 출력을 돌려준다."""
+def _훅_실행(들어온값, 인자=(), 집=None):
+    """훅을 별도 프로세스로 돌린다. 종료값과 출력을 돌려준다.
+
+    집을 주면 그 폴더를 사용자 폴더로 삼는다. 나무는 기억 저장소를
+    `Path.home() / ".namu"`로 고정해 두어 환경변수로 바꿀 수 없으므로, 진짜 기억을
+    건드리지 않으려면 사용자 폴더 자체를 갈아끼우는 길밖에 없다.
+    """
+    환경 = dict(os.environ, HOME=str(집)) if 집 is not None else None
     return subprocess.run(
-        [sys.executable, str(_훅_경로)],
+        [sys.executable, str(_훅_경로), *인자],
         input=json.dumps(들어온값, ensure_ascii=False),
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, env=환경,
     )
+
+
+def _격리된_집(tmp_path):
+    집 = tmp_path / "집"
+    집.mkdir()
+    return 집
+
+
+def _남은_값들(집):
+    파일 = 집 / ".namu" / "memory" / "sessions.yaml"
+    return list(yaml.safe_load_all(파일.read_text(encoding="utf-8")))
 
 
 def test_들어온_값이_비어도_세션_종료를_막지_않는다():
@@ -246,3 +268,41 @@ def test_망가진_입력에도_종료값은_0이다():
         input="이건 JSON이 아니다", capture_output=True, text=True, timeout=60,
     )
     assert 결과.returncode == 0, 결과.stderr
+
+
+def test_훅은_일을_떼어내고_곧바로_끝난다(tmp_path):
+    """훅 자체는 1.5초 예산 안에 끝나고, 떼어낸 쪽은 그 뒤에도 일을 마쳐야 한다."""
+    집 = _격리된_집(tmp_path)
+    파일 = _기록파일(tmp_path, [
+        _발화("나이테 고쳐줘", "2026-09-12T01:00:00.000Z"),
+        _발화("아니 그게 아니고", "2026-09-12T01:01:00.000Z"),
+    ])
+
+    시작 = time.monotonic()
+    결과 = _훅_실행({"transcript_path": str(파일), "session_id": "s1"}, 집=집)
+    걸린시간 = time.monotonic() - 시작
+
+    assert 결과.returncode == 0, 결과.stderr
+    assert 걸린시간 < 1.5, f"훅이 {걸린시간:.2f}초 걸렸다 — 예산 1.5초를 넘는다"
+
+    남을_파일 = 집 / ".namu" / "memory" / "sessions.yaml"
+    마감 = time.monotonic() + 30
+    while time.monotonic() < 마감 and not 남을_파일.exists():
+        time.sleep(0.1)
+    assert 남을_파일.exists(), "떼어낸 쪽이 값을 남기지 못한 채 사라졌다"
+
+    assert [u["text"] for u in _남은_값들(집)[-1]["utterances"]] == [
+        "나이테 고쳐줘", "아니 그게 아니고",
+    ]
+
+
+def test_일꾼으로_부르면_그_자리에서_남긴다(tmp_path):
+    """떼어낸 쪽이 하는 일을 기다리면서 그대로 확인한다."""
+    집 = _격리된_집(tmp_path)
+    파일 = _기록파일(tmp_path, [_발화("가", "2026-09-12T01:00:00.000Z")])
+
+    결과 = _훅_실행({"transcript_path": str(파일), "session_id": "s2"},
+                    인자=["--worker"], 집=집)
+
+    assert 결과.returncode == 0, 결과.stderr
+    assert _남은_값들(집)[-1]["session_id"] == "s2"
