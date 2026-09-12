@@ -215,15 +215,66 @@ def test_사람이_한_마디도_안_한_세션은_남기지_않는다(훅, tmp_
     assert 훅.재기(파일, "s1", None) is None
 
 
-def test_발화가_안_늘었으면_다시_남기지_않는다(훅, tmp_path, monkeypatch):
+def test_발화가_안_늘었으면_다시_남기지_않는다(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "SESSIONS_YAML_PATH", tmp_path / "sessions.yaml")
     sessions.record_session(session_id="s1", misalignments=1, structural_marks=0,
                             utterances=[{"at": "t1", "text": "가"},
                                         {"at": "t2", "text": "나"}])
 
-    assert 훅.이미_남겼나("s1", 2) is True    # 그대로다
-    assert 훅.이미_남겼나("s1", 3) is False   # 이어서 열어 발화가 늘었다
-    assert 훅.이미_남겼나("처음보는세션", 1) is False
+    assert sessions.already_recorded("s1", 2) is True    # 그대로다
+    assert sessions.already_recorded("s1", 3) is False   # 이어서 열어 발화가 늘었다
+    assert sessions.already_recorded("처음보는세션", 1) is False
+
+
+# ---------------------------------------------------------------------------
+# 재는 규칙은 한 벌이다
+#
+# 훅은 대화 기록 파일에서 발화를 뽑고, 웹의 namu_record_session은 대화 안의 AI가
+# 발화를 넘겨준다. 들어오는 길이 둘이라도 재는 함수는 sessions.measure 하나여야
+# 한다 — 갈라지면 같은 대화도 어디서 넣었느냐에 따라 숫자가 달라져서, 합산한 값이
+# 무엇을 뜻하는지 알 수 없게 된다.
+# ---------------------------------------------------------------------------
+
+def test_웹으로_넘긴_대화도_훅과_같은_값이_나온다(훅, tmp_path):
+    """같은 대화를 파일로 읽었을 때와 발화 목록으로 넘겼을 때가 같아야 한다."""
+    줄들 = [
+        _발화("나이테 고쳐줘", "2026-09-12T01:00:00.000Z", aiTitle="나이테 손보기"),
+        _발화("아니지 그게 아니야", "2026-09-12T01:01:00.000Z"),
+        _발화("고마워", "2026-09-12T01:02:00.000Z"),
+    ]
+    훅이_잰값 = 훅.재기(_기록파일(tmp_path, 줄들), "s1", "clear")
+
+    웹이_잰값 = sessions.measure(
+        session_id="s1",
+        utterances=[{"at": u["at"], "text": u["text"]} for u in 훅이_잰값["utterances"]],
+        interrupts=훅이_잰값["interrupts"],
+        denials=훅이_잰값["denials"],
+        project=훅이_잰값["project"],
+        title=훅이_잰값["title"],
+        end_reason="clear",
+    )
+
+    assert 웹이_잰값 == 훅이_잰값
+
+
+def test_시각을_모르면_빈_칸으로_받는다():
+    """웹의 AI가 발언 시각을 모를 때 빈 문자열을 넘겨도 재기가 끝나야 한다.
+
+    나이테가 마지막에 시각으로 정렬하므로 None이 섞이면 거기서 예외가 난다.
+    """
+    잰값 = sessions.measure(
+        session_id="s1",
+        utterances=[{"at": "", "text": "고쳐줘"}, {"at": "", "text": "아니 그게 아니고"}],
+    )
+
+    assert 잰값["misalignments"] == 1
+    assert 잰값["started_at"] is None
+    assert 잰값["ended_at"] is None
+
+
+def test_사람_말이_하나도_없으면_재지_않는다():
+    assert sessions.measure(session_id="s1", utterances=[]) is None
+    assert sessions.measure(session_id="s1", utterances=[{"at": "t", "text": "  "}]) is None
 
 
 # ---------------------------------------------------------------------------

@@ -153,6 +153,6 @@ def test_wrapped_tool_schema_is_unchanged(fake_home):
         "asyncio.run(main())\n",
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
-    assert "RESULT 15" in result.stdout
+    assert "RESULT 16" in result.stdout
     assert "HAS_SUMMARY True" in result.stdout
     assert "HAS_CTX_LEAK False" in result.stdout

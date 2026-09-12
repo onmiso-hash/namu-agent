@@ -318,6 +318,7 @@ def test_http_exposed_tools_excludes_sync_setup():
             "namu_create_upload_ticket", "namu_create_download_ticket",
             "namu_check_ticket",
             "namu_task_move",
+            "namu_record_session",
         }
     )
     assert "namu_sync_setup" not in http_server.HTTP_EXPOSED_TOOLS
@@ -344,6 +345,11 @@ def test_http_and_cloud_expose_the_same_tools():
         # namu_task_move — 이미 있는 방으로만 옮기고 그 사람 자신의 작업 풀
         # 안에서만 움직이므로, namu_record와 같은 위험 계열이라 함께 연다.
         {"namu_task_move"}
+    ) | frozenset(
+        # namu_record_session — 웹 대화창에는 세션 종료 훅이 없어서, 대화 안의
+        # AI가 이 도구로 발화를 넘겨야 그 대화가 측정에 들어온다. 훅이 있는
+        # 클로드 코드에서는 부를 필요가 없다.
+        {"namu_record_session"}
     )
 
 

@@ -71,6 +71,10 @@ HTTP_EXPOSED_TOOLS = frozenset({
     # namu_task_move: 이미 있는 방으로만 옮기고(새 방을 못 만들고) 그 사람 자신의
     # 작업 풀 안에서만 움직인다 — 이미 열려 있는 namu_record와 같은 위험 계열이다.
     "namu_task_move",
+    # namu_record_session: 웹 대화창에는 세션 종료 훅이 없어서, 대화 안의 AI가
+    # 이 도구로 발화를 넘겨야 그 대화가 측정에 들어온다. 판정은 서버가 하므로
+    # AI가 숫자를 지어낼 자리가 없다.
+    "namu_record_session",
 })
 
 # 디바운스 pull 상태 — 모듈 전역 1개(단일 프로세스 전제, 경로 B 셀프호스팅 스코프와 합치).
