@@ -230,6 +230,51 @@ def _block_reason(project: str, touched: list[str]) -> str:
     return head + body
 
 
+def _measure_session_now(data: dict) -> None:
+    """마무리 선언을 알아본 그 자리에서 세션을 재고 남기고 올린다.
+
+    왜 여기서 하는가. 세션 종료 훅(`session_end_naite.py`)은 재고 올리는 일을
+    떼어낸 일꾼에게 맡기는데, `/exit`로 끝내면 프로그램이 그 일꾼을 기다리지 않고
+    끝나 **올리기가 끊긴다**. 2026-09-12 실측: `/exit`로 끝낸 세션 2건은 둘 다
+    커밋(14:53:44, 16:23:56)만 남고 동기화 로그에 올리기 시도가 한 줄도 없었으며,
+    프로그램이 스스로 끝난 1건만 16:31:03에 2.28초를 써서 올리기까지 마쳤다.
+    마무리 시점은 세션이 살아 있어 그렇게 끊길 일이 없고, 시간 제약도 없다.
+
+    재는 규칙과 남기는 규칙은 종료 훅의 `일하기`를 그대로 부른다 — 규칙이 두 벌이
+    되면 같은 대화도 어디서 넣었느냐에 따라 숫자가 달라진다. 여기서 이미 남겼으면
+    뒤이은 종료 훅은 `sessions.already_recorded`가 막아 같은 값을 두 번 쌓지 않는다
+    (그 함수는 발화 수로 판정하므로, 마무리 선언 뒤 대화가 더 오가면 그때는 늘어난
+    값으로 다시 남는다 — 합산하는 쪽이 session_id마다 마지막 항목만 세므로 겹치지
+    않는다).
+
+    "훅은 기록하지 않는다"는 원칙의 예외인 근거는 종료 훅과 같다 — 적는 것이 판단이
+    아니라 기계가 잰 숫자와 사람이 실제로 한 말의 원문이고, 들어가는 그릇도 교훈이
+    아니라 세션 측정 그릇이다. **이 훅도 교훈은 적지 않는다.**
+
+    어떤 에러가 나도 조용히 지나간다 — 마무리를 막으면 안 된다.
+    """
+    transcript_path = (data.get("transcript_path") or "").strip()
+    session_id = (data.get("session_id") or "").strip()
+    if not transcript_path or not session_id:
+        return
+    try:
+        import importlib.util
+
+        # hooks 폴더는 패키지가 아니라 파일 경로로 불러온다. 모듈 이름을 명시하므로
+        # 그쪽 `__main__` 가드가 걸려 main()은 돌지 않는다.
+        path = Path(__file__).parent / "session_end_naite.py"
+        spec = importlib.util.spec_from_file_location("session_end_naite", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.일하기({
+            "transcript_path": transcript_path,
+            "session_id": session_id,
+            "reason": "closing_signal",
+        })
+    except Exception:
+        pass
+
+
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -242,6 +287,10 @@ def main() -> None:
         entries = _transcript_entries(data.get("transcript_path"))
         if not _is_closing_signal(_last_user_text(entries)):
             sys.exit(0)
+
+        # `[다음]` 줄 검사보다 먼저 한다 — 막는 쪽으로 판정되면 대화가 이어지는데,
+        # 그때 세션이 그대로 끝나 버려도 측정값은 이미 남아 있어야 한다.
+        _measure_session_now(data)
 
         import config as cfg  # tz 기준 통일 + 기계 도장(NAMU_MACHINE)
         import task_resolve
