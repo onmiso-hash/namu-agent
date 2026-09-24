@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["python-dotenv>=1.0.0", "tzdata>=2024.1"]
+# dependencies = ["python-dotenv>=1.0.0", "tzdata>=2024.1", "PyYAML>=6.0"]
 # ///
 """클라우드 컨테이너 entrypoint 전용 얇은 wrapper — 시작 동기화
 (namu-entrypoint-pull-resilience).
@@ -12,7 +12,9 @@
 exit code: 0=받아오기 성공, 3=실패(그래도 entrypoint는 서버를 띄운다), 2=인자 오류.
 `namu_cloud_sync_setup.py`와 달리 실패가 곧 기동 중단이 아니라는 점이 이 파일의 요지다.
 
-의존성이 dotenv/tzdata 둘뿐인 이유는 `namu_cloud_sync_setup.py`와 같다 —
+PyYAML은 memo 충돌 자동 병합(`memory_sync._resolve_memo_conflict`)에 쓴다 — 없으면
+자동 병합 대신 되돌리기로 떨어져, 두 기기가 메모를 붙이기만 해도 받아오기가 매번
+실패로 남는다(2026-09 추가). 나머지 dotenv/tzdata 둘의 이유는 `namu_cloud_sync_setup.py`와 같다 —
 `startup_sync`/`memory_sync`는 stdlib만 쓰지만 `import config as cfg`가 dotenv를
 요구하고, 실패 시각을 `cfg.now()`(기준 시간대 Asia/Seoul)로 찍으므로 slim 이미지에
 없는 tz 데이터가 필요하다. tzdata가 없으면 시각이 UTC로 찍혀 사람이 다른 기기 기록과

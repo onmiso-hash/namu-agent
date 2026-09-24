@@ -163,6 +163,20 @@ def _server_warnings() -> list[str]:
     return [warning] if warning else []
 
 
+def _profile_warnings() -> list[str]:
+    """개인 사실 파일에서 깨져 건너뛴 문서가 있으면 그 사실을 알린다.
+
+    `profile.active`는 깨진 문서 하나 때문에 recall 전체가 죽지 않도록 그 문서를
+    건너뛰는데, 건너뛴 것을 아무도 모르면 AI는 그 사실이 없는 채로 일한다. 웹에는
+    세션 훅이 없어 이 반환이 유일한 통로이므로 `warnings`에 싣는다. 이 함수도 예외를
+    밖으로 내지 않는다(`_server_warnings`와 같은 이유).
+    """
+    try:
+        return profile.problems()
+    except Exception:
+        return []
+
+
 def _http_request(ctx: Context | None):
     """ctx에 실린 HTTP 요청 객체를 꺼낸다(없으면 None).
 
@@ -206,6 +220,20 @@ def _is_web_request(ctx: Context | None) -> bool:
     return _http_request(ctx) is not None
 
 
+def _cwd_project() -> str | None:
+    """지금 열린 폴더의 방 이름. 방으로 쓸 수 없는 폴더(드라이브 뿌리 `/` 등)면 None.
+
+    `task_resolve.tasks_root_for`가 풀 밖을 가리키는 방을 ValueError로 거절하게 된 뒤
+    (2026-09-25 리뷰 B), 호스트가 서버를 `/`에서 띄우면 이 값을 묻는 자리마다 예외가 나
+    `namu_recall` 전체가 실패했다(최종 검토 재현). None이면 검색은 전체 방을 합치고,
+    만들기는 "열린 폴더 없음"으로 다룬다.
+    """
+    try:
+        return cfg.tasks_dir_for().name
+    except ValueError:
+        return None
+
+
 def _default_search_project(ctx: Context | None) -> str | None:
     """namu_search(bowl='tasks')에서 project 생략 시 기본값(namu-57 2단계 2단위).
 
@@ -215,7 +243,7 @@ def _default_search_project(ctx: Context | None) -> str | None:
     """
     if _is_web_request(ctx):
         return None
-    return cfg.tasks_dir_for().name
+    return _cwd_project()
 
 
 def _resolve_recall_project(project: str | None, ctx: Context | None) -> str | None:
@@ -243,13 +271,22 @@ def _resolve_record_project(project: str | None, ctx: Context | None) -> str:
     if project == "*":
         raise ValueError(_STAR_NOT_FOR_RECORD)
     if project is not None:
-        return project
+        # 방 이름은 `~/.namu/tasks/<이름>`에 그대로 붙는다 — '..'·'/'가 들어오면
+        # 개인 풀 밖(교훈 원본 폴더 등)을 가리킨다(2026-09-25 실측, project_policy 참고).
+        # 기록·책갈피·옮기기가 모두 이 함수를 지나므로 여기 한 곳에서 막는다.
+        return project_policy.validate_room_name(project)
     if _is_web_request(ctx):
         raise ValueError(
             "웹에서 tasks 기록은 project를 명시해야 합니다(cwd 개념이 없습니다). "
             "예: project='namu-agent'"
         )
-    return cfg.tasks_dir_for().name
+    cwd_project = _cwd_project()
+    if cwd_project is None:
+        raise ValueError(
+            "지금 열린 폴더를 방 이름으로 쓸 수 없습니다(드라이브 뿌리 등). "
+            "project를 명시해 주세요. 예: project='namu-agent'"
+        )
+    return cwd_project
 
 
 def _resolve_task_slug(project: str, task: str | None) -> str:
@@ -260,7 +297,9 @@ def _resolve_task_slug(project: str, task: str | None) -> str:
     """
     if not task or not task.strip():
         raise ValueError("topic(작업 슬러그)은 필수입니다")
-    task = task.strip()
+    # 작업 이름도 방 이름과 같은 칸 하나다 — '.'·'..'·'.git'·경로 글자가 오면 방
+    # 폴더 자신이나 그 살림 폴더를 "작업"으로 집는다. 방 규칙을 그대로 쓴다.
+    task = project_policy.validate_room_name(task, label="topic(작업 슬러그)")
 
     tasks_root = task_resolve.tasks_root_for(project)
     try:
@@ -281,7 +320,7 @@ def _resolve_task_slug(project: str, task: str | None) -> str:
     if not prefix:
         raise ValueError(
             f"프로젝트 {project!r}에서 task {task!r}를 찾을 수 없습니다{hint}"
-            " — 새로 만들려면 create=True와 purpose를 함께 주세요"
+            " — 새로 만들려면 create=True와 reason(목적)을 함께 주세요"
         )
     raise ValueError(
         f"task {task!r}가 여러 후보와 일치합니다: {', '.join(prefix)}{hint} — 더 구체적으로 지정하세요"
@@ -562,7 +601,7 @@ def _create_task_entry(
     resolved_project = project_policy.resolve_create_project(
         project,
         is_web=is_web,
-        cwd_project=None if is_web else cfg.tasks_dir_for().name,
+        cwd_project=None if is_web else _cwd_project(),
         existing=task_resolve.list_projects(),
         person="사용자",
     )
@@ -572,7 +611,7 @@ def _create_task_entry(
     purpose = (purpose or "").strip()
     if not purpose:
         raise ValueError(
-            "create=True일 때 purpose는 필수입니다(목적 없는 task는 나중에 아무도 못 읽습니다)"
+            "create=True일 때 reason(목적)은 필수입니다(목적 없는 task는 나중에 아무도 못 읽습니다)"
         )
 
     # 폴더를 만들기 전에 검증한다 — 뒤에서 터지면 목적만 적힌 껍데기 task가 남는다.
@@ -665,36 +704,10 @@ def _create_task_entry(
     return summary
 
 
-_KIND_TO_BOWL = {"lesson": "learnings", "note": "learnings", "fact": "profile"}
+# namu_record가 받는 그릇 이름. `config.BOWL_NAMES`와 같아야 하며 `test_bowls.py`가
+# 이 줄을 읽어 대조한다. (그릇을 kind에서 유도하던 `_resolve_record_bowl`은 kind 칸을
+# 없앤 뒤 아무도 부르지 않아 걷어냈다 — 그릇 확정은 record_input.normalize 한 곳이다.)
 _VALID_RECORD_BOWLS = ("learnings", "tasks", "profile", "memo", "attachments")
-
-
-def _resolve_record_bowl(bowl: str | None, kind: str) -> str:
-    """bowl 인자 해석(namu-57 2단계 2단위). bowl=None이면 기존 kind에서 유도한다
-    (fact→profile, lesson/note→learnings) — 기존 호출은 100% 그대로 동작한다.
-    bowl을 명시했는데 kind와 모순되면(예: bowl='learnings'+kind='fact') 즉시
-    ValueError로 드러낸다. bowl='tasks'는 kind와 무관하다(kind는 tasks 경로에서
-    쓰지 않는다).
-    """
-    if bowl is None:
-        inferred = _KIND_TO_BOWL.get(kind)
-        if inferred is None:
-            raise ValueError("kind는 'lesson'/'note'/'fact' 중 하나여야 합니다")
-        return inferred
-    if bowl not in _VALID_RECORD_BOWLS:
-        raise ValueError(f"bowl은 {list(_VALID_RECORD_BOWLS)} 중 하나여야 합니다: {bowl!r}")
-    if bowl in ("tasks", "memo", "attachments"):
-        # kind와 무관한 그릇들 — tasks는 로그 한 줄, memo는 스틱노트 한 장,
-        # attachments는 올린 파일 한 건이라 lesson/note/fact 어디에도 속하지 않는다.
-        # kind 기본값('lesson')이 넘어와도 모순으로 보지 않는다(호출자가 kind를 줄
-        # 이유가 없는 경로다).
-        return bowl
-    inferred = _KIND_TO_BOWL.get(kind)
-    if inferred is not None and inferred != bowl:
-        raise ValueError(
-            f"bowl={bowl!r}과 kind={kind!r}가 모순됩니다(kind={kind!r}는 {inferred!r} 그릇입니다)"
-        )
-    return bowl
 
 
 def _normalize_tags(tags: list[str] | str | None) -> list[str] | None:
@@ -749,9 +762,12 @@ def namu_recall(
        wrong with this server right now (e.g. its memory store failed to sync
        with the remote at startup). If non-empty, tell the user in plain
        language before doing anything else; on the web there is no session
-       hook, so this field is the only way a broken server can say so...],
+       hook, so this field is the only way a broken server can say so. Also
+       lists profile entries that could not be read and were skipped...],
        "memo": [...every sticky note currently up, oldest first: {"id",
-       "timestamp", "text", "machine", "tags", "via"}. Surface these to the
+       "timestamp", "summary", "reason", "body", "machine", "tags", "via"}
+       (notes stuck up before the 3-layer change carry a single "text"
+       instead). Surface these to the
        user when they are relevant — memos are things they asked you to hold
        on to, and on the web this field is the only way they resurface. Take
        one down with namu_memo_remove once it has served its purpose...],
@@ -774,7 +790,7 @@ def namu_recall(
             # resilience), 그 사실이 사람에게 닿는 길이 반드시 있어야 한다. 웹에는
             # 세션 시작 훅이 없어 이 반환값이 유일한 통로이고, 사고를 겪은 자리가
             # 정확히 웹 컨테이너였다. 받아오기가 성공하면 저절로 빈 목록이 된다.
-            "warnings": _server_warnings(),
+            "warnings": _server_warnings() + _profile_warnings(),
             # memo가 그다음이다 — 스틱노트는 "지금 눈에 띄어야" 의미가 있고,
             # 웹에는 세션 훅이 없어 recall 반환이 유일한 노출 경로다(namu-56).
             "memo": memo.load_all(),
@@ -820,7 +836,11 @@ def namu_search(
     `query` is optional everywhere — omit it to filter by axes alone (e.g.
     "what did I do yesterday on hp" = bowl='tasks', machine='hp',
     since='2026-07-24'). Other axes: task (substring), machine/via (exact),
-    since/until (date or datetime, inclusive).
+    since/until (date or datetime, inclusive). Any of 'YYYY-MM-DD',
+    'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM:SS' works — bowls store time
+    in different shapes and the server converts before comparing. A date-only
+    `until` includes that whole day. Times are Korea time (NAMU_TZ); a time
+    zone suffix is ignored for tasks.
 
     Multi-word queries mean ALL words must appear (in any order, anywhere in
     the entry) — 'design doc' and 'doc design' find the same things.
@@ -1125,6 +1145,10 @@ def namu_task_move(task: str, to: str, project: str | None = None, ctx: Context 
     _resolve_via(ctx)
     resolved_project = _resolve_record_project(project, ctx)
     slug = _resolve_task_slug(resolved_project, task)
+    # `to`도 방 이름이다. 지금은 이미 있는 방 목록과 맞춰 보므로 '..'가 통과하지
+    # 못하지만, 그 판정은 task_move 쪽 사정이라 여기서 따로 한 번 더 막아 둔다.
+    if (to or "").strip():
+        to = project_policy.validate_room_name(to, label="to(옮길 방 이름)")
     dest_project = task_move.resolve_move_destination(
         to, known=task_resolve.list_projects(), person="사용자"
     )
@@ -1156,6 +1180,10 @@ def namu_task_move(task: str, to: str, project: str | None = None, ctx: Context 
             f" {dest_project!r}에 이미 책갈피가 있던 기기({machines})는 원본 책갈피만 뗐습니다"
             "(덮어쓰지 않았습니다)."
         )
+    # 옮기기와 이관 기록은 끝났고 책갈피 정리만 실패한 경우다 — 실패로 돌려주면
+    # AI가 다시 옮기려 들므로 성공 문장 뒤에 사유만 붙인다.
+    if result.get("pin_error"):
+        note += f" 다만 책갈피 정리는 실패했습니다: {result['pin_error']}"
 
     return f"작업 {slug!r}를 {resolved_project!r}에서 {dest_project!r}로 옮겼습니다.{note}"
 
@@ -1221,8 +1249,11 @@ def namu_record_session(
     Returns: dict with the stored id and the counts, or `skipped` saying why
       nothing was stored (no user messages, or already recorded unchanged).
     """
-    import memory_sync
-    import sessions
+    import sessions  # 세션 측정 전용 — 이 도구에서만 쓰므로 여기서 부른다
+
+    # 다른 웹 도구와 똑같이 출처(?client=)를 검사한다. 이 도구만 빠져 있어 client 없는
+    # 웹 호출도 통과했다.
+    _resolve_via(ctx)
 
     session_id = (session_id or "").strip()
     if not session_id:
@@ -1308,7 +1339,7 @@ def normalize_attach_meta(meta: dict) -> dict:
     for field_name in ("summary", "reason"):
         if not (meta.get(field_name) or "").strip():
             raise ValueError(
-                f"'{field_name}'은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
+                f"'{field_name}' 칸은 첨부에도 필수입니다 — 파일 몸통은 다른 PC로 "
                 "내려오지 않으므로, 나중에 이 파일을 찾는 단서는 이 설명뿐입니다."
             )
         meta[field_name] = meta[field_name].strip()
@@ -1357,6 +1388,23 @@ def store_file(conn, user_key: str, name: str, content: bytes,
     }
 
 
+# 웹 요청에서 서버 PC의 디스크 경로를 받지 않는다(2026-09-25 검토 실측). 도구 목록을
+# 거를 때 칸까지 거르지는 않으므로 웹에서도 `file_path`·`save_to`가 보이고, 그대로
+# 두면 웹 주소를 아는 쪽이 이 PC의 아무 파일(열쇠 등)이나 올려 읽고, 아무 자리에나
+# 파일을 쓸 수 있다. 웹 소개문은 이미 "이 연결에는 파일 경로 칸이 없다"고 말하므로
+# 거절 문구도 같은 말로 시작해 갈 곳을 알려 준다.
+_WEB_NO_PATH_UPLOAD = (
+    "이 연결에는 파일 경로 칸이 없다 — file_path는 이 서버가 도는 PC의 경로라 웹에서는 "
+    "받지 않습니다. 대화에서 만든 글은 content_text와 name으로 주고, 이미 파일로 있는 "
+    "것은 namu_create_upload_ticket으로 링크를 만들어 그 파일을 그대로 보내세요."
+)
+_WEB_NO_PATH_DOWNLOAD = (
+    "이 연결에는 파일 경로 칸이 없다 — save_to는 이 서버가 도는 PC의 경로라 웹에서는 "
+    "받지 않습니다. 회원에게 파일을 건네려면 namu_create_download_ticket으로 링크를 "
+    "만들고, 내용을 읽기만 하려면 save_to 없이 다시 부르세요."
+)
+
+
 def fetch_file(conn, user_key: str, name: str) -> bytes:
     """파일 한 개를 저장소에서 받아 온다 — 받기 도구와 받기 티켓의 공통 자리.
 
@@ -1386,6 +1434,7 @@ def namu_upload_file(
     disk) and over the user's own web MCP URL (a chat, where there is no path):
       - `file_path`: a path on disk. **Always prefer this when you have one** —
         the file never passes through your output, whatever its size or type.
+        Refused over the web (it would be a path on the server's PC).
       - `content_text`: the text itself, plus `name`. Plain text only, and only
         when there is no path.
 
@@ -1409,6 +1458,8 @@ def namu_upload_file(
       that name already existed in the repository.
     """
     via = _resolve_via(ctx)
+    if file_path and _is_web_request(ctx):
+        raise ValueError(_WEB_NO_PATH_UPLOAD)
     given = [k for k, v in (
         ("file_path", file_path), ("content_text", content_text),
     ) if v]
@@ -1520,20 +1571,26 @@ def namu_download_file(
 
     Args:
       name: file name as shown by namu_list_files
-      save_to: where to write it (a folder, or a full path). Omit to only get
-        the bytes back.
+      save_to: where to write it (an existing folder or a path ending in '/',
+        otherwise a full file path). Omit to only get the bytes back. Refused
+        over the web (it would be a path on the server's PC).
       force_base64: return a binary as base64 anyway
     Returns: {"path", "bytes", "saved_to"} plus one of `content_text`,
       `content_base64`, or `hint`. Downloads are deliberately not logged (the
       file does not change).
     """
     _resolve_via(ctx)
+    if save_to and _is_web_request(ctx):
+        raise ValueError(_WEB_NO_PATH_DOWNLOAD)
     content = fetch_file(None, ticket_web.LOCAL_USER, name)
     stored = attach_local.normalize_name(name)
     saved_to = None
     if save_to:
         dest = Path(save_to).expanduser()
-        if dest.is_dir() or not dest.suffix:
+        # 폴더로 볼 것은 **이미 있는 폴더**이거나 끝이 경로 구분자인 경우뿐이다.
+        # 예전 판정(`not dest.suffix`)은 확장자 없는 파일 이름(`.bashrc`·`README`·
+        # `Makefile`)을 폴더로 읽어, 그 이름의 폴더를 새로 만들고 안에 파일을 떨궜다.
+        if dest.is_dir() or save_to.endswith(("/", "\\")):
             dest = dest / Path(stored).name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)

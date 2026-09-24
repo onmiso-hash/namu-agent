@@ -23,7 +23,7 @@
 from pathlib import Path
 
 import config as cfg
-from memory_sync import _run
+from memory_sync import _run, settle_failed_merge
 
 
 class AttachError(ValueError):
@@ -31,6 +31,11 @@ class AttachError(ValueError):
 
 
 _BAD_NAME_PARTS = ("..", "\\", "/")
+# HTML·헤더에 섞이면 위험한 글자(2026-09 검수). 이름은 올리기 화면·받기 응답 헤더
+# (Content-Disposition)·첨부 기록에 그대로 실린다 — `<`/`>`/`"`는 화면에 태그로,
+# 줄바꿈은 응답 헤더를 쪼개는 데 쓰일 수 있다. 화면·헤더 쪽도 따로 막지만, 애초에
+# 저장소에 그런 이름이 생기지 않게 입구에서 한 번 더 막는다.
+_BAD_NAME_CHARS = ("<", ">", '"')
 
 _GIT_TIMEOUT_SEC = 120
 
@@ -77,6 +82,19 @@ def normalize_name(name: str) -> str:
             f"파일 이름에 쓸 수 없는 글자가 있습니다: {raw!r} — "
             f"첨부는 {prefix} 안에 하위 폴더 없이 놓입니다."
         )
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in raw) or any(
+        bad in raw for bad in _BAD_NAME_CHARS
+    ):
+        raise AttachError(
+            f"파일 이름에 쓸 수 없는 글자가 있습니다: {raw!r} — "
+            "제어 문자(줄바꿈 포함)와 < > \" 는 쓸 수 없습니다."
+        )
+    # `.`은 폴더 자신, `.git…`은 git이 자기 것으로 읽는 이름이다(`.git`·`.gitattributes`
+    # ·`.gitignore`를 첨부 폴더에 두면 그 폴더의 병합·무시 규칙이 바뀐다).
+    if raw == "." or raw.lower().startswith(".git"):
+        raise AttachError(
+            f"이 이름은 쓸 수 없습니다: {raw!r} — git이 쓰는 이름과 겹칩니다."
+        )
     return prefix + raw
 
 
@@ -122,15 +140,77 @@ def upload(name: str, content: bytes, message: str) -> dict:
 
     target = home / path
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content)
     try:
-        _git(home, ["add", "--sparse", path], "첨부 스테이징")
-        _git(home, ["commit", "-m", message], "첨부 커밋")
-        _git(home, ["push"], "첨부 올리기")
+        _stage_and_push(home, path, target, content, message)
     finally:
         # 성공이든 실패든 첨부가 이 PC에 남지 않게 되돌린다.
         _reapply_sparse(home)
     return {"path": path, "bytes": len(content), "replaced": replaced}
+
+
+def _commit_if_changed(home: Path, path: str, target: Path, content: bytes, message: str) -> bool:
+    """파일을 쓰고 스테이징한 뒤 바뀐 게 있으면 커밋한다. 커밋했으면 True.
+
+    같은 내용을 다시 올리면 스테이징할 변경이 없다 — 예전에는 여기서 commit이
+    "nothing to commit"으로 실패해, 같은 파일 재올리기가 오류로 끝났다(검수 재현).
+    바뀐 게 없으면 저장소에 이미 그 내용이 있다는 뜻이므로 커밋만 건너뛴다."""
+    target.write_bytes(content)
+    _git(home, ["add", "--sparse", path], "첨부 스테이징")
+    same = _run(["git", "-C", str(home), "diff", "--cached", "--quiet", "--", path], _GIT_TIMEOUT_SEC)
+    if same.returncode == 0:
+        return False
+    _git(home, ["commit", "-m", message], "첨부 커밋")
+    return True
+
+
+def _undo_commit(home: Path, path: str) -> None:
+    """방금 만든 첨부 커밋을 없던 일로 한다(작업트리 파일은 호출자가 치운다).
+
+    `reset --soft HEAD~1`로 커밋만 풀고 스테이징도 푼다. 이게 없던 때는 push가
+    거절되면 **첨부 기록 없는 첨부 커밋**이 로컬에 남았고, 다음 namu_record의
+    sync_push가 그것을 조용히 원격에 올렸다(기록 없이 파일만 생긴다 — 검수 재현)."""
+    _run(["git", "-C", str(home), "reset", "-q", "--soft", "HEAD~1"], _GIT_TIMEOUT_SEC)
+    _run(["git", "-C", str(home), "reset", "-q", "--", path], _GIT_TIMEOUT_SEC)
+
+
+def _stage_and_push(home: Path, path: str, target: Path, content: bytes, message: str) -> None:
+    """add → (바뀌었으면) commit → push. push가 거절되면 한 번만 복구한다.
+
+    복구 순서가 "커밋을 먼저 풀고 → 받아오고 → 다시 커밋·push"인 이유: 받아온 뒤에
+    커밋을 풀려고 하면 HEAD가 병합 커밋이라 `HEAD~1`이 우리 커밋이 아니다. 풀 수 있는
+    자리에서 먼저 풀어야 실패해도 로컬에 첨부 커밋이 남지 않는다. 받아오는 동안에는
+    작업트리의 첨부 파일도 치운다 — 격리 밖 파일이 남아 있으면 원격이 같은 이름을
+    가져올 때 "덮어쓸 파일이 있다"로 pull이 막힌다(내용은 메모리에 있다)."""
+    committed = _commit_if_changed(home, path, target, content, message)
+    first = _run(["git", "-C", str(home), "push"], _GIT_TIMEOUT_SEC)
+    if first.returncode == 0:
+        return
+
+    if committed:
+        _undo_commit(home, path)
+    target.unlink(missing_ok=True)
+    pull = _run(["git", "-C", str(home), "pull", "--no-rebase", "--no-edit"], _GIT_TIMEOUT_SEC)
+    if pull.returncode != 0:
+        # 충돌로 멈췄으면 memo만의 충돌은 풀고, 아니면 되돌린다(memory_sync 공통 뒷정리).
+        resolved, note = settle_failed_merge(home)
+        if not resolved:
+            raise AttachError(
+                "첨부 올리기 실패 — 원격이 앞서 있어 받아오려 했지만 실패했습니다: "
+                f"{(pull.stderr or pull.stdout or '').strip()[:200]}"
+                + (f" ({note})" if note else "")
+                + " — 로컬에는 아무것도 남기지 않았으니 잠시 뒤 다시 올려 주세요."
+            )
+
+    committed = _commit_if_changed(home, path, target, content, message)
+    retry = _run(["git", "-C", str(home), "push"], _GIT_TIMEOUT_SEC)
+    if retry.returncode == 0:
+        return
+    if committed:
+        _undo_commit(home, path)
+    raise AttachError(
+        f"첨부 올리기 실패 — {(retry.stderr or retry.stdout or '').strip()[:300]}"
+        " — 로컬에는 아무것도 남기지 않았으니 잠시 뒤 다시 올려 주세요."
+    )
 
 
 def list_paths() -> list[str]:

@@ -598,7 +598,9 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
             "② pull 후 tasks/ 상태를 다시 읽어 진행 중 task·다음 작업을 재안내할 것.\n"
         )
 
-    home_namu = Path.home() / ".namu"
+    # 데이터 루트는 cfg.NAMU_DATA_ROOT 하나다(namu-35) — `Path.home()/".namu"`를 여기서
+    # 따로 적으면 테스트가 데이터 루트를 격리해도 이 검사만 진짜 ~/.namu에 git을 돌린다.
+    home_namu = cfg.NAMU_DATA_ROOT
     if not _same_resolved_path(project_dir, home_namu):
         home_behind = check_git_behind(home_namu)
         if home_behind is not None and home_behind > 0:

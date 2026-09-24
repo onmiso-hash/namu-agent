@@ -179,7 +179,7 @@ def test_훅이_어긋남과_발화를_센다(훅, tmp_path):
         _발화("나이테 고쳐줘", "2026-09-12T01:00:00.000Z", aiTitle="나이테 손보기"),
         _발화("아니지 그게 아니야", "2026-09-12T01:01:00.000Z"),
         _발화("[Request interrupted by user]", "2026-09-12T01:02:00.000Z"),
-        _발화("고마워", "2026-09-12T01:03:00.000Z", toolDenialKind="reject"),
+        _발화("고마워", "2026-09-12T01:03:00.000Z", toolDenialKind="user-rejected"),
     ])
     잰값 = 훅.재기(파일, "s1", "clear")
 
@@ -197,6 +197,58 @@ def test_훅이_어긋남과_발화를_센다(훅, tmp_path):
     assert 잰값["started_at"] == "2026-09-12T01:00:00.000Z"
     assert 잰값["ended_at"] == "2026-09-12T01:03:00.000Z"
     assert 잰값["end_reason"] == "clear"
+
+
+def test_자동_모드가_막은_도구는_되돌림으로_세지_않고_종류는_남긴다(훅, tmp_path):
+    """toolDenialKind에는 사람의 거절(user-rejected)과 자동 모드 분류기의 차단
+    (automode-blocked)이 섞여 온다. 2026-09-25 실측으로 약 3분의 2가 자동 모드였는데,
+    전부 '도구 거절'로 세어 사람이 AI를 되돌린 횟수가 부풀어 있었다.
+
+    사람의 거절만 어긋남에 넣고, 종류를 가리지 않은 원본은 denial_kinds에 남겨
+    나중에 기준이 바뀌어도 다시 가를 수 있게 한다.
+    """
+    파일 = _기록파일(tmp_path, [
+        _발화("나이테 고쳐줘", "2026-09-12T01:00:00.000Z"),
+        _발화("고마워", "2026-09-12T01:01:00.000Z", toolDenialKind="automode-blocked"),
+        _발화("좋아", "2026-09-12T01:02:00.000Z", toolDenialKind="user-rejected"),
+        _발화("응", "2026-09-12T01:03:00.000Z", toolDenialKind="처음보는종류"),
+    ])
+    잰값 = 훅.재기(파일, "s1", None)
+
+    assert 잰값["misalignments"] == 1
+    assert 잰값["structural_marks"] == 1
+    assert 잰값["denials"] == ["2026-09-12T01:02:00.000Z"]
+    assert 잰값["denial_kinds"] == [
+        {"at": "2026-09-12T01:01:00.000Z", "kind": "automode-blocked", "tool": ""},
+        {"at": "2026-09-12T01:02:00.000Z", "kind": "user-rejected", "tool": ""},
+        {"at": "2026-09-12T01:03:00.000Z", "kind": "처음보는종류", "tool": ""},
+    ]
+
+
+def test_거절_종류가_그릇에_남고_옛_항목도_읽힌다(tmp_path, monkeypatch):
+    """종류 칸은 새 항목에만 있다. 칸이 없는 옛 항목도 그대로 읽혀야 한다."""
+    monkeypatch.setattr(cfg, "SESSIONS_YAML_PATH", tmp_path / "sessions.yaml")
+    sessions.record_session(session_id="옛것", misalignments=1, structural_marks=1,
+                            utterances=[{"at": "t1", "text": "가"}], denials=["t1"])
+    sessions.record_session(
+        session_id="새것", misalignments=0, structural_marks=0,
+        utterances=[{"at": "t1", "text": "가"}], denials=[],
+        denial_kinds=[{"at": "t1", "kind": "automode-blocked"}])
+
+    항목 = sessions.latest_by_session()
+    assert "denial_kinds" not in 항목["옛것"]
+    assert 항목["옛것"]["denials"] == ["t1"]
+    assert 항목["새것"]["denial_kinds"] == [{"at": "t1", "kind": "automode-blocked"}]
+    # 원문은 여전히 맨 뒤 칸이다
+    assert list(항목["새것"])[-1] == "utterances"
+
+
+def test_웹은_종류를_모르면_종류_칸을_두지_않는다():
+    """빈 목록을 적으면 '거절 표지가 하나도 없었다'로 읽힌다 — 모르면 칸을 안 둔다."""
+    잰값 = sessions.measure(session_id="s1", utterances=[{"at": "", "text": "고쳐줘"}],
+                           denials=["t"])
+    assert "denial_kinds" not in 잰값
+    assert 잰값["denials"] == ["t"]
 
 
 def test_첫_발화는_어긋남으로_세지_않는다(훅, tmp_path):
@@ -249,6 +301,7 @@ def test_웹으로_넘긴_대화도_훅과_같은_값이_나온다(훅, tmp_path
         utterances=[{"at": u["at"], "text": u["text"]} for u in 훅이_잰값["utterances"]],
         interrupts=훅이_잰값["interrupts"],
         denials=훅이_잰값["denials"],
+        denial_kinds=훅이_잰값["denial_kinds"],
         project=훅이_잰값["project"],
         title=훅이_잰값["title"],
         end_reason="clear",
@@ -357,3 +410,42 @@ def test_일꾼으로_부르면_그_자리에서_남긴다(tmp_path):
 
     assert 결과.returncode == 0, 결과.stderr
     assert _남은_값들(집)[-1]["session_id"] == "s2"
+
+
+
+# ---------------------------------------------------------------------------
+# 저장된 원문으로 지금 규칙을 다시 적용한다(remeasure)
+#
+# 그릇의 숫자는 남길 때 규칙으로 잰 값이다. 규칙을 고친 뒤 그대로 더하면 옛 규칙과 새
+# 규칙이 섞인다(실측: 7e5f072e 저장값 14건 → 지금 규칙 3건).
+# ---------------------------------------------------------------------------
+
+_원문 = [{"at": "2026-09-12T01:00:00.000Z", "text": "고쳐줘"},
+         {"at": "2026-09-12T01:05:00.000Z", "text": "아니지 그게 아니야"}]
+
+
+def test_거절_종류가_있으면_지금_규칙으로_다시_잰다():
+    항목 = {
+        "session_id": "s1", "misalignments": 14, "structural_marks": 13,
+        "utterances": _원문,
+        "interrupts": ["2026-09-12T01:02:00.003Z", "2026-09-12T01:03:00.000Z"],
+        "denials": ["x"] * 11,          # 옛 규칙의 값 — 무시된다
+        "denial_kinds": [
+            {"at": "2026-09-12T01:01:00.000Z", "kind": "automode-blocked", "tool": "Bash"},
+            {"at": "2026-09-12T01:02:00.000Z", "kind": "user-rejected", "tool": "AskUserQuestion"},
+            {"at": "2026-09-12T01:04:00.000Z", "kind": "user-rejected", "tool": "Edit"},
+        ],
+    }
+    # 말로 반박 1 + 짝 없는 중단 1 + 사람의 거절 1. 자동 모드·선택지 창과 그 짝 중단은 뺀다.
+    assert sessions.remeasure(항목) == (3, 2, "원문")
+
+
+def test_거절_종류가_없는_옛_항목은_거절을_저장된_대로_쓴다():
+    항목 = {"session_id": "s1", "misalignments": 9, "structural_marks": 8,
+            "utterances": _원문, "interrupts": [], "denials": ["2026-09-12T01:01:00.000Z"]}
+    assert sessions.remeasure(항목) == (2, 1, "원문·옛 거절")
+
+
+def test_원문이_없으면_저장값을_쓴다():
+    항목 = {"session_id": "s1", "misalignments": 4, "structural_marks": 1}
+    assert sessions.remeasure(항목) == (4, 1, "저장값")

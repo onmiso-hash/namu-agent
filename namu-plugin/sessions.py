@@ -34,6 +34,14 @@
 않는다. 그래서 그 시각 목록(`interrupts`·`denials`)을 따로 담는다 — 이 둘이 있어야
 나중에 `naite.되돌림_찾기`의 결과를 그대로 재현할 수 있다.
 
+도구 거절 표지에는 종류가 있다(2026-09-25 실측: `user-rejected`와 `automode-blocked`,
+그중 약 3분의 2가 자동 모드 분류기가 막은 것). 사람이 거절한 것만 되돌림이므로
+`denials`에는 `user-rejected`의 시각만 담고, 종류를 가리지 않은 원본은
+`denial_kinds`(`{"at": 시각, "kind": 종류, "tool": 도구 이름}` 목록)에 따로 둔다 — 종류를 가르는 기준이
+또 바뀌어도 지나간 세션을 다시 가를 수 있게 하려는 것이다. 이 칸이 생기기 전의
+항목은 `denial_kinds`가 없고, 그 `denials`에는 자동 모드가 막은 것까지 섞여 있다
+(그때는 가르지 않았다). 그런 항목도 그대로 읽힌다.
+
 형식
 ----
 profile.yaml·attachments.yaml과 같은 append-only 다중 문서(`---` 구분)다. 같은
@@ -80,6 +88,7 @@ def measure(
     project: str | None = None,
     title: str | None = None,
     end_reason: str | None = None,
+    denial_kinds: list | None = None,
 ) -> "dict | None":
     """발화 목록을 나이테로 재서 `record_session`에 그대로 넣을 값을 만든다.
 
@@ -92,6 +101,16 @@ def measure(
     (None을 넣으면 나이테의 정렬에서 예외가 난다).
 
     쓰는 곳이 셋이라(모듈 설명 참고) 이 함수가 그 셋의 유일한 판정 자리다.
+
+    `denials`는 **사람이 거절한** 도구 호출의 시각이다(웹의 `namu_record_session`도 이
+    뜻으로 받는다). `denial_kinds`는 대화 기록에서 읽은 거절 표지 전부를
+    `{"at", "kind", "tool"}`로 준 것이다 — 모르면 생략한다. 이것이 있으면 `denials`는
+    무시하고 여기서 다시 가른다(`_거절_가르기`). 그래야 저장된 원본으로 다시 잴 때와
+    지금 잰 값이 같은 규칙에서 나온다.
+
+    `interrupts`는 **모든** 요청 중단 표지의 시각이다. 도구 거절에 딸린 중단(같은
+    순간에 남는 짝)은 나이테가 판정할 때 거두므로 여기서 빼지 않는다 — 빼 두면 규칙이
+    바뀌었을 때 다시 잴 수 없다.
     """
     naite = _naite()
 
@@ -107,17 +126,29 @@ def measure(
     if not 발화:
         return None
 
+    거절_표지 = []
+    for 표지 in denial_kinds or []:
+        if isinstance(표지, dict) and 표지.get("kind"):
+            거절_표지.append({"at": str(표지.get("at") or ""), "kind": str(표지["kind"]),
+                            "tool": str(표지.get("tool") or "")})
+
+    if denial_kinds is not None:
+        거절, 선택창 = _거절_가르기(naite, 거절_표지)
+    else:
+        거절, 선택창 = [str(t) for t in (denials or [])], []
+
     세션 = {
         "제목": (title or "").strip() or None,
         "작업위치": None,
         "발화": 발화,
         "중단": [str(t) for t in (interrupts or [])],
-        "거절": [str(t) for t in (denials or [])],
+        "거절": 거절,
+        "선택창": 선택창,
         "파일": None,
     }
     건들 = naite.되돌림_찾기(세션)
 
-    return {
+    잰값 = {
         "session_id": session_id,
         "misalignments": len(건들),
         "structural_marks": sum(
@@ -132,6 +163,59 @@ def measure(
         "ended_at": 발화[-1][0] or None,
         "end_reason": (end_reason or "").strip() or None,
     }
+    # 종류를 모르는 쪽(웹)은 칸을 아예 두지 않는다 — 빈 목록을 적으면 "거절 표지가
+    # 하나도 없었다"로 읽혀, 재측정할 때 denials를 전부 버리게 된다.
+    if denial_kinds is not None:
+        잰값["denial_kinds"] = 거절_표지
+    return 잰값
+
+
+def _거절_가르기(naite, 거절_표지: list) -> tuple[list, list]:
+    """거절 표지 원본을 (되돌림으로 셀 거절, 선택지 창 닫기)의 시각 목록으로 가른다.
+
+    기준은 나이테의 것을 그대로 쓴다(`naite.사람_거절_종류`·`되돌림_아닌_거절_도구`) —
+    대화 기록을 읽을 때(`naite.세션_읽기`)와 저장된 원본을 다시 잴 때가 같아야 한다.
+    """
+    거절, 선택창 = [], []
+    for 표지 in 거절_표지:
+        if 표지["kind"] not in naite.사람_거절_종류:
+            continue
+        if 표지.get("tool") in naite.되돌림_아닌_거절_도구:
+            선택창.append(표지["at"])
+        else:
+            거절.append(표지["at"])
+    return 거절, 선택창
+
+
+def remeasure(entry: dict) -> "tuple[int, int, str]":
+    """저장된 항목을 **지금 규칙으로** 다시 잰다. (어긋남, 구조 표지, 어떻게 쟀나).
+
+    이 그릇이 사람 발화 원문을 담는 까닭이 이것이다(모듈 설명). 저장된 숫자는 그때
+    규칙으로 잰 값이라, 규칙을 고친 뒤 그대로 더하면 옛 규칙과 새 규칙이 섞인다.
+
+    어떻게 쟀나:
+    - "원문" — 원문과 거절 종류(`denial_kinds`)가 다 있어 지금 규칙을 그대로 썼다.
+    - "원문·옛 거절" — 원문은 있는데 거절 종류가 없는 옛 항목이다. 말로 반박과 짝
+      거두기는 지금 규칙이지만, 저장된 `denials`에는 자동 모드 차단과 선택지 창 닫기가
+      섞여 있어 가를 수 없다.
+    - "저장값" — 원문이 없어 저장된 숫자를 그대로 썼다.
+    """
+    utterances = entry.get("utterances") or []
+    if not isinstance(utterances, list) or not utterances:
+        return (int(entry.get("misalignments") or 0),
+                int(entry.get("structural_marks") or 0), "저장값")
+    잰값 = measure(
+        session_id=str(entry.get("session_id") or "?"),
+        utterances=utterances,
+        interrupts=entry.get("interrupts") or [],
+        denials=entry.get("denials") or [],
+        denial_kinds=entry.get("denial_kinds"),
+    )
+    if 잰값 is None:
+        return (int(entry.get("misalignments") or 0),
+                int(entry.get("structural_marks") or 0), "저장값")
+    방식 = "원문" if entry.get("denial_kinds") is not None else "원문·옛 거절"
+    return 잰값["misalignments"], 잰값["structural_marks"], 방식
 
 
 def already_recorded(session_id: str, 이번_발화수: int, paths=None) -> bool:
@@ -164,6 +248,7 @@ def record_session(
     ended_at: str | None = None,
     end_reason: str | None = None,
     paths: "cfg.DataPaths | None" = None,
+    denial_kinds: list | None = None,
 ) -> str:
     """세션 하나의 측정값을 남기고 id를 반환한다(append-only).
 
@@ -193,8 +278,11 @@ def record_session(
         "end_reason": end_reason,
         "interrupts": list(interrupts or []),
         "denials": list(denials or []),
-        "utterances": utterances,
     }
+    if denial_kinds is not None:
+        doc["denial_kinds"] = list(denial_kinds)
+    # 원문은 길어서 맨 뒤에 둔다 — 파일을 눈으로 훑을 때 숫자 칸이 먼저 보이게.
+    doc["utterances"] = utterances
 
     yaml_path = _sessions_path(paths)
     yaml_path.parent.mkdir(parents=True, exist_ok=True)

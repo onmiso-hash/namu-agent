@@ -5,7 +5,8 @@
 """NAMU 원격 MCP HTTP 서버 (namu-44, docs/remote_mcp_design.md v4 확정안).
 
 목적: claude.ai(웹) Custom Connector 등 원격 클라이언트가 Streamable HTTP로
-namu_recall/namu_record/namu_search 3종 도구를 쓸 수 있게 한다. 기존 stdio 진입점
+나무 도구를 쓸 수 있게 한다(처음엔 recall/record/search 3종이었고, 지금 웹에 여는
+도구 목록은 `HTTP_EXPOSED_TOOLS` 한 곳이 정한다). 기존 stdio 진입점
 (mcp_server.py)은 절대 건드리지 않는다 — 이 파일은 mcp_server.mcp(MCPServer 인스턴스)를
 그대로 재사용하는 얇은 래퍼일 뿐이다(도구 정의 이중 구현 0).
 
@@ -51,7 +52,7 @@ import tickets
 
 logger = logging.getLogger("namu.http_server")
 
-# 설계 §8: 웹(원격 HTTP)에는 learnings 3종만 노출한다. namu_sync_setup은 서버의 git
+# 설계 §8: 웹(원격 HTTP)에는 처음에 learnings 3종만 노출했다. namu_sync_setup은 서버의 git
 # remote를 재배선하는 도구라 원격 호출자에게 주면 보안 사고(remote 탈취)로 직결된다
 # — stdio(로컬 CC/agy)에서는 그대로 쓸 수 있어야 하므로 mcp_server.py 자체에서
 # 빼지 않고, http_server가 import한 인스턴스에서만 build_app()이 제거한다.
@@ -130,18 +131,25 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # 헤더 값은 **바이트 그대로** 비교한다. 예전에는 latin-1로 풀었다가 utf-8로
+        # 다시 싸서 비교했는데, 그러면 한글 등 ASCII 밖 글자가 든 토큰은 보낸 바이트와
+        # 비교하는 바이트가 달라져 맞는 토큰으로도 영영 통과하지 못했다(2026-09-25 실측).
+        # 클라이언트는 헤더를 utf-8로 보내므로 설정값도 utf-8로 싸서 맞춘다.
         headers = dict(scope.get("headers") or [])
-        api_key = headers.get(b"x-api-key", b"").decode("latin-1")
-        auth_header = headers.get(b"authorization", b"").decode("latin-1")
+        api_key = headers.get(b"x-api-key", b"")
+        auth_header = headers.get(b"authorization", b"")
         token_bytes = self.token.encode("utf-8")
 
         authorized = False
-        if api_key and hmac.compare_digest(api_key.encode("utf-8"), token_bytes):
+        if api_key and hmac.compare_digest(api_key, token_bytes):
             authorized = True
-        elif auth_header.startswith("Bearer "):
-            candidate = auth_header[len("Bearer ") :]
-            if hmac.compare_digest(candidate.encode("utf-8"), token_bytes):
-                authorized = True
+        else:
+            # 인증 방식 이름(`Bearer`)은 표준(RFC 7235)상 대소문자를 가리지 않는다 —
+            # `bearer`로 보내는 클라이언트가 있다. 토큰 자체는 그대로 비교한다.
+            scheme, _, candidate = auth_header.partition(b" ")
+            if scheme.lower() == b"bearer" and candidate:
+                if hmac.compare_digest(candidate.strip(), token_bytes):
+                    authorized = True
 
         if not authorized:
             client = scope.get("client")
@@ -266,7 +274,7 @@ def resolve_streamable_path(settings: dict) -> str:
 def set_instructions(mcp_instance, allowed: frozenset[str]) -> None:
     """소개문(서버가 붙는 AI에게 한 번 건네는 자기소개)을 `allowed`에 맞춰 다시 만든다.
 
-    왜 필요한가: restrict_tools가 도구를 3종으로 걸러도 소개문은 mcp_server가 만들어
+    왜 필요한가: restrict_tools가 도구를 웹 목록으로 걸러도 소개문은 mcp_server가 만들어
     둔 7종짜리 그대로였다. 붙은 AI는 없는 도구 4개(쪽지 떼기·책갈피 꽂기·빼기·동기화
     설정)를 있다고 믿고 부르다 실패한다 — 2026-08-05 실측으로 확인한 갭이다.
 

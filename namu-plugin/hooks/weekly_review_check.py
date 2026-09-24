@@ -31,11 +31,26 @@
 """
 
 import pathlib
+import sys
 from datetime import datetime, timedelta, timezone
 
 주기_일수 = 7
 점검_꼬리표 = "나무점검"
 교훈_경로 = pathlib.Path.home() / ".namu" / "memory" / "learnings.yaml"
+
+
+def _표준출력_utf8():
+    """표준출력을 UTF-8로 맞춘다.
+
+    한글 윈도우에서 훅의 표준출력이 파이프면 기본 인코딩이 cp949라, 🌳·⚠ 같은 글자를
+    찍는 순간 UnicodeEncodeError가 나고 맨 끝의 넓은 except가 그것을 삼켜 **알림이
+    소리 없이 사라진다**(session_recall.py에서 먼저 겪은 버그와 같다 —
+    test_session_recall_encoding.py). 바꿀 수 없는 스트림이면 그대로 둔다.
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 
 def 측정_도구_찾기():
@@ -110,7 +125,7 @@ def main():
         "3. 뽑힌 후보 중 하나를 골라 **실제로 조치한다** — 검사를 만들거나, 상시 규칙을 "
         "고치거나, 이미 있는 검사가 왜 못 막았는지 찾아 고친다",
         "4. 결과를 `namu_record`로 남긴다 — 그릇은 교훈, 꼬리표에 `나무점검`을 넣고, "
-        "본문에는 도구가 알려주는 다섯 줄을 그대로 넣는다",
+        "본문에는 도구가 알려주는 여섯 줄을 그대로 넣는다",
         "",
         "**`이번 조치:` 줄을 반드시 채우십시오.** 고칠 것이 없다고 판단했으면 "
         "`없음 — 이유`라고 적습니다. 비워 두면 다음 점검이 그것을 잡아내 경고합니다. "
@@ -121,6 +136,7 @@ def main():
 
 
 if __name__ == "__main__":
+    _표준출력_utf8()
     try:
         main()
     except Exception:

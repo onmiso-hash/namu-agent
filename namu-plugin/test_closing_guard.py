@@ -121,6 +121,62 @@ def test_closing_signal_ignores_pattern_inside_a_long_pasted_message():
         assert not hook._is_closing_signal(text), text
 
 
+# 실제 대화 기록에서 뽑은 마무리 선언(2026-08-23 ~ 09-24). 패턴을 고쳐도 이것들은 계속
+# 잡혀야 한다.
+_REAL_CLOSINGS = [
+    "세션 마무리해... 새로운 세션에서 작업을 이어가자",
+    "이 세션 마무리해",
+    "이제 세션 종료할께.",
+    "이세션 마무리하자",
+    "지금은 여기서 마무리하자",
+    "이 세션 마무리 해줘.",
+    "이 세션 마무리",
+    "수고했어. 이번세션 마무리하자",
+    "그럼 긴급 작업은 여기까자 하고, 이제 마무리 하자.",
+    "이 세션은 마무리 하기로 했으니 여기서 끝내자",
+    "알겠어. 그럼 좀있다 다시 보자 이제 이 세션 끝낸다.",
+    "이 세션 종료할게",
+    "이 세션 종료하자",
+    "세션 새로 열게 여기서 마무리하자",
+]
+
+# 일을 시키는 말이거나 마무리를 묻는 질문 — 마무리 선언이 아니다(2026-09-25 리뷰 D).
+_NOT_CLOSINGS = [
+    "테스트 끝내고 커밋해줘",
+    "서버 종료하고 다시 띄워줘",
+    "이거 끝내고 배포까지 가자",
+    "컨테이너 종료하지 마",
+    "프로세스 종료하고 로그 보여줘",
+    "그럼 이제 이 세션 마무리 완료 된거야?",
+    "혹시 이미 마무리하자~에 마무리 작업이 정의되어 있지 않아?",
+]
+
+
+def test_real_closing_phrases_are_still_caught():
+    hook = _load_hook()
+    for text in _REAL_CLOSINGS:
+        assert hook._is_closing_signal(text), text
+
+
+def test_work_instructions_and_questions_are_not_closing():
+    """'끝내고'·'종료하'가 일 시키는 말에 흔히 들어가 멈출 때마다 막히던 오탐."""
+    hook = _load_hook()
+    for text in _NOT_CLOSINGS:
+        assert not hook._is_closing_signal(text), text
+
+
+def test_hook_stays_silent_after_a_work_instruction(tmp_path):
+    """작업 지시를 마친 턴에서 막지 않는다(리뷰 D의 closing_false_block 재현)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    transcript = _write_transcript(tmp_path, "테스트 끝내고 커밋해줘", started)
+
+    result = _run_hook(home, _payload(tmp_path, home, transcript))
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
 def test_hook_stays_silent_when_closing_phrase_is_inside_a_long_pasted_message(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
@@ -477,3 +533,109 @@ def test_hook_counts_an_unstamped_line_rather_than_blocking_forever(tmp_path):
     result = _run_hook(home, _payload_for(tmp_path, transcript, "master-post"))
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "", result.stdout
+
+
+# --- 이어 연 긴 세션 ---------------------------------------------------------
+
+
+def _write_rows(tmp_path: Path, rows: list[tuple[datetime, str]]) -> Path:
+    path = tmp_path / "transcript.jsonl"
+    path.write_text("\n".join(json.dumps({
+        "type": "user",
+        "timestamp": t.isoformat().replace("+00:00", "Z"),
+        "message": {"role": "user", "content": text},
+    }, ensure_ascii=False) for t, text in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_resumed_session_needs_a_next_line_after_the_previous_closing(tmp_path):
+    """--resume으로 이어 연 세션은 같은 대화 기록에 이어 적힌다. 며칠 전 마무리 때
+    남긴 [다음]이 오늘의 마무리를 통과시키면 안 된다(리뷰 D resumed_span)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    첫날 = datetime(2026, 7, 25, 0, 0, tzinfo=timezone.utc)      # 09:00 KST
+    _make_task(home, "proj-a", "namu-1",
+               "# log\n[다음] 2026-07-25 09:40:00 test · 첫날 마무리 때 남긴 줄\n"
+               "[단계] 2026-07-27 10:10:00 test · 오늘 한 일\n")
+    transcript = _write_rows(tmp_path, [
+        (첫날, "작업 시작하자"),
+        (첫날 + timedelta(minutes=30), "마무리해"),                 # 09:30 KST
+        (첫날 + timedelta(days=2, hours=1), "이어서 하자"),          # 07-27 10:00 KST
+        (첫날 + timedelta(days=2, hours=1, minutes=30), "마무리해"),
+    ])
+
+    result = _run_hook(home, _payload(tmp_path, home, transcript))
+    out = json.loads(result.stdout)
+    assert out["decision"] == "block"
+
+
+def test_resumed_session_passes_with_a_next_line_after_the_previous_closing(tmp_path):
+    """대조군 — 앞선 마무리 뒤에 새 [다음]을 남겼으면 통과한다."""
+    home = tmp_path / "home"
+    home.mkdir()
+    첫날 = datetime(2026, 7, 25, 0, 0, tzinfo=timezone.utc)
+    _make_task(home, "proj-a", "namu-1",
+               "# log\n[다음] 2026-07-25 09:40:00 test · 첫날 마무리 때 남긴 줄\n"
+               "[다음] 2026-07-27 10:20:00 test · 오늘 남긴 줄\n")
+    transcript = _write_rows(tmp_path, [
+        (첫날, "작업 시작하자"),
+        (첫날 + timedelta(minutes=30), "마무리해"),
+        (첫날 + timedelta(days=2, hours=1), "이어서 하자"),
+        (첫날 + timedelta(days=2, hours=1, minutes=30), "마무리해"),
+    ])
+
+    result = _run_hook(home, _payload(tmp_path, home, transcript))
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_repeated_closing_accepts_the_line_left_in_reply_to_the_first(tmp_path):
+    """마무리를 2분 간격으로 거듭 말한 경우(실제 기록에 있다) — 첫 선언에 답해 남긴
+    [다음]을 인정해야 한다. 그 사이에 한 일은 그 답뿐이다."""
+    home = tmp_path / "home"
+    home.mkdir()
+    시작 = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)            # 09:00 KST
+    _make_task(home, "proj-a", "namu-1",
+               "# log\n[다음] 2026-07-27 09:31:00 test · 첫 선언에 답해 남긴 줄\n")
+    transcript = _write_rows(tmp_path, [
+        (시작, "작업 시작하자"),
+        (시작 + timedelta(minutes=30), "세션 마무리해줘"),
+        (시작 + timedelta(minutes=32), "세션 마무리해줘"),
+    ])
+
+    result = _run_hook(home, _payload(tmp_path, home, transcript))
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_hook_feedback_is_not_taken_as_the_user_resuming_work(tmp_path):
+    """앞선 마무리를 이 훅이 막으면 "Stop hook feedback" 글이 사용자 자리(isMeta)에
+    들어간다. 그것을 '일을 다시 시작한 말'로 집으면 기준이 마무리 직후로 당겨져,
+    그때 남긴 옛 [다음]이 나흘 뒤의 마무리를 통과시킨다(최종 검토 재현)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    _make_task(home, "proj-a", "namu-1",
+               "# log\n[다음] 2026-09-20 11:01:00 test · 막힌 뒤 남긴 줄\n"
+               "[단계] 2026-09-24 10:30:00 test · 나흘 뒤 한 일\n")
+    rows = [
+        {"type": "user", "timestamp": "2026-09-20T01:00:00Z",
+         "message": {"role": "user", "content": "작업 시작하자"}},
+        {"type": "user", "timestamp": "2026-09-20T02:00:00Z",
+         "message": {"role": "user", "content": "마무리하자"}},
+        {"type": "user", "timestamp": "2026-09-20T02:00:05Z", "isMeta": True,
+         "message": {"role": "user", "content": "Stop hook feedback:\n⛔ 마무리 전 확인"}},
+        {"type": "user", "timestamp": "2026-09-24T01:00:00Z",
+         "message": {"role": "user", "content": "이어서 테스트 고쳐줘"}},
+        {"type": "user", "timestamp": "2026-09-24T03:00:00Z",
+         "message": {"role": "user", "content": "마무리하자"}},
+    ]
+    path = tmp_path / "transcript.jsonl"
+    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n",
+                    encoding="utf-8")
+
+    hook = _load_hook()
+    import config as cfg
+    assert hook._previous_closing_ts(rows, cfg) == "2026-09-24 10:00:00"
+
+    result = _run_hook(home, _payload(tmp_path, home, path))
+    assert json.loads(result.stdout)["decision"] == "block"

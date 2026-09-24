@@ -19,7 +19,7 @@ def _make_yaml(path: Path, n: int) -> None:
         for i in range(n):
             f.write(
                 f"---\nid: FAKE{i:04d}\ntask: t{i}\noutcome: success\n"
-                f"reason: r{i}\ntask_type: other\ntimestamp: 2025-01-01T00:00:00+00:00\n"
+                f"reason: r{i}\ntask_type: other\ntimestamp: '2025-01-01T00:00:00+00:00'\n"
                 f"machine: test\nverified_by: human\ntags: []\n"
             )
 

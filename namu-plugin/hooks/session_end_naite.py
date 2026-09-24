@@ -71,10 +71,14 @@ def 재기(기록_파일, 세션_id, 끝난_이유):
         session_id=세션_id,
         utterances=[{"at": 시각, "text": 글} for 시각, 글 in 세션["발화"]],
         interrupts=list(세션["중단"]),
+        # denial_kinds가 있으면 measure가 거기서 다시 가른다 — 이 값은 참고용이다.
         denials=list(세션["거절"]),
         project=naite.방이름(세션),
         title=naite.세션이름(세션),
         end_reason=끝난_이유,
+        # 종류를 가리지 않은 원본 — 자동 모드가 막은 것까지. 세지 않고 남기기만 한다.
+        denial_kinds=[{"at": 시각, "kind": 종류, "tool": 도구}
+                      for 시각, 종류, 도구 in 세션.get("거절_표지", [])],
     )
 
 

@@ -110,7 +110,7 @@ def test_rebuild_defaults_missing_via_to_none(monkeypatch, tmp_path):
         f.write(
             "---\nid: OLD0001\ntask: old task\noutcome: success\n"
             "reason: old reason\ntask_type: other\n"
-            "timestamp: 2025-01-01T00:00:00+00:00\n"
+            "timestamp: '2025-01-01T00:00:00+00:00'\n"
             "machine: test\nverified_by: human\ntags: []\nkind: lesson\n"
         )
 

@@ -1,9 +1,13 @@
-"""profile.yaml 스토어 — 2그릇 메모리(namu-49)의 두 번째 그릇.
+"""profile.yaml 스토어 — 개인 사실 그릇(namu-49에서 두 번째 그릇으로 생겼다. 지금
+그릇 목록은 `config.BOWLS`가 정한다).
 
 learnings.yaml(교훈/대화기록)과 달리 profile.yaml은 사실·선호(fact)만 담는다.
-작은 데이터라 SQLite 캐시 없이 통째 로딩한다. append-only + supersedes 포인터로
-정정을 표현한다(수정·삭제 금지 — db.py의 learnings와 같은 원칙).
+원본은 이 파일이고 통째 로딩한다 — 검색 색인(`db`의 `bowl_profile` 표)은 이 원본에서
+다시 만드는 캐시일 뿐이다(fts5-memo-tasks-index 이후). append-only + supersedes
+포인터로 정정을 표현한다(수정·삭제 금지 — db.py의 learnings와 같은 원칙).
 """
+import re
+
 import yaml
 from ulid import ULID
 
@@ -94,12 +98,81 @@ def layers(doc: dict) -> tuple[str, str, str]:
     return str(summary), str(reason), str(body)
 
 
-def load_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:
+# 문서 경계 줄. record_fact는 언제나 `---` 한 줄 뒤에 문서를 붙이고, safe_dump는 여러 줄
+# 값을 들여쓰므로 본문 안에서 이 줄이 맨 앞에 설 일이 없다.
+_DOC_SEPARATOR = re.compile(r"^---[ \t]*$", re.MULTILINE)
+
+
+def _load(paths: "cfg.DataPaths | None" = None) -> tuple[list[dict], list[str]]:
+    """(읽은 항목들, 건너뛴 문제 목록). 읽는 쪽은 `load_all`/`active`/`problems`를 쓴다.
+
+    ## 왜 예외를 밖으로 내지 않는가 (2026-09-25 검토 실측)
+
+    문서 하나가 깨지거나(따옴표·괄호가 안 닫힘) 사전이 아닌 문서(목록 등)가 끼면
+    예전에는 예외가 그대로 올라가 **`namu_recall` 전체가 실패**했다 — 쪽지·교훈·열린
+    작업까지 한꺼번에 안 보인다. git 병합이나 손 편집으로 충분히 생길 수 있는 일이다.
+    쪽지 그릇(`memo.load_all`)은 같은 상황을 빈 목록으로 흡수한다.
+
+    다만 쪽지처럼 **말없이 삼키지는 않는다**. 개인 사실은 "상시" 재알림처럼 매번
+    기대는 기억이라, 하나가 조용히 빠지면 AI가 그 사실을 모른 채 일하게 된다 — 그래서
+    건너뛴 것을 문제 목록으로 돌려주고 `namu_recall`이 `warnings`에 싣는다.
+
+    성한 파일은 예전과 똑같이 한 번에 읽는다. 깨졌을 때만 `---` 경계로 잘라 문서마다
+    따로 읽어, 깨진 문서 하나만 빼고 나머지는 살린다.
+    """
     p = paths or cfg.data_paths_for()
     yaml_path = p.profile_yaml
-    if not yaml_path.exists():
-        return []
-    return [d for d in yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")) if d]
+    try:
+        raw = yaml_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], []
+    except OSError as exc:
+        return [], [f"개인 사실 파일을 읽지 못했습니다({yaml_path}): {exc}"]
+
+    problems: list[str] = []
+    try:
+        docs = list(yaml.safe_load_all(raw))
+    except yaml.YAMLError:
+        docs = []
+        for number, chunk in enumerate(_DOC_SEPARATOR.split(raw)):
+            if not chunk.strip():
+                continue
+            try:
+                docs.append(yaml.safe_load(chunk))
+            except yaml.YAMLError as exc:
+                where = getattr(exc, "problem_mark", None)
+                line = f" {where.line + 1}째 줄 근처" if where is not None else ""
+                problems.append(
+                    f"개인 사실 파일({yaml_path.name})의 {number}번째 문서가 깨져 건너뛰었습니다"
+                    f"({type(exc).__name__}{line}) — 파일을 열어 고쳐 주세요."
+                )
+
+    result: list[dict] = []
+    skipped_non_dict = 0
+    for doc in docs:
+        if not doc:
+            continue
+        if isinstance(doc, dict):
+            result.append(doc)
+        else:
+            skipped_non_dict += 1
+    if skipped_non_dict:
+        problems.append(
+            f"개인 사실 파일({yaml_path.name})에 항목 모양이 아닌 문서 {skipped_non_dict}개가 "
+            "있어 건너뛰었습니다(목록·글자 한 줄 등) — 파일을 열어 고쳐 주세요."
+        )
+    return result, problems
+
+
+def load_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:
+    """읽을 수 있는 항목 전부(적힌 순서). 깨진 문서는 건너뛴다 — 무엇을 건너뛰었는지는
+    `problems`가 말한다."""
+    return _load(paths)[0]
+
+
+def problems(paths: "cfg.DataPaths | None" = None) -> list[str]:
+    """개인 사실 파일에서 읽지 못하고 건너뛴 것들(사람에게 보일 문장). 성하면 빈 목록."""
+    return _load(paths)[1]
 
 
 def active(paths: "cfg.DataPaths | None" = None) -> list[dict]:

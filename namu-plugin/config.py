@@ -26,44 +26,22 @@ load_dotenv(BASE_DIR / ".env")
 # 구조적으로 성립하지 않는다.
 NAMU_DATA_ROOT = Path.home() / ".namu"
 
-# DB
-DB_PATH = BASE_DIR / "db" / "namu.sqlite"
-
-# 어댑터 우선순위 (낮을수록 먼저 선택)
-# AdapterType.priority 속성으로 자동 결정되므로 여기선 활성화 여부만 관리
-ENABLED_ADAPTERS: list[str] = [
-    # "ollama",              # 로컬 모델 (priority 1 — 최우선)
-    "claude-subscription",   # 구독 계정 (priority 2)
-    "claude-api",            # Claude API (priority 3)
-    # "gpt-api",             # GPT API   (priority 3)
-    "gemini-api",            # Gemini API (priority 5 — 최저)
-]
-
-# Claude API
-CLAUDE_API_KEY: str = ""       # 환경변수 ANTHROPIC_API_KEY 권장
-CLAUDE_DEFAULT_MODEL: str = "claude-sonnet-4-6"
-
-# OpenAI API
-OPENAI_API_KEY: str = ""       # 환경변수 OPENAI_API_KEY 권장
-OPENAI_DEFAULT_MODEL: str = "gpt-4o"
-
-# Gemini API
-GEMINI_API_KEY: str = ""       # 환경변수 GEMINI_API_KEY 권장
-GEMINI_DEFAULT_MODEL: str = "gemini-2.5-flash"
-
-# Ollama
-OLLAMA_HOST: str = "http://localhost:11434"
-OLLAMA_DEFAULT_MODEL: str = "llama3"
+# (2026-09-25 리뷰 B) 옛 CLI 시절 상수(DB_PATH=namu-plugin/db/namu.sqlite, 어댑터
+# 우선순위·Claude/OpenAI/Gemini/Ollama 키와 모델, LEARNINGS_PATH=learnings.md,
+# GITHUB_SYNC_ENABLED/GITHUB_REPO)를 걷어냈다. 이 repo와 이 코드를 vendor로 얹은
+# namu-cloud-routing 전체에서 읽는 곳이 0이었고, 특히 DB_PATH·LEARNINGS_PATH는
+# 실제 경로(NAMU_DB_PATH·LEARNINGS_YAML_PATH)와 이름이 비슷해 잘못 집기 쉬웠다.
+# 동기화는 memory_sync가, 워커 선택은 namu_workers.yaml이 맡는다.
 
 # 학습 기억
-LEARNINGS_PATH = NAMU_DATA_ROOT / "memory" / "learnings.md"
 # namu-35: "개발 모드/설치 모드" 구분(#32의 "제품지식"/"개인전역지식" 파일명 분기)을
 # 폐지 — 메모리 풀이 ~/.namu 하나로 통합됐으므로 파일명은 항상 learnings.yaml이다.
 LEARNINGS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "learnings.yaml"
 
-# 프로필(사실·선호) — 2그릇 메모리(namu-49) 중 profile 그릇. SQLite 캐시 없이
-# 통째 로딩하는 작은 append-only yaml이다. learnings.yaml과 같은 memory/ 폴더에
-# 함께 두되 파일은 분리한다(성격이 다른 지식: 사실 vs 교훈/대화기록).
+# 프로필(사실·선호) — 2그릇 메모리(namu-49) 중 profile 그릇. 작은 append-only
+# yaml이며, 검색은 다른 그릇과 같이 SQLite 색인(`bowl_profile`)을 탄다
+# (fts5-memo-tasks-index 이후 — 그 전에는 색인 없이 통째 로딩했다). learnings.yaml과
+# 같은 memory/ 폴더에 함께 두되 파일은 분리한다(성격이 다른 지식: 사실 vs 교훈).
 PROFILE_YAML_PATH = NAMU_DATA_ROOT / "memory" / "profile.yaml"
 
 # 이 태그가 붙은 profile 사실은 세션 시작 1회가 아니라 **사용자 입력마다** 다시
@@ -129,9 +107,14 @@ SESSIONS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "sessions.yaml"
 
 @dataclass(frozen=True)
 class DataPaths:
-    """메모리 코어가 실제로 읽고 쓰는 3경로를 담는 값 객체 (namu-53 이음새).
+    """메모리 코어가 실제로 읽고 쓰는 경로들(교훈·사실·db, 뒤에 붙은 쪽지·첨부 기록·
+    세션 측정)을 담는 값 객체 (namu-53 이음새).
 
-    root 하나만 담고 property로 파생하는 형태가 아니라 3경로를 직접 담는다 —
+    **작업일지(tasks)는 여기 없다** — 그 풀은 늘 `Path.home()/.namu/tasks`이고
+    (`task_resolve.tasks_root_for`), 이 값 객체로 옮길 수 없다. 그래서 db의 작업일지
+    색인도 이 값과 상관없이 HOME 풀을 읽는다(db.search_bowl 참고).
+
+    root 하나만 담고 property로 파생하는 형태가 아니라 경로를 직접 담는다 —
     `data_paths_for()`(root 미지정)가 재계산 없이 기존 모듈 상수를 그대로 반환해야
     하기 때문이다(테스트가 `cfg.NAMU_DB_PATH` 등을 monkeypatch하는 것과 호환).
     """
@@ -198,12 +181,11 @@ class Bowl:
     레지스트리는 경로 상수와 완전히 독립적으로 유지한다.
 
     mutable/cached/web_exposed는 이번 3단계(union 라인 파생)에서 직접 쓰이지 않는
-    필드도 있다 — 장식이 아니라 다음 단계(namu-56, 4단계) 예약이다. 4단계에서
-    `mutable=True, merge="file"`인 memo 그릇이 추가되는데, memory_sync.py의 union 라인
+    필드도 있다 — 장식이 아니라 다음 단계(namu-56, 4단계) 예약이었다. 4단계에서
+    `mutable=True, merge="file"`인 memo 그릇이 추가됐고, memory_sync.py의 union 라인
     파생 함수가 `merge=="union" and not mutable`로 필터링하므로 "mutable이면 파일
     전체가 계속 바뀌는 그릇이라 줄 단위 union 병합 라인을 만들지 않는다"는 규칙이
-    이 필드 하나로 실제 동작한다(지금은 3그릇 모두 mutable=False라 필터가 전부 통과할
-    뿐, 게이트 로직 자체는 이미 살아있다).
+    이 필드 하나로 실제 동작한다(memo가 그 게이트에 걸리는 첫 그릇이다).
     """
 
     name: str
@@ -673,13 +655,21 @@ def suggest_bowl(field_names: "Iterable[str]") -> "str | None":
 
 # 머신 식별자 (.env의 NAMU_MACHINE에서 주입)
 # 해석 규칙:
-#   1. NAMU_MACHINE 환경변수가 있고 공백 제거 후 비지 않으면 그 값(strip만, 대소문자 유지)
-#   2. 없거나 빈 값이면 platform.node()(호스트명)를 소문자화+strip한 값
+#   1. NAMU_MACHINE 환경변수가 있으면 기기 이름 규칙으로 다듬은 값(대소문자 유지)
+#   2. 없거나 다듬고 나서 빈 값이면 platform.node()(호스트명)를 소문자화해 다듬은 값
 #   3. 그것도 비면 "unknown"
+#
+# 규칙(`task_resolve.MACHINE_NAME_RE`: ASCII 영숫자·`.`·`_`·`-` 1~64자)은 task_resolve에
+# 한 벌만 있다 — 이 값은 log.md 줄의 machine 칸(파싱)과 책갈피 파일 이름(`.pin.<기기>`)
+# 양쪽에 그대로 쓰이는데, 예전에는 여기서 아무 검사도 안 해 `'집 컴'` 같은 값이 들어오면
+# [완료] 줄이 적힌 **뒤에** 책갈피 쪽에서 ValueError가 났다(2026-09-25 리뷰 B). 입구에서
+# 한 번 다듬으면 뒤의 두 소비자가 같은 값을 믿을 수 있다. 실사용 이름(hp·samsung·web·
+# 컨테이너 id)은 규칙 안이라 바뀌지 않는다.
 def _resolve_machine(env_value: str | None) -> str:
-    if env_value is not None and env_value.strip():
-        return env_value.strip()
-    hostname = platform.node().strip().lower()
+    named = task_resolve.normalize_machine_name(env_value)
+    if named:
+        return named
+    hostname = task_resolve.normalize_machine_name(platform.node().lower())
     if hostname:
         return hostname
     return "unknown"
@@ -697,8 +687,11 @@ NAMU_MACHINE: str = _resolve_machine(os.getenv("NAMU_MACHINE"))
 # (namu-57 웹 실측에서 실측 재현). 기존 로그 40여 개는 전부 한국시각으로 적혀 있으므로,
 # 모든 호스트가 같은 기준 시간대로 적게 하면 옛 기록과 새 기록이 그대로 비교 가능해진다.
 #
-# 학습/사실 그릇(db.py)은 처음부터 UTC aware ISO(`+00:00`)라 이 문제가 없다 — 여기서
-# 고치는 대상은 "사람이 읽는 벽시계 문자열"을 쓰는 tasks 로그뿐이다.
+# 다른 그릇(교훈·사실·쪽지·첨부 기록)은 aware ISO(`...T12:00:00+09:00`)로 적히고,
+# namu-71부터 이들도 모두 cfg.now()로 찍는다(그 전의 교훈은 UTC `+00:00`이었다).
+# 저장 형식은 여전히 둘로 갈린다 — tasks 로그는 공백 구분·시간대 없음, 나머지는
+# `T` 구분·시간대 있음. since/until 경계값은 db가 그릇마다 그 형식으로 맞춘다
+# (db._iso_bound / task_resolve._normalize_bound).
 NAMU_TZ: str = (os.getenv("NAMU_TZ") or "").strip() or "Asia/Seoul"
 
 
@@ -751,10 +744,6 @@ def now() -> datetime:
 def tasks_dir_for(project_dir: str | os.PathLike | None = None) -> Path:
     base = Path(project_dir) if project_dir else Path.cwd()
     return task_resolve.tasks_root_for(base)
-
-# GitHub 동기화 (2단계 이후)
-GITHUB_SYNC_ENABLED: bool = False
-GITHUB_REPO: str = ""
 
 
 # 원격 MCP HTTP 서버 설정 (namu-44, docs/remote_mcp_design.md v4)

@@ -212,8 +212,10 @@ def status_of(ticket: "dict | None", now: "datetime | None" = None) -> str:
     """
     if ticket is None:
         return STATUS_MISSING
-    if ticket.get("used_at"):
+    if ticket.get("used_at") and ticket.get("result") is not None:
         return STATUS_DONE
+    # used_at만 찍히고 결과가 없으면 "선점해 저장하는 중"이다(claim). 아직 올라간 게
+    # 아니므로 '완료'라고 답하지 않는다 — 저장이 실패하면 선점이 풀려 다시 대기중이 된다.
     moment = now or _now()
     try:
         expires = datetime.fromisoformat(str(ticket.get("expires_at")))
@@ -223,6 +225,46 @@ def status_of(ticket: "dict | None", now: "datetime | None" = None) -> str:
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
     return STATUS_EXPIRED if moment >= expires else STATUS_WAITING
+
+
+# 선점이 이만큼 지나도록 결과가 안 붙었으면 그 요청은 죽은 것으로 본다(서버가 저장
+# 도중 꺼진 경우). 저장은 git push·GitHub API 한 번이라 길어야 수십 초다 — 그보다
+# 넉넉히 잡아, 살아 있는 저장을 가로채지 않으면서도 링크가 영영 막히지 않게 한다.
+CLAIM_STALE_SEC = 10 * 60
+
+
+def claim(conn: sqlite3.Connection, ticket_id: str) -> bool:
+    """올리기 티켓을 **이 요청이 쓰겠다고 선점**한다. 이겼으면 True.
+
+    2026-09 검수: 같은 링크로 두 요청이 동시에 들어오면 둘 다 "아직 안 씀"을 읽고
+    둘 다 저장해 200을 받았다(1회용이 아니었다). 읽고 나서 쓰는 두 걸음 사이가
+    틈이었으므로, 조건부 UPDATE 한 걸음으로 판정한다 — sqlite가 한 줄을 한 번만
+    바꾸므로 rowcount==1인 쪽 하나만 이긴다.
+
+    선점은 `used_at`에 시각만 찍고 `result_json`은 비워 둔다. 저장이 실패하면
+    `release_claim`이 되돌린다(설계서 7절 — 실패한 시도로 링크를 태우지 않는다).
+    """
+    ensure_table(conn)
+    now = _now()
+    stale_before = (now - timedelta(seconds=CLAIM_STALE_SEC)).isoformat()
+    cur = conn.execute(
+        "UPDATE tickets SET used_at = ? WHERE ticket_id = ? AND kind = ? AND ("
+        "used_at IS NULL OR (result_json IS NULL AND used_at < ?))",
+        (now.isoformat(), ticket_id, KIND_UPLOAD, stale_before),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def release_claim(conn: sqlite3.Connection, ticket_id: str) -> None:
+    """저장이 실패했을 때 선점을 푼다 — 회원이 같은 링크로 다시 올릴 수 있게.
+    결과가 이미 붙은(=정말 쓴) 티켓은 건드리지 않는다."""
+    ensure_table(conn)
+    conn.execute(
+        "UPDATE tickets SET used_at = NULL WHERE ticket_id = ? AND result_json IS NULL",
+        (ticket_id,),
+    )
+    conn.commit()
 
 
 def mark_used(conn: sqlite3.Connection, ticket_id: str, result: dict) -> None:

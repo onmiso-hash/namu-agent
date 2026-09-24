@@ -72,6 +72,9 @@ if ! git config --global --get user.name > /dev/null 2>&1; then
   echo "[namu-entrypoint] git identity: user.name 미설정 — 기본값 적용(${GIT_NAME})"
 fi
 
+# exit 1은 **로컬 wiring 실패**일 때만 나온다(2026-09). 원격에 닿지 못한 것(fetch·병합·
+# push)은 wrapper가 exit 0으로 넘기고 경고를 ~/.namu/db/startup_sync.json에 남긴다 —
+# 예전에는 결과에 "실패"가 섞이기만 해도 exit 1이라, GitHub 불통이 곧 재시작 루프였다.
 echo "[namu-entrypoint] sync wiring (.namu_sync 마커 / .gitattributes / remote origin)"
 if ! uv run --script "${SYNC_SETUP_SCRIPT}" "${NAMU_SYNC_REMOTE}"; then
   echo "[namu-entrypoint] ERROR: sync wiring 실패 (위 memory_sync.sync_setup 출력 참조)" >&2

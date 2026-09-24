@@ -56,7 +56,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/closing_guard.py"
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/closing_guard.py",
+            "timeout": 90
           }
         ]
       }

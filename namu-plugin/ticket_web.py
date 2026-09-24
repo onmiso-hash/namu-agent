@@ -238,12 +238,30 @@ def _upload_page_html(hooks: _Hooks, ticket: dict) -> str:
   var result = document.getElementById('result');
   var busy = false;
 
-  function say(htmlText, tone) {{
+  // 결과 칸은 HTML 문자열을 끼워 그리지 않는다(2026-09 검수 — 저장된 XSS). 응답
+  // JSON의 path·detail·error에는 회원이 정한 파일 이름과 저장소가 돌려준 오류 문장이
+  // 그대로 실린다. 그것을 HTML로 끼우면 `<img onerror=…>` 같은 이름이 이 화면에서
+  // 실행된다. 그래서 줄마다 요소를 만들고 글자는 textContent로만 넣는다.
+  function say(title, lines, tone) {{
     var color = tone === 'bad' ? '#b00020' : '#1a7f37';
     var tint = tone === 'bad' ? 'rgba(176,0,32,0.12)' : 'rgba(26,127,55,0.12)';
-    result.innerHTML = '<p role="status" style="border-left:5px solid ' + color +
-      ';background:' + tint + ';padding:12px 14px;margin:16px 0;' +
-      'border-radius:0 6px 6px 0;">' + htmlText + '</p>';
+    var box = document.createElement('p');
+    box.setAttribute('role', 'status');
+    box.style.cssText = 'border-left:5px solid ' + color + ';background:' + tint +
+      ';padding:12px 14px;margin:16px 0;border-radius:0 6px 6px 0;';
+    var head = document.createElement('b');
+    head.textContent = title;
+    box.appendChild(head);
+    (lines || []).forEach(function (line) {{
+      if (!line || !line.text) return;
+      box.appendChild(document.createElement('br'));
+      var span = document.createElement('span');
+      if (line.muted) span.style.color = '#555';
+      span.textContent = line.text;
+      box.appendChild(span);
+    }});
+    while (result.firstChild) result.removeChild(result.firstChild);
+    result.appendChild(box);
   }}
 
   function fmt(n) {{
@@ -255,7 +273,7 @@ def _upload_page_html(hooks: _Hooks, ticket: dict) -> str:
   function send(file) {{
     if (busy || !file) return;
     busy = true;
-    result.innerHTML = '';
+    while (result.firstChild) result.removeChild(result.firstChild);
     barBox.style.display = 'block';
     bar.style.width = '0%';
     barText.textContent = '보내는 중… 0%';
@@ -281,20 +299,21 @@ def _upload_page_html(hooks: _Hooks, ticket: dict) -> str:
         bar.style.width = '100%';
         barText.textContent = '끝났습니다';
         var isNew = data.status === '새 판';
-        say('<b>' + (isNew ? '새 판으로 저장했습니다.' : '저장했습니다.') +
-            '</b><br>' + (data.path || '') + ' · ' + fmt(data.bytes || 0) +
-            '<br><span style="color:#555">이 창은 닫으셔도 됩니다.</span>', 'good');
+        say(isNew ? '새 판으로 저장했습니다.' : '저장했습니다.', [
+          {{text: String(data.path || '') + ' · ' + fmt(data.bytes || 0)}},
+          {{text: '이 창은 닫으셔도 됩니다.', muted: true}}
+        ], 'good');
         drop.style.display = 'none';
       }} else {{
         barBox.style.display = 'none';
-        say('<b>' + (data.error || '올리지 못했습니다') + '</b><br>' +
-            (data.detail || ''), 'bad');
+        say(String(data.error || '올리지 못했습니다'),
+            [{{text: String(data.detail || '')}}], 'bad');
       }}
     }};
     xhr.onerror = function () {{
       busy = false;
       barBox.style.display = 'none';
-      say('<b>연결이 끊겼습니다</b><br>잠시 뒤 다시 시도해 주세요.', 'bad');
+      say('연결이 끊겼습니다', [{{text: '잠시 뒤 다시 시도해 주세요.'}}], 'bad');
     }};
     xhr.send(form);
   }}
@@ -339,6 +358,19 @@ def _build_upload_get(hooks: _Hooks):
     return upload_page
 
 
+# multipart 경계·칸 머리글이 파일 몸통에 더하는 크기의 여유. 실제로는 수백 바이트지만
+# 파일 이름이 길거나 칸이 몇 개 더 붙어도 정상 파일을 413으로 막지 않도록 넉넉히 둔다.
+_MULTIPART_SLACK_BYTES = 64 * 1024
+
+
+def _declared_length(request: Request) -> "int | None":
+    """요청이 밝힌 몸통 크기. 없거나 숫자가 아니면 None(판단을 읽은 뒤로 미룬다)."""
+    raw = (request.headers.get("content-length") or "").strip()
+    if not raw.isdigit():
+        return None
+    return int(raw)
+
+
 def _build_upload_post(hooks: _Hooks):
     async def upload_receive(request: Request) -> Response:
         ticket_id = request.path_params["ticket_id"]
@@ -348,6 +380,19 @@ def _build_upload_post(hooks: _Hooks):
             )
             if failure is not None:
                 return failure
+
+            limit = hooks.max_bytes()
+            # 몸통을 읽기 **전에** 크기를 본다(2026-09). 아래 form()은 몸통 전체를
+            # 받아 임시 파일로 흘린 뒤에야 돌아오므로, 상한 검사를 그 뒤에만 두면
+            # 1GB를 보내도 다 받고 나서야 거절한다(디스크·시간 낭비, 쉬운 부하 공격).
+            # Content-Length는 multipart 경계·머리글만큼 파일보다 크므로 여유를 둔다.
+            # 머리글이 없거나(청크 전송) 거짓이면 아래 읽은 뒤 검사가 마지막 문이다.
+            declared = _declared_length(request)
+            if declared is not None and declared > limit + _MULTIPART_SLACK_BYTES:
+                return _fail(
+                    hooks, request, 413, "파일이 너무 큽니다",
+                    f"{declared:,}바이트를 보내려 했지만 지금 상한은 {limit:,}바이트입니다.",
+                )
 
             form = await request.form()
             try:
@@ -362,7 +407,6 @@ def _build_upload_post(hooks: _Hooks):
                 # 해석기가 임시로 흘려 둔 것을 여기서 지운다(위 모듈 설명 참고).
                 await form.close()
 
-            limit = hooks.max_bytes()
             if len(content) > limit:
                 return _fail(
                     hooks, request, 413, "파일이 너무 큽니다",
@@ -373,6 +417,16 @@ def _build_upload_post(hooks: _Hooks):
                 return _fail(
                     hooks, request, 400, "빈 파일입니다",
                     "내용이 없는 파일은 올리지 않습니다.",
+                )
+
+            # 1회용을 **먼저 선점**한다(2026-09 검수 — 같은 링크로 동시에 두 번 보내면
+            # 둘 다 "쓸 수 있음"을 보고 둘 다 저장해 200이었다). 조건부 UPDATE 한 줄이
+            # 선점이므로 두 요청 중 하나만 이긴다. 진 쪽은 "이미 쓴 링크"(409).
+            if not tickets.claim(conn, ticket_id):
+                return _fail(
+                    hooks, request, 409, "이미 쓴 링크입니다",
+                    "이 링크로는 이미 파일이 올라갔거나 지금 올라가는 중입니다. "
+                    "다시 올리려면 새 링크를 받아 주세요.",
                 )
 
             meta = dict(ticket.get("meta") or {})
@@ -388,7 +442,8 @@ def _build_upload_post(hooks: _Hooks):
                 )
             except Exception as exc:
                 # **티켓을 닫지 않는다**(설계서 7절). 실패한 시도로 링크를 태우면
-                # 회원이 브라우저로 이어 올릴 길이 함께 끊긴다.
+                # 회원이 브라우저로 이어 올릴 길이 함께 끊긴다 — 그래서 선점을 푼다.
+                tickets.release_claim(conn, ticket_id)
                 logger.warning(
                     "티켓(%s) 파일 저장 실패 — 티켓은 살려 둡니다: %s",
                     tickets.short(ticket_id), exc,
@@ -415,9 +470,18 @@ def content_disposition(name: str) -> str:
     `filename=`은 ASCII만 실을 수 있어 한글이 깨진다. 그래서 옛 브라우저용
     ASCII 대체 이름과, RFC 5987 형식(`filename*=UTF-8''…`)을 함께 적는다 —
     둘 다 이해하는 브라우저는 뒤엣것을 쓴다.
+
+    ASCII 대체 이름에서는 제어 문자(줄바꿈 포함)·비ASCII·`"`·역슬래시를 `_`로
+    바꾼다(2026-09 검수). 줄바꿈이 헤더 값에 그대로 실리면 응답 헤더를 쪼개는 데
+    쓰일 수 있고, `"`·역슬래시는 따옴표 문자열을 끝내 버린다. 뒤엣것(filename*)은
+    quote()가 전부 %XX로 바꾸므로 안전하다. 이름 입구(attach_local.normalize_name)도
+    이런 글자를 막지만, 이미 저장소에 있는 옛 이름이 이 길을 지날 수 있어 여기서도 막는다.
     """
-    tail = (name or "file").rsplit("/", 1)[-1]
-    ascii_fallback = tail.encode("ascii", "replace").decode("ascii").replace('"', "_")
+    tail = (name or "file").rsplit("/", 1)[-1] or "file"
+    ascii_fallback = "".join(
+        "_" if (ord(ch) < 0x20 or ord(ch) >= 0x7F or ch in '"\\') else ch
+        for ch in tail
+    )
     return (
         f'attachment; filename="{ascii_fallback}"; '
         f"filename*=UTF-8''{quote(tail, safe='')}"

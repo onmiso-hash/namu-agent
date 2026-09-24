@@ -190,21 +190,48 @@ def _note_suffix(alias) -> str:
     return f"({alias.note})" if alias.note else ""
 
 
+class _Problems(ValueError):
+    """검사 하나가 찾은 문제 **여러 개**를 한 예외로 실어 나른다.
+
+    `_run_all_checks`는 검사마다 예외 하나를 문제 하나로 셌다. 그런데 칸 검사 둘
+    (`_reject_foreign_fields`·`_check_required`)은 첫 칸에서 바로 던져서, 필수 칸 넷이
+    비어도 하나만 알렸다 — "한꺼번에 알린다"는 약속이 칸 단위에서 깨져 있었다
+    (2026-09-25 검토 실측). 그래서 두 검사는 걸린 칸을 모두 모아 이것으로 던지고,
+    `_run_all_checks`는 안의 목록을 풀어 번호를 매긴다. 직접 부르는 쪽에는 평범한
+    ValueError로 보이며 문구는 한 줄에 하나씩이다.
+    """
+
+    def __init__(self, items: list[str]):
+        self.items = list(items)
+        super().__init__("\n".join(self.items))
+
+
+def _raise_all(problems: list[str]) -> None:
+    if len(problems) == 1:
+        raise ValueError(problems[0])
+    if problems:
+        raise _Problems(problems)
+
+
 def _reject_foreign_fields(bowl: str, values: dict) -> None:
-    """그 그릇이 받지 않는 칸은 거절하고 갈 곳을 알려준다(설계 원칙 4)."""
+    """그 그릇이 받지 않는 칸은 거절하고 갈 곳을 알려준다(설계 원칙 4). 걸린 칸은
+    전부 모아서 알린다(`_Problems`)."""
     allowed = cfg.allowed_fields(bowl)
+    problems: list[str] = []
     for name in values:
         if name in allowed:
             continue
         elsewhere = tuple(b for b in cfg.bowls_accepting(name) if b != bowl)
         if elsewhere:
-            raise ValueError(
+            problems.append(
                 f"{cfg.bowl_label(bowl)}({bowl}) 그릇은 '{name}' 칸을 받지 않습니다 — "
                 f"이 내용은 {_bowl_list_ko(elsewhere)} 그릇에서 쓰는 칸입니다."
             )
-        raise ValueError(
-            f"'{name}' 칸을 받는 그릇이 없습니다 — 내용을 body(원문·경위)에 넣으세요."
-        )
+        else:
+            problems.append(
+                f"'{name}' 칸을 받는 그릇이 없습니다 — 내용을 body(원문·경위)에 넣으세요."
+            )
+    _raise_all(problems)
 
 
 def _first_sentence(desc: str) -> str:
@@ -214,16 +241,23 @@ def _first_sentence(desc: str) -> str:
 
 
 def _check_required(bowl: str, values: dict) -> None:
-    """필수 칸이 비면 거절한다. `생략` 한 단어는 채운 것으로 본다."""
+    """필수 칸이 비면 거절한다. `생략` 한 단어는 채운 것으로 본다. 빈 칸은 전부
+    모아서 알린다(`_Problems`).
+
+    문구가 `'{이름}' 칸이 필요합니다`인 이유: 칸 이름이 영어라 받침에 맞춰 이/가를
+    고를 수 없다('summary'이 필요합니다). '칸'을 붙이면 조사가 늘 '이'로 맞는다.
+    """
+    problems: list[str] = []
     for name in sorted(cfg.required_fields(bowl)):
         if not _is_blank(values.get(name)):
             continue
         field = cfg.field_by_name(name)
-        raise ValueError(
-            f"{cfg.bowl_label(bowl)}({bowl}) 기록에는 '{name}'이 필요합니다 — "
+        problems.append(
+            f"{cfg.bowl_label(bowl)}({bowl}) 기록에는 '{name}' 칸이 필요합니다 — "
             f"{_first_sentence(field.desc)}. 적을 게 정말 없으면 "
             f"'{cfg.OMITTED}' 한 단어를 넣으세요(예: {field.example})."
         )
+    _raise_all(problems)
 
 
 # `생략`으로 비울 수 없는 자리. 쪽지는 붙여둔 원문 자체가 본체라, body를 생략하면
@@ -650,6 +684,8 @@ def _run_all_checks(bowl: str, values: dict) -> None:
     ):
         try:
             check(bowl, values)
+        except _Problems as exc:
+            problems.extend(exc.items)
         except ValueError as exc:
             problems.append(str(exc))
 

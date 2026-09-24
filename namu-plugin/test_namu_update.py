@@ -206,3 +206,66 @@ def test_get_version_falls_back_to_claude_plugin_subdir(tmp_path):
     (nested / "plugin.json").write_text(json.dumps({"version": "3.2.1"}), encoding="utf-8")
 
     assert namu_update._get_version(str(install_path)) == "3.2.1"
+
+
+def test_update_agy_restores_old_version_when_install_fails(tmp_path, monkeypatch, capsys):
+    """agy는 지우고 나서 설치한다(install이 비파괴 병합이라). 설치가 실패하면 떠 둔
+    옛 판을 폴더 소스로 다시 설치해야 한다 — 안 그러면 플러그인이 없는 채로 끝난다."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    _write_agy_installed(tmp_path, "2.0.0")
+
+    본것 = {}
+
+    def 흉내(args, check=False):
+        결과 = MagicMock()
+        결과.returncode = 0
+        if args[:3] == ["agy", "plugin", "install"]:
+            if args[3].startswith("https://"):
+                결과.returncode = 1           # 원격 설치 실패
+            else:
+                # 되돌리는 설치 — 그 순간 떠 둔 폴더에 옛 판이 온전히 있어야 한다
+                본것["복구_소스"] = Path(args[3])
+                본것["복구_판"] = json.loads(
+                    (Path(args[3]) / "plugin.json").read_text(encoding="utf-8"))["version"]
+        return 결과
+
+    with patch("subprocess.run", side_effect=흉내) as mock_run, \
+            patch("namu_update.shutil.which", return_value=None):
+        namu_update.update_agy()
+
+    명령들 = [c[0][0] for c in mock_run.call_args_list]
+    assert 명령들[0] == ["agy", "plugin", "uninstall", "namu"]
+    assert 명령들[1][:3] == ["agy", "plugin", "install"]
+    assert 명령들[2][:3] == ["agy", "plugin", "install"]
+    assert 본것["복구_판"] == "2.0.0"
+    assert not 본것["복구_소스"].exists(), "되돌린 뒤에는 떠 둔 사본을 치워야 한다"
+    out, _ = capsys.readouterr()
+    assert "옛 판으로 되돌렸습니다" in out
+
+
+def test_update_agy_keeps_backup_when_restore_also_fails(tmp_path, monkeypatch, capsys):
+    """되돌리기까지 실패하면 떠 둔 사본이 유일한 사본이다 — 지우지 않고 자리를 알린다."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    _write_agy_installed(tmp_path, "2.0.0")
+
+    def 흉내(args, check=False):
+        결과 = MagicMock()
+        결과.returncode = 1 if args[:3] == ["agy", "plugin", "install"] else 0
+        return 결과
+
+    with patch("subprocess.run", side_effect=흉내) as mock_run, \
+            patch("namu_update.shutil.which", return_value=None):
+        namu_update.update_agy()
+
+    복구_소스 = Path(mock_run.call_args_list[2][0][0][3])
+    try:
+        assert (복구_소스 / "plugin.json").exists()
+        out, _ = capsys.readouterr()
+        assert str(복구_소스) in out
+    finally:
+        import shutil
+        shutil.rmtree(복구_소스.parent, ignore_errors=True)

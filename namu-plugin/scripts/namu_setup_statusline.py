@@ -18,6 +18,8 @@
 3. OS별 커맨드를 조립한다 — Windows는 `python -X utf8 <경로>`, 그 외는 `python3 <경로>`.
    경로 구분자는 Windows에서도 슬래시(`/`)로 정규화한다(호스트 공통).
 4. 호스트별 settings 파일을 읽어(없으면 `{}`) `statusLine` 키만 병합한다.
+   파일은 있는데 JSON으로 못 읽으면 **아무것도 쓰지 않고** 그 호스트를 실패로 알린다
+   (덮어쓰면 그 안의 훅·권한이 통째로 사라진다 — `load_settings` 참고).
    - claude: `~/.claude/settings.json`, 스키마 `{"type":"command","command":..,"padding":0}`
    - agy: `~/.gemini/antigravity-cli/settings.json`, 스키마
      `{"type":"","command":..,"enabled":true}`
@@ -318,13 +320,22 @@ def build_command(install_path: str) -> Optional[str]:
     return f"python3 {normalized}"
 
 
-def load_settings(settings_path: Path) -> dict:
+def load_settings(settings_path: Path) -> Optional[dict]:
+    """settings 파일을 읽는다. 파일이 없으면 `{}`, **있는데 못 읽으면 None**.
+
+    예전에는 못 읽어도 `{}`를 돌려줬고, 호출 측은 그 빈 설정에 statusLine 하나만
+    얹어 파일을 통째로 덮어썼다 — 쉼표 하나 빠진 settings.json이 훅·권한·환경변수를
+    전부 잃은 채 statusLine 한 줄짜리가 됐다(백업은 남지만 사용자는 무엇이 사라졌는지
+    모른다). 못 읽는 파일은 고칠 수 있는 사람이 사람뿐이므로 손대지 않고 알린다.
+    JSON으로는 읽혀도 객체(`{...}`)가 아니면 역시 못 읽은 것으로 본다.
+    """
     if not settings_path.exists():
         return {}
     try:
-        return json.loads(settings_path.read_text(encoding="utf-8"))
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
     except Exception:
-        return {}
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def backup_settings(settings_path: Path) -> Optional[Path]:
@@ -372,6 +383,15 @@ def setup_one(host: Host, force: bool) -> HostResult:
 
     settings_path = host.settings_path()
     settings = load_settings(settings_path)
+    if settings is None:
+        return HostResult(
+            "broken",
+            f"[{host.label}] [오류] 설정 파일을 읽을 수 없어 손대지 않았습니다: {settings_path}\n"
+            "  JSON 문법이 깨졌거나(쉼표·따옴표·괄호) 객체가 아닙니다. 이대로 덮어쓰면 "
+            "그 안의 훅·권한 설정이 모두 사라지므로 아무것도 쓰지 않았습니다.\n"
+            "  파일을 직접 고친 뒤 다시 실행하세요.",
+            False,
+        )
     existing = settings.get("statusLine")
 
     if isinstance(existing, dict) and STATUSLINE_MARKER not in (

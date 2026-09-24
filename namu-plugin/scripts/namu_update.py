@@ -4,7 +4,8 @@
 이 스크립트는 claude와 agy 호스트 모두를 지원하며,
 각 호스트의 플러그인을 자동으로 최신 버전으로 업데이트합니다.
 - claude: marketplace 캐시 갱신 후 plugin update 실행
-- agy: plugin uninstall 후 소스로부터 재설치(install) -> mcp_config.json 훅 교정(--heal)
+- agy: 설치본을 임시 폴더에 떠 두고 plugin uninstall 후 소스로부터 재설치(install)
+  -> 설치가 실패하면 떠 둔 옛 판을 다시 설치 -> mcp_config.json 훅 교정(--heal)
 
 업데이트 완료 후 자동으로 namu_setup_statusline.py를 호출하여 상태줄 경로를 갱신합니다.
 """
@@ -14,6 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -100,17 +102,49 @@ def update_agy() -> tuple[str, str, str, bool]:
     agy_cli = _resolve_cli("agy")
     had_failure = False
 
-    print("  - [agy] 기존 플러그인 제거 중...")
-    r1 = subprocess.run([agy_cli, "plugin", "uninstall", "namu"], check=False)
-    if r1.returncode != 0:
-        had_failure = True
-        print(f"  - [agy] 경고: 기존 플러그인 제거 실패 (exit {r1.returncode})")
+    # 순서가 uninstall -> install인 것은 agy의 `plugin install`이 비파괴 병합이라서다 —
+    # 새 판을 옛 판 위에 설치하면 소스에서 지운 파일이 설치본에 그대로 남는다
+    # (docs/deploy_design.md 함정 1). 그래서 먼저 지워야 하는데, 그러면 설치가 실패할
+    # 때(망 끊김·원격 오류) 플러그인이 아예 없는 상태로 끝난다. 그 구멍을 막으려고
+    # 지우기 전에 설치본을 임시 폴더에 떠 두고, 설치가 실패하면 그 폴더에서 다시
+    # 설치한다 — 폴더를 소스로 한 설치는 agy가 확실히 받는 경로다(`install target must
+    # be a directory`). 떠 두지 못했으면 지우지도 않는다.
+    backup_root = Path(tempfile.mkdtemp(prefix="namu-agy-backup-"))
+    backup_dir = backup_root / "namu"
+    try:
+        shutil.copytree(install_path, backup_dir)
+    except Exception as exc:
+        shutil.rmtree(backup_root, ignore_errors=True)
+        print(f"  - [agy] 경고: 설치본을 떠 두지 못해 업데이트를 건너뜁니다 ({exc})")
+        print("  - [agy] 지우고 다시 설치하다 실패하면 되돌릴 판이 없으므로, 기존 설치는 그대로 둡니다.")
+        return "updated", before_version, before_version, True
 
-    print(f"  - [agy] 플러그인 원격 설치 중 ({plugin_source})...")
-    r2 = subprocess.run([agy_cli, "plugin", "install", plugin_source], check=False)
-    if r2.returncode != 0:
-        had_failure = True
-        print(f"  - [agy] 경고: 플러그인 원격 설치 실패 (exit {r2.returncode})")
+    try:
+        print("  - [agy] 기존 플러그인 제거 중...")
+        r1 = subprocess.run([agy_cli, "plugin", "uninstall", "namu"], check=False)
+        if r1.returncode != 0:
+            had_failure = True
+            print(f"  - [agy] 경고: 기존 플러그인 제거 실패 (exit {r1.returncode})")
+
+        print(f"  - [agy] 플러그인 원격 설치 중 ({plugin_source})...")
+        r2 = subprocess.run([agy_cli, "plugin", "install", plugin_source], check=False)
+        if r2.returncode != 0:
+            had_failure = True
+            print(f"  - [agy] 경고: 플러그인 원격 설치 실패 (exit {r2.returncode})")
+            print(f"  - [agy] 옛 판({before_version})을 다시 설치합니다...")
+            r_restore = subprocess.run(
+                [agy_cli, "plugin", "install", str(backup_dir)], check=False)
+            if r_restore.returncode != 0:
+                # 여기서는 떠 둔 폴더를 지우지 않는다 — 사람이 손으로 설치할 유일한 사본이다.
+                print(f"  - [agy] 오류: 옛 판 복구도 실패했습니다 (exit {r_restore.returncode}). "
+                      f"떠 둔 사본을 남겨 둡니다: {backup_dir}")
+                print(f"  - [agy]   손으로 복구: agy plugin install \"{backup_dir}\"")
+                backup_root = None
+            else:
+                print("  - [agy] 옛 판으로 되돌렸습니다.")
+    finally:
+        if backup_root is not None:
+            shutil.rmtree(backup_root, ignore_errors=True)
 
     new_install_path = namu_setup_statusline._agy_resolve_install_path()
     if new_install_path:

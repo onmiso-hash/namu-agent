@@ -133,8 +133,15 @@ def main() -> None:
             md = build_context_markdown(conn, cfg.NAMU_MACHINE, project_dir)
 
         if md:
+            # 표지를 **찍기 전에** 남긴다. 예전에는 찍은 뒤에 남겼는데, 남기다 실패하면
+            # 아래 except가 "{}"를 한 번 더 찍어 표준출력에 JSON이 두 개 붙었다 — 받는
+            # 쪽은 그것을 한 덩어리로 못 읽어 브리핑 전체를 버린다. 표지를 못 남기는
+            # 것은 주입을 포기할 이유가 아니다(다음 호출에서 한 번 더 주입될 뿐이다).
+            try:
+                flag.touch()
+            except OSError:
+                pass
             print(json.dumps({"injectSteps": [{"ephemeralMessage": md}]}, ensure_ascii=False))
-            flag.touch()
         else:
             print("{}")
 

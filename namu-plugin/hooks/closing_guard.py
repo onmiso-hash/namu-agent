@@ -23,6 +23,15 @@
 좁히지 않고 개인 풀 전체를 합쳐 본다.
 
 어떤 에러가 나도 exit 0 (훅이 세션을 인질로 잡으면 안 된다).
+
+**hooks.json에 timeout 90초를 적은 이유**: 마무리 선언을 알아본 턴에서는 이 훅이
+세션 측정을 **직접**(떼어내지 않고) 하고 원격에 올린다(`_measure_session_now`). 올리기
+한 번은 memory_sync의 단계별 상한을 다 더하면 add·diff·commit 5초씩, push 10초, 실패
+시 복구 pull 10초와 재시도 push 10초로 최악 45초이고, 그 앞에 `uv run`이 의존성을
+챙기는 시간이 붙는다. 한도를 적지 않으면 호스트 기본값에 맡기게 되는데 그 값은
+호스트·판마다 달라, 올리기가 중간에 끊길 수 있다(측정값은 이미 파일에 있어 다음
+올리기가 싣고 가지만, 그 사이 다른 기계에서는 이 세션이 안 보인다). 마무리 아닌
+턴에서는 대화 기록 한 장을 읽고 곧바로 끝나므로 한도를 넉넉히 잡아도 기다림은 없다.
 """
 import json
 import os
@@ -37,9 +46,17 @@ sys.path.insert(0, str(Path(__file__).parent))
 import hook_input
 
 # 마무리 신호. "정리"는 단독으로 쓰면 오탐이 많아(코드 정리 등) 넣지 않는다.
+#
+# '끝내고'와 '종료하'는 2026-09-25에 뺐다. 둘 다 일을 시키는 말에 흔히 들어간다 —
+# "테스트 끝내고 커밋해줘", "서버 종료하고 다시 띄워줘", "컨테이너 종료하지 마". 그런
+# 말을 마치고 멈출 때마다 마무리로 오인해 `[다음]` 줄을 요구하며 막았다. 그날 남아
+# 있던 대화 기록의 마무리 선언을 전부 대 보니 '끝내고'로 마무리한 것은 한 건도 없었고,
+# '종료'가 든 선언 셋("이 세션 종료하자"·"이 세션 종료할게"·"이제 세션 종료할께.")은
+# 모두 '세션'과 붙어 있었다. 그래서 '종료'는 세션을 가리킬 때만 받는다 — 덤으로 옛
+# 패턴('종료하')이 놓치던 뒤의 둘도 잡힌다.
 _CLOSING_RE = re.compile(
-    r"(마무리|마치자|끝내자|끝냅|종료하|세션\s*끝|오늘은?\s*여기까지|그만하자|"
-    r"wrap\s*up|끝내고|접자)",
+    r"(마무리|마치자|끝내자|끝냅|세션\s*(을\s*|은\s*)?종료|세션\s*끝|"
+    r"오늘은?\s*여기까지|그만하자|wrap\s*up|접자)",
     re.IGNORECASE,
 )
 
@@ -60,9 +77,17 @@ def _is_closing_signal(text: str) -> bool:
     """마무리 패턴이 있고, 그 패턴이 메시지 전체를 거의 다 차지할 때만 True.
 
     긴 글 속에 우연히(또는 인용문으로) 패턴 글자가 섞여 있는 경우를 걸러낸다.
+
+    물음표로 끝나는 말은 선언이 아니라 질문이다 — 실제 기록에 "그럼 이제 이 세션
+    마무리 완료 된거야?", "혹시 이미 마무리하자~에 마무리 작업이 정의되어 있지
+    않아?"가 있었고, 둘 다 마무리를 묻거나 이야기한 것이지 끝내자는 말이 아니었다.
     """
     text = text.strip()
-    return bool(text) and len(text) <= _CLOSING_SIGNAL_MAX_LEN and bool(_CLOSING_RE.search(text))
+    if not text or len(text) > _CLOSING_SIGNAL_MAX_LEN:
+        return False
+    if text.endswith(("?", "？")):
+        return False
+    return bool(_CLOSING_RE.search(text))
 
 
 def _read_stdin_json() -> dict:
@@ -113,34 +138,89 @@ def _entry_text(entry: dict) -> str:
     return "\n".join(parts)
 
 
+def _is_human_entry(entry: dict) -> bool:
+    """사람이 친 말이 들어 있을 수 있는 사용자 항목인가.
+
+    `isMeta`는 사람이 아니라 프로그램이 사용자 자리에 넣은 글이다 — 이 훅이 막을 때
+    돌려보낸 "Stop hook feedback" 글도 여기에 든다. `isSidechain`은 서브에이전트에게
+    보낸 지시다. 둘 다 사람의 말로 세면, 훅이 막은 직후의 자기 글을 "사람이 일을
+    다시 시작한 말"로 집어 기준 시각이 틀어진다(2026-09-25 최종 검토에서 재현).
+    나이테(`naite.사람_발화인가`)가 사람 발화를 가를 때와 같은 기준이다.
+    """
+    if entry.get("isMeta") or entry.get("isSidechain"):
+        return False
+    return entry.get("type") == "user" or (entry.get("message") or {}).get("role") == "user"
+
+
 def _last_user_text(entries: list[dict]) -> str:
     for entry in reversed(entries):
-        if entry.get("type") == "user" or (entry.get("message") or {}).get("role") == "user":
+        if _is_human_entry(entry):
             text = _entry_text(entry)
             if text.strip():
                 return text
     return ""
 
 
-def _session_start_ts(entries: list[dict], cfg) -> str | None:
-    """세션 첫 항목의 시각을 log.md와 같은 형식(`YYYY-MM-DD HH:MM:SS`, 기준
-    시간대)으로 돌려준다. transcript 시각은 UTC ISO8601이라 그대로 비교하면
-    9시간 어긋난다(namu-57 5단계와 같은 함정).
+def _log_ts(raw, cfg) -> str | None:
+    """transcript 시각 하나를 log.md와 같은 형식(`YYYY-MM-DD HH:MM:SS`, 기준
+    시간대)으로 바꾼다. 읽을 수 없으면 None. transcript 시각은 UTC ISO8601이라
+    그대로 비교하면 9시간 어긋난다(namu-57 5단계와 같은 함정).
     """
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    tz = cfg.local_tz()
+    if tz is not None:
+        dt = dt.astimezone(tz)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _session_start_ts(entries: list[dict], cfg) -> str | None:
+    """세션 첫 항목의 시각을 log.md와 같은 형식으로 돌려준다."""
     for entry in entries:
-        raw = entry.get("timestamp")
-        if not raw:
+        ts = _log_ts(entry.get("timestamp"), cfg)
+        if ts is not None:
+            return ts
+    return None
+
+
+def _previous_closing_ts(entries: list[dict], cfg) -> str | None:
+    """앞선 마무리 뒤에 일이 다시 시작된 시각. 앞선 마무리가 없으면 None.
+
+    `--resume`으로 이어 연 세션은 같은 대화 기록에 이어 적힌다. 그러면 며칠 전
+    마무리 때 남긴 `[다음]` 줄도 "세션 시작 뒤"에 들어 있어, 오늘 다시 일하고
+    마무리할 때 그 옛 줄이 통과 근거가 되어 버렸다 — 오늘 한 일의 `[다음]`은 하나도
+    없는데 통과한다.
+
+    **기준을 앞선 마무리 선언의 시각으로 잡으면 안 된다.** 그 선언에 답해 남긴
+    `[다음]`은 선언보다 뒤에 적히므로 여전히 통과 근거가 된다 — 고치려던 구멍이
+    그대로 남는다(처음 그렇게 고쳤다가 시험으로 확인했다). 그래서 앞선 마무리 **다음에
+    사람이 처음 한 말**, 곧 일이 다시 시작된 때를 기준으로 삼는다. 그 뒤에 남긴 줄만
+    이번 마무리의 근거다.
+
+    예외: 앞선 마무리 뒤에 사람이 한 말이 지금의 마무리 선언뿐이면(마무리를 거듭 말한
+    경우 — 실제 기록에 "세션 마무리해줘"가 2분 간격으로 두 번 있다) 앞선 선언의 시각을
+    기준으로 한다. 그 사이에 한 일은 선언에 답한 것뿐이므로 그때 남긴 줄을 인정한다.
+
+    사람 발화는 `_entry_text`로 글이 나오는 사용자 항목이다 — 도구 결과만 든 항목은
+    글이 비어 저절로 빠지고, 프로그램이 넣은 글(`isMeta`)은 `_is_human_entry`가 뺀다. 마지막 사람 발화가 지금 판정 중인 마무리 선언이다.
+    """
+    said = [
+        entry for entry in entries
+        if _is_human_entry(entry) and _entry_text(entry).strip()
+    ]
+    earlier = said[:-1]
+    for i in range(len(earlier) - 1, -1, -1):
+        if not _is_closing_signal(_entry_text(earlier[i])):
             continue
-        try:
-            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        tz = cfg.local_tz()
-        if tz is not None:
-            dt = dt.astimezone(tz)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        # earlier[i]가 앞선 마무리. 그 다음 사람 말이 있으면 그것이 일이 다시 시작된 때다.
+        resumed = earlier[i + 1] if i + 1 < len(earlier) else earlier[i]
+        return _log_ts(resumed.get("timestamp"), cfg)
     return None
 
 
@@ -281,6 +361,12 @@ def _measure_session_now(data: dict) -> None:
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
+        # 훅 입력은 UTF-8로 온다. 한글 윈도우는 표준입력을 cp949로 읽어, 한글이 든 대화
+        # 기록 경로가 깨지면 기록을 못 열고 검사가 소리 없이 빠진다(repo_sync_check와 같다).
+        try:
+            sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
         data = _read_stdin_json()
 
         # 이미 이 훅 때문에 한 번 이어붙인 턴이면 다시 막지 않는다(무한 루프 방지).
@@ -330,6 +416,12 @@ def main() -> None:
         since_ts = _session_start_ts(entries, cfg)
         if since_ts is None:
             sys.exit(0)  # 시각을 모르면 판정하지 않는다(오작동보다 침묵이 낫다)
+        # 이어 연 긴 세션에서는 앞선 마무리 뒤 일이 다시 시작된 때부터만 본다
+        # (_previous_closing_ts 참고).
+        # 두 시각 모두 같은 형식의 글자라 글자 비교가 곧 시각 비교다.
+        previous_closing = _previous_closing_ts(entries, cfg)
+        if previous_closing is not None:
+            since_ts = max(since_ts, previous_closing)
 
         # journal에 **방 이름을 넘기지 않는다** — 일한 방은 열려 있는 폴더와
         # 다를 수 있다(2026-08-23 사고, 맨 위 독스트링).

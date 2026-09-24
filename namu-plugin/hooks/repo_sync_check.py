@@ -33,12 +33,28 @@ FETCH_MAX_AGE = 1800        # 이 초보다 오래된 것만 다시 받는다(30
 PRETOOL_FETCH_TIMEOUT = 8
 
 
+def _표준출력_utf8():
+    """표준출력을 UTF-8로 맞춘다.
+
+    한글 윈도우에서 훅의 표준출력이 파이프면 기본 인코딩이 cp949라, 🌳·⚠ 같은 글자를
+    찍는 순간 UnicodeEncodeError가 나고 맨 끝의 넓은 except가 그것을 삼켜 **알림이
+    소리 없이 사라진다**(session_recall.py에서 먼저 겪은 버그와 같다 —
+    test_session_recall_encoding.py). 바꿀 수 없는 스트림이면 그대로 둔다.
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 def git(repo, *args, timeout=10):
     """git 명령 하나를 돌리고 결과 글자를 돌려준다. 실패하면 None."""
     try:
         r = subprocess.run(
             ["git", "-C", repo, *args],
-            capture_output=True, text=True, timeout=timeout,
+            # 인코딩을 적지 않으면 윈도우에서 cp949로 읽다가 한글 경로·커밋 제목에서
+            # 깨지거나 예외가 난다. 못 읽는 바이트는 바꿔 넣고 넘어간다.
+            capture_output=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
     except Exception:
         return None
@@ -136,8 +152,11 @@ def mode_pretool():
     tool_input = payload.get("tool_input") or payload.get("toolInput") or {}
     if not isinstance(tool_input, dict):
         return
-    # 클로드 Edit은 file_path, 그록 search_replace도 file_path. 옛 이름도 받는다.
-    target = tool_input.get("file_path") or tool_input.get("target_file") or ""
+    # 클로드 Edit·Write는 file_path, 그록 search_replace도 file_path. 옛 이름도 받는다.
+    # 클로드 NotebookEdit은 notebook_path다 — hooks.json의 매처가 NotebookEdit을 받아
+    # 놓고 여기서 이 칸을 안 읽으면, 노트북을 고칠 때만 검사가 소리 없이 빠진다.
+    target = (tool_input.get("file_path") or tool_input.get("notebook_path")
+              or tool_input.get("target_file") or "")
     if not target:
         return
     folder = os.path.dirname(os.path.abspath(target))
@@ -168,6 +187,13 @@ def mode_pretool():
 
 if __name__ == "__main__":
     모드 = sys.argv[1] if len(sys.argv) > 1 else "session"
+    _표준출력_utf8()
+    # 표준입력도 같다. 훅 입력 JSON은 UTF-8로 오는데 한글 윈도우는 cp949로 읽어, 한글이
+    # 든 파일 경로가 깨진 글자가 되거나 읽기 자체가 실패해 검사가 소리 없이 빠졌다.
+    try:
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     try:
         if 모드 == "pretool":
             mode_pretool()

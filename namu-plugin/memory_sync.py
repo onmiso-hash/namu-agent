@@ -4,7 +4,9 @@ git 자동 동기화 — record 시 auto commit+push, 세션 시작 훅에서 au
 명시적 활성화(namu_sync_setup으로 마커 파일 생성) 전제.
 
 db.py(코어)와 성격이 다른 인터페이스/훅 레이어 소관이라 stdlib만 사용한다 — 훅들의
-PEP 723 의존성 블록을 건드릴 필요가 없게 하기 위함.
+PEP 723 의존성 블록을 건드릴 필요가 없게 하기 위함. 예외는 memo 충돌 자동 병합
+(`_resolve_memo_conflict`) 하나로, 거기서만 yaml을 늦게 import하고 없으면 종전처럼
+병합을 되돌린다.
 
 subprocess 호출 공통 규약(session_context.check_git_behind와 동일 패턴):
 capture_output=True, encoding="utf-8", errors="replace", shell=False, timeout 명시,
@@ -91,6 +93,16 @@ def sync_pull() -> bool:
 
     home = str(cfg.NAMU_DATA_ROOT)
     try:
+        # 개인 PC에도 죽은 git의 잠금이 남는다(아래 타임아웃이 git을 죽인다) — 컨테이너만
+        # 청소하던 것을 여기서도 한다. 나이 기준만 본다(PERSONAL_STALE_LOCK_AGE_SECONDS 참조).
+        removed = clear_stale_git_locks(home, PERSONAL_STALE_LOCK_AGE_SECONDS)
+        if removed:
+            _append_sync_log(f"PULL stale-lock 정리 {len(removed)}개: {', '.join(removed)}")
+        # 앞선 실패가 병합을 멈춘 채 두었으면 먼저 정리한다 — 그 상태에서는 pull이 계속
+        # "unmerged files"로 실패해 영영 회복하지 못한다.
+        if merge_in_progress(home):
+            _, note = settle_failed_merge(home)
+            _append_sync_log(f"PULL 선행 병합 정리: {note}")
         result = subprocess.run(
             ["git", "-C", home, "pull", "--no-rebase", "--no-edit", "--quiet"],
             capture_output=True,
@@ -101,10 +113,15 @@ def sync_pull() -> bool:
             stdin=subprocess.DEVNULL,  # 서버 stdin(파이프) 상속 차단 (namu-38)
         )
         if result.returncode != 0:
+            # 충돌로 멈췄으면 memo만의 충돌은 풀고, 아니면 되돌린다 — 되돌리지 않으면
+            # 다음 sync_push가 충돌 표시를 커밋해 원격에 올린다(위 "멈춘 병합" 절).
+            resolved, note = settle_failed_merge(home)
             _append_sync_log(
                 f"PULL FAIL rc={result.returncode} err={(result.stderr or '').strip()[:200]}"
+                + (f" | {note}" if note else "")
             )
-            return False
+            if not resolved:
+                return False
         # 시작 시 받아오기가 실패해 남은 경고를 여기서 지운다
         # (namu-entrypoint-pull-resilience). 이 줄이 없으면 컨테이너가 뜬 뒤 런타임
         # pull로 이미 회복됐는데도 경고가 영영 남아, 다음번 진짜 실패를 사람이
@@ -132,12 +149,263 @@ def _run(args: list[str], timeout: int):
     )
 
 
+# ---------------------------------------------------------------------------
+# 멈춘 병합 뒷정리 — 모든 pull/merge 실패 경로가 이 한 벌을 쓴다
+# ---------------------------------------------------------------------------
+# 계기(2026-09 검수 재현): 충돌로 멈춘 병합을 되돌리는 코드는 startup_sync.startup_pull
+# 한 곳에만 있었다. 런타임 sync_pull·_push_steps 복구 pull·sync_setup 병합은 실패를
+# 로그만 남기고 MERGE_HEAD와 충돌 표시(<<<<<<<)를 워킹트리에 둔 채 돌아갔고, 다음
+# namu_record의 sync_push가 `git add memory/` + commit으로 **충돌 표시를 그대로 커밋해
+# 원격에 올렸다**. memo.yaml은 union이 아니라 파일 단위 병합(mutable 그릇)이라 두 PC가
+# 각자 메모를 붙이기만 해도 이 길로 들어간다. 그래서 되돌리기를 여기 한 벌로 두고,
+# 모든 실패 경로와 커밋 직전 가드가 같은 함수를 부른다(두 벌이면 한쪽만 낡는다).
+
+# 충돌 시 자동으로 풀어 주는 유일한 파일. config.BOWLS의 memo 패턴을 쓰지 않고 적어 두는
+# 이유: 이 규칙은 "memo 파일 형식(YAML 리스트 한 문서, id 필수)을 안다"는 전제 위에
+# 서 있어서, 그릇 등록만 바꾼다고 다른 파일에 자동으로 번지면 안 된다.
+MEMO_REL_PATH = "memory/memo.yaml"
+
+
+def _merge_head_exists(home: "Path | str") -> bool:
+    return (Path(home) / ".git" / "MERGE_HEAD").exists()
+
+
+def unmerged_paths(home: "Path | str") -> list[str]:
+    """충돌이 풀리지 않은 경로들. 조회 자체가 실패하면 빈 목록(가드는 MERGE_HEAD도 본다)."""
+    try:
+        res = _run(
+            ["git", "-C", str(home), "diff", "--name-only", "--diff-filter=U", "-z"], 30
+        )
+    except Exception:
+        return []
+    if res.returncode != 0:
+        return []
+    return sorted({p for p in (res.stdout or "").split("\0") if p.strip()})
+
+
+def merge_in_progress(home: "Path | str") -> bool:
+    """병합이 멈춰 있는가 — MERGE_HEAD가 있거나 충돌 미해결 경로가 하나라도 있으면 참.
+
+    둘 다 보는 이유: `git merge --abort`가 반쯤 실패하면 MERGE_HEAD는 없는데 인덱스에
+    충돌 단계(:1:/:2:/:3:)가 남는 경우가 있고, 그 상태로 `git add`하면 충돌 표시가
+    그대로 스테이징된다."""
+    return _merge_head_exists(home) or bool(unmerged_paths(home))
+
+
+def abort_merge(home: "Path | str") -> "str | None":
+    """멈춘 병합을 되돌린다. 멈춘 게 없으면 None, 있으면 사람이 읽을 한 줄.
+
+    되돌리지 않으면 워킹트리가 충돌 표시가 박힌 채 남아, 서버가 그 상태의 기억
+    파일을 읽고(memo 로더는 깨진 yaml을 빈 목록으로 읽는다 — 메모가 전부 사라져 보인다)
+    다음 커밋이 그것을 원격에 올린다. (원래 startup_sync._abort_merge — 여기로 옮겼다.)"""
+    home_s = str(home)
+    if not merge_in_progress(home_s):
+        return None
+    try:
+        res = _run(["git", "-C", home_s, "merge", "--abort"], 30)
+    except Exception as exc:
+        return f"충돌 되돌리기 예외: {type(exc).__name__}: {exc}"
+    if res.returncode != 0:
+        return f"충돌 되돌리기 실패: {(res.stderr or '').strip()[:200]}"
+    return "충돌이 나 받아오기를 되돌림 — 이 기기의 기억은 그대로 남아 있음"
+
+
+def merge_memo_entries(base: list, ours: list, theirs: list) -> list:
+    """memo 3-way 병합(순수 함수). 형식이 어긋나면 ValueError.
+
+    규칙(2026-09 오케스트레이터 결정): 결과 = ours ∪ theirs 에서 **base에 있었는데
+    어느 한쪽이라도 뗀 id**를 뺀 것. memo는 붙이기·떼기만 있고 고치기가 없으므로 id
+    집합 연산으로 양쪽 의도가 빠짐없이 표현된다 — 한쪽이 붙인 것은 살고, 한쪽이 뗀
+    것은 사라진다(union 병합이 못 하던 "떼기"가 여기서는 지켜진다).
+
+    같은 id가 양쪽에 다르게 있으면(고치기 기능이 없으니 사실상 일어나지 않는다) base와
+    달라진 쪽을, 둘 다 달라졌으면 ours를 쓴다.
+
+    순서: memo.add는 붙인 순서대로 뒤에 덧붙이므로 파일은 "오래된 것 먼저"다. id가
+    ULID(앞부분이 만든 시각)라 id 정렬이 곧 붙인 시각 순서다. timestamp 문자열로
+    정렬하지 않는 이유는 기기마다 시간대 표기가 다르면 문자열 비교가 틀리기 때문이다.
+    """
+    def _index(entries, label):
+        if entries is None:
+            return {}
+        if not isinstance(entries, list):
+            raise ValueError(f"{label}: 리스트가 아님")
+        out: dict[str, dict] = {}
+        for e in entries:
+            if not isinstance(e, dict) or not e.get("id"):
+                raise ValueError(f"{label}: id 없는 항목")
+            key = str(e["id"])
+            if key in out:
+                raise ValueError(f"{label}: id 중복 {key}")
+            out[key] = e
+        return out
+
+    b = _index(base, "base")
+    o = _index(ours, "ours")
+    t = _index(theirs, "theirs")
+    removed = {i for i in b if i not in o or i not in t}
+    merged: dict[str, dict] = {}
+    for i in list(o) + [i for i in t if i not in o]:
+        if i in removed:
+            continue
+        if i in o and i in t and o[i] != t[i]:
+            merged[i] = t[i] if (i in b and o[i] == b[i]) else o[i]
+        else:
+            merged[i] = o.get(i, t.get(i))
+    return [merged[i] for i in sorted(merged)]
+
+
+def _resolve_memo_conflict(home: "Path | str") -> str:
+    """충돌이 memo.yaml 하나뿐이면 3-way id 병합으로 풀고 병합 커밋까지 끝낸다.
+    풀었으면 한 줄, 못 풀면 ValueError(호출자가 되돌린다).
+
+    yaml은 여기서만 늦게 import한다 — 이 모듈은 stdlib만 쓰는 게 원칙인데(모듈
+    docstring), 자동 병합은 memo 형식을 읽어야 하므로 예외로 둔다. yaml이 없는
+    실행 환경이면 ImportError → 호출자가 종전대로 되돌린다(자동 병합만 빠진다).
+    memo.py를 import하지 않는 이유도 같다(ulid까지 끌려온다) — 대신 쓰는 형식을
+    memo._write_all과 똑같이 맞춘다(한 문서 리스트, allow_unicode, sort_keys=False).
+    """
+    import yaml
+
+    home_s = str(home)
+    conflicted = unmerged_paths(home_s)
+    if conflicted != [MEMO_REL_PATH]:
+        raise ValueError(f"자동 병합 대상 아님: {conflicted}")
+
+    def _stage(n: int):
+        res = _run(["git", "-C", home_s, "show", f":{n}:{MEMO_REL_PATH}"], 30)
+        if res.returncode != 0:
+            # 1번(base)이 없으면 양쪽이 각자 새로 만든 파일이다 — 빈 base로 본다.
+            if n == 1:
+                return []
+            raise ValueError(f"stage {n} 읽기 실패: {(res.stderr or '').strip()[:200]}")
+        return yaml.safe_load(res.stdout or "") or []
+
+    merged = merge_memo_entries(_stage(1), _stage(2), _stage(3))
+    body = yaml.safe_dump(merged, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    (Path(home_s) / MEMO_REL_PATH).write_text(body, encoding="utf-8")
+    add = _run(["git", "-C", home_s, "add", "--", MEMO_REL_PATH], 30)
+    if add.returncode != 0:
+        raise ValueError(f"병합 결과 add 실패: {(add.stderr or '').strip()[:200]}")
+    if unmerged_paths(home_s):
+        raise ValueError("add 뒤에도 충돌 경로가 남음")
+    commit = _run(["git", "-C", home_s, "commit", "-q", "--no-edit"], 30)
+    if commit.returncode != 0:
+        raise ValueError(f"병합 커밋 실패: {(commit.stderr or commit.stdout or '').strip()[:200]}")
+    return f"메모 충돌을 자동 병합함(양쪽이 붙인 것은 살리고 뗀 것은 뺌 — {len(merged)}장)"
+
+
+def settle_failed_merge(home: "Path | str") -> "tuple[bool, str | None]":
+    """pull/merge가 실패한 **직후** 부른다. (풀었나, 사람이 읽을 한 줄).
+
+    - 멈춘 병합이 없으면 (False, None) — 네트워크 실패 등, 되돌릴 게 없다.
+    - 충돌이 memo.yaml 하나뿐이면 자동 병합해 커밋까지 끝내고 (True, 설명).
+    - 그 밖(다른 파일 충돌·형식 깨짐·yaml 없음)은 병합을 되돌리고 (False, 설명).
+    어느 경우든 이 함수가 돌아온 뒤에는 워킹트리에 충돌 표시가 남지 않는다."""
+    home_s = str(home)
+    if not merge_in_progress(home_s):
+        return False, None
+    try:
+        return True, _resolve_memo_conflict(home_s)
+    except Exception as exc:
+        aborted = abort_merge(home_s)
+        why = f"자동 병합 불가({type(exc).__name__}: {str(exc)[:150]})"
+        return False, f"{why} — {aborted}" if aborted else why
+
+
+# ---------------------------------------------------------------------------
+# 오래된 잠금 파일 청소 — 컨테이너(startup_sync)와 개인 PC(sync_pull)가 같이 쓴다
+# ---------------------------------------------------------------------------
+# 개인 PC 기준(초). sync_pull·check_git_behind는 타임아웃이 나면 git을 죽이므로 개인
+# PC에도 `.git/**/*.lock`이 남을 수 있는데, 지금까지 청소는 컨테이너 시작 때만 했다.
+# 이 모듈의 git 호출 타임아웃은 가장 긴 것이 120초(첨부)라 10분 넘은 잠금은 살아 있는
+# git의 것일 수 없다고 본다. "git 프로세스가 도는지"는 운영체제마다 보는 법이 달라
+# 묻지 않고 나이만 본다 — 그래서 문턱을 타임아웃의 다섯 배로 넉넉히 잡았다.
+PERSONAL_STALE_LOCK_AGE_SECONDS = 600
+
+
+def git_lock_files(home: "Path | str") -> list[Path]:
+    """`.git` 아래 모든 `*.lock`. 바로 아래만 보면 안 되는 게 이 함수의 존재 이유다 —
+    2026-08-16 사고 때 사람을 두 번 막은 `refs/heads/main.lock`이 하위 폴더에 있었다."""
+    git_dir = Path(home) / ".git"
+    if not git_dir.is_dir():
+        return []
+    try:
+        return sorted(p for p in git_dir.rglob("*.lock") if p.is_file())
+    except Exception:
+        return []
+
+
+def clear_stale_git_locks(home: "Path | str", max_age_seconds: float) -> list[str]:
+    """나이가 max_age_seconds를 넘긴 git 잠금 파일만 지우고, 지운 경로 목록을 돌려준다.
+    갓 생긴 잠금은 손대지 않는다 — 그건 지금 돌고 있는 git의 것일 수 있다."""
+    removed: list[str] = []
+    now = time.time()
+    for lock in git_lock_files(home):
+        try:
+            age = now - lock.stat().st_mtime
+        except Exception:
+            continue
+        if age < max_age_seconds:
+            continue
+        try:
+            lock.unlink()
+        except Exception:
+            continue
+        removed.append(str(lock.relative_to(Path(home))))
+    return removed
+
+
+# sync_setup이 `.gitignore`에 넣는 줄. **여기에 줄을 더하지 말 것** — 새 기기가 클론이
+# 아니라 빈 홈에서 독립 init으로 온보딩하면(sync_setup의 unrelated-histories 병합) 양쪽
+# `.gitignore`가 서로 다른 "새 파일"이라 add/add 충돌이 나고, 옛 판이 만든 원격에 새 판
+# 기기가 붙는 순간 온보딩 병합이 되돌려진다. 새로 가릴 파일은 아래 LOCAL_EXCLUDE_LINES로.
+GITIGNORE_LINES = ["db/"]
+
+# git이 따라가면 안 되는 기기별 파일 — `.git/info/exclude`에 넣는다(ensure_local_excludes).
+#   - db/ : 검색 캐시·로그(기기별, 다시 만들어진다)
+#   - memory/.memo.lock : memo.py가 쪽지 파일을 고치는 동안 잡는 잠금(2026-09 추가).
+#     `git add memory/`가 이것을 주워 커밋하면 다른 기기로 잠금 파일이 퍼진다.
+LOCAL_EXCLUDE_LINES = ["db/", "memory/.memo.lock"]
+
+
+def ensure_local_excludes(home: "Path | str") -> None:
+    """LOCAL_EXCLUDE_LINES를 `.git/info/exclude`에 멱등으로 넣는다(전예외 무음).
+
+    `.gitignore`에 넣지 않는 이유가 둘이다. ① 그 파일은 sync_setup을 돌릴 때만
+    고쳐지는데 이미 개통된 기기(hp·samsung 등)는 sync_setup을 다시 돌리지 않는다 —
+    그러면 새로 생긴 잠금 파일(memory/.memo.lock)을 다음 sync_push의 `git add memory/`가
+    그대로 커밋한다. ② 줄을 더하면 독립 init 온보딩에서 add/add 충돌이 난다
+    (GITIGNORE_LINES 설명). info/exclude는 git 추적 대상이 아니라 기기마다 조용히 넣어도 워킹트리를
+    더럽히지 않으므로, add 직전마다 불러도 부작용이 없다."""
+    try:
+        git_dir = Path(home) / ".git"
+        if not git_dir.is_dir():
+            return
+        exclude = git_dir / "info" / "exclude"
+        existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+        missing = [ln for ln in LOCAL_EXCLUDE_LINES if ln not in existing.splitlines()]
+        if not missing:
+            return
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with exclude.open("a", encoding="utf-8") as f:
+            if existing and not existing.endswith("\n"):
+                f.write("\n")
+            for ln in missing:
+                f.write(ln + "\n")
+    except Exception:
+        pass
+
+
 def _add_targets(home: str, required: list[str], optional: list[str]) -> list[str]:
     """git add 대상 목록 조립(namu-34 ③-a). required는 무조건 포함(없으면 git add
     자체가 실패해 물증이 남는 기존 sync_push 회귀를 그대로 유지 — memory/가 없는
     설치는 이미 뭔가 잘못된 상태라 실패로 드러나야 한다). optional은 실재할 때만
     포함한다 — tasks/는 아직 한 번도 안 생겼을 수 있는 신규 환경이라, 없다고 git
     add 자체를 실패시키면 안 되기 때문이다."""
+    # add 대상을 고르는 모든 경로(sync_push·push_tasks_pool·sync_setup·commit_pending)가
+    # 여기를 지나므로, 기기별 파일 제외도 여기서 한 번 보장한다.
+    ensure_local_excludes(home)
     targets = list(required)
     for rel in optional:
         if (Path(home) / rel.rstrip("/")).exists():
@@ -187,7 +455,19 @@ def _push(
 
 def _push_steps(home, message, required_paths, optional_paths, _timed) -> bool:
     """_push의 실제 git 호출 시퀀스(namu-38: timing 계측을 위해 _push에서 분리).
-    반환값과 각 단계 실패 시 물증 로그는 분리 전과 동일하다."""
+    반환값과 각 단계 실패 시 물증 로그는 분리 전과 동일하다.
+
+    가드(2026-09): 병합이 멈춰 있으면 **커밋하지 않는다** — 먼저 풀거나(memo만의 충돌)
+    되돌리고, 그래도 멈춰 있으면 실패로 끝낸다. 이 가드가 없던 때 `git add memory/`가
+    충돌 표시를 스테이징하고 commit이 MERGE_HEAD를 부모로 삼아 병합을 "완료"시켜,
+    충돌 표시가 원격에 올라갔다(검수 재현 test_fixC_conflict_markers)."""
+    if merge_in_progress(home):
+        _, note = settle_failed_merge(home)
+        _append_sync_log(f"PUSH 선행 병합 정리: {note}", home=home)
+        if merge_in_progress(home):
+            _append_sync_log("PUSH FAIL 병합이 멈춘 채라 커밋하지 않음", home=home)
+            return False
+
     targets = _add_targets(home, required_paths, optional_paths)
 
     if targets:
@@ -242,13 +522,20 @@ def _push_steps(home, message, required_paths, optional_paths, _timed) -> bool:
             "retry_pull", ["git", "-C", home, "pull", "--no-rebase", "--no-edit"], 10
         )
         if pull_res.returncode != 0:
-            _append_sync_log(
-                f"PUSH FAIL recovery-pull rc={pull_res.returncode} "
-                f"err={(pull_res.stderr or '').strip()[:200]}",
-                home=home,
-            )
-            return False
+            # memo만의 충돌이면 풀고 계속 올린다. 아니면 되돌리고 실패 — 이번 기록은
+            # 로컬 커밋으로 남아 다음 호출 때 다시 시도된다.
+            resolved, note = settle_failed_merge(home)
+            if not resolved:
+                _append_sync_log(
+                    f"PUSH FAIL recovery-pull rc={pull_res.returncode} "
+                    f"err={(pull_res.stderr or '').strip()[:200]}"
+                    + (f" | {note}" if note else ""),
+                    home=home,
+                )
+                return False
+            _append_sync_log(f"PUSH recovery-pull {note}", home=home)
     except Exception as exc:
+        settle_failed_merge(home)
         _append_sync_log(f"PUSH FAIL recovery-pull {type(exc).__name__}: {exc}", home=home)
         return False
 
@@ -461,19 +748,63 @@ def push_tasks_pool(home: "Path | str", message: str) -> bool:
     )
 
 
+# sync_setup이 커밋하는 대상 — `git add -A`를 쓰지 않는다(startup_sync._COMMIT_TARGETS와
+# 같은 이유: ~/.namu는 첨부 폴더를 sparse-checkout으로 격리해 두고 있어 전체 add는 격리
+# 규칙과 부딪힐 여지가 있고, 사용자가 ~/.namu에 둔 엉뚱한 파일까지 원격으로 새어 나간다).
+# 평소 동기화 대상(memory/·tasks/·.gitattributes·config/)에 더해, 설정이 막 만든
+# `.gitignore`와 마커 `.namu_sync`를 담는다 — 예전 `add -A`가 담던 것 중 의도된 것은 이
+# 둘뿐이었다. 전부 optional(실재할 때만) — 신규 환경에서 대상 부재로 add가 실패하면 안 된다.
+SETUP_COMMIT_TARGETS = [
+    ".gitignore", ".gitattributes", ".namu_sync", "memory/", "tasks/", "config/",
+]
+
+
 def sync_setup(remote_url: str) -> str:
     """~/.namu(NAMU_DATA_ROOT) 교훈 저장소를 git 원격 백업용으로 초기화한다.
 
     이 함수만 예외적으로 무음이 아니다 — 사람이 읽고 다음 행동(인증 설정 등)을
-    판단해야 하는 결과이므로 문자열로 그대로 보고한다.
+    판단해야 하는 결과이므로 문자열로 그대로 보고한다. 구조화된 결과가 필요하면
+    `sync_setup_report()`를 쓴다(클라우드 entrypoint가 그렇다).
 
     원격 repo 자체는 사용자가 미리 준비해야 한다(이 함수는 로컬 wiring만 담당).
+    """
+    return sync_setup_report(remote_url)["text"]
+
+
+def sync_setup_report(remote_url: str) -> dict:
+    """sync_setup의 본체. `{"text", "notes", "fatal", "network"}`를 돌려준다.
+
+    실패를 두 갈래로 가른다(2026-09):
+    - `fatal` — 로컬 wiring이 안 된 것(init·원격 등록·마커·커밋 등). 이대로 서버를 띄우면
+      기록이 원격으로 가지 못한다.
+    - `network` — 원격에 닿지 못한 것(fetch·병합·push). 로컬 wiring은 끝났고, 다음
+      record·pull이 다시 시도한다. 클라우드 entrypoint는 이것을 치명으로 보면 안 된다 —
+      GitHub가 잠깐 안 닿는다고 exit 1이면 재시작 정책(always)과 맞물려 2026-08-16과
+      같은 무한 재시작 루프가 된다(검수 재현 repro_boot_offline.sh).
+    예전에는 호출부가 결과 문자열에서 "실패"를 찾아 판정했다 — 사람이 읽는 문장에
+    판정을 매달면 문구 하나가 바뀔 때 동작이 조용히 바뀐다. 그래서 칸을 나눴다.
     """
     import config as cfg
 
     home = cfg.NAMU_DATA_ROOT
     home.mkdir(parents=True, exist_ok=True)
     notes: list[str] = []
+    fatal: list[str] = []
+    network: list[str] = []
+
+    def _report() -> dict:
+        return {
+            "text": "namu_sync_setup 완료:\n- " + "\n- ".join(notes),
+            "notes": notes, "fatal": fatal, "network": network,
+        }
+
+    def _fatal(note: str) -> None:
+        notes.append(note)
+        fatal.append(note)
+
+    def _network(note: str) -> None:
+        notes.append(note)
+        network.append(note)
 
     git_dir = home / ".git"
     if git_dir.exists():
@@ -484,44 +815,49 @@ def sync_setup(remote_url: str) -> str:
             if init_res.returncode == 0:
                 notes.append("git init -b main 완료")
             else:
-                return f"실패: git init 오류 - {(init_res.stderr or '').strip()[:300]}"
+                msg = f"실패: git init 오류 - {(init_res.stderr or '').strip()[:300]}"
+                return {"text": msg, "notes": [msg], "fatal": [msg], "network": []}
         except Exception as exc:
-            return f"실패: git init 예외 - {type(exc).__name__}: {exc}"
+            msg = f"실패: git init 예외 - {type(exc).__name__}: {exc}"
+            return {"text": msg, "notes": [msg], "fatal": [msg], "network": []}
 
     gitignore = home / ".gitignore"
     try:
         existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-        if "db/" not in existing.splitlines():
+        missing = [ln for ln in GITIGNORE_LINES if ln not in existing.splitlines()]
+        if missing:
             with gitignore.open("a", encoding="utf-8") as f:
                 if existing and not existing.endswith("\n"):
                     f.write("\n")
-                f.write("db/\n")
-            notes.append(".gitignore에 db/ 추가")
+                for ln in missing:
+                    f.write(ln + "\n")
+            notes.append(f".gitignore에 {', '.join(missing)} 추가")
         else:
             notes.append(".gitignore: db/ 이미 존재 (스킵)")
     except OSError as exc:
-        notes.append(f".gitignore 기록 실패: {exc}")
+        _fatal(f".gitignore 기록 실패: {exc}")
 
-    notes.extend(ensure_gitattributes_union(home))
+    # 아래 두 도우미는 notes 목록만 돌려준다 — 그 안의 실패 문장은 로컬 설정 실패라
+    # 치명으로 분류한다(종전 "실패" 문자열 판정과 같은 결과를 유지).
+    for note in ensure_gitattributes_union(home):
+        (_fatal if ("실패" in note or "예외" in note) else notes.append)(note)
 
     try:
         remote_check = _run(["git", "-C", str(home), "remote", "get-url", "origin"], 5)
         if remote_check.returncode == 0:
             set_res = _run(["git", "-C", str(home), "remote", "set-url", "origin", remote_url], 5)
-            notes.append(
-                "원격 origin 갱신"
-                if set_res.returncode == 0
-                else f"원격 갱신 실패: {(set_res.stderr or '').strip()[:200]}"
-            )
+            if set_res.returncode == 0:
+                notes.append("원격 origin 갱신")
+            else:
+                _fatal(f"원격 갱신 실패: {(set_res.stderr or '').strip()[:200]}")
         else:
             add_res = _run(["git", "-C", str(home), "remote", "add", "origin", remote_url], 5)
-            notes.append(
-                "원격 origin 추가"
-                if add_res.returncode == 0
-                else f"원격 추가 실패: {(add_res.stderr or '').strip()[:200]}"
-            )
+            if add_res.returncode == 0:
+                notes.append("원격 origin 추가")
+            else:
+                _fatal(f"원격 추가 실패: {(add_res.stderr or '').strip()[:200]}")
     except Exception as exc:
-        notes.append(f"원격 설정 예외: {type(exc).__name__}: {exc}")
+        _fatal(f"원격 설정 예외: {type(exc).__name__}: {exc}")
 
     # 첨부 격리는 **원격을 등록한 뒤, 첫 fetch 전에** 건다. 순서가 이 사이여야 하는
     # 이유가 양쪽에 있다.
@@ -534,34 +870,41 @@ def sync_setup(remote_url: str) -> str:
     #     (테스트 2건이 실제로 이 순서에서 깨졌다).
     #   - 첫 fetch보다는 먼저 걸어야 한다: 그래야 처음 받아오는 순간부터 첨부
     #     몸통을 안 받는다.
-    notes.extend(ensure_attach_isolation(home))
+    for note in ensure_attach_isolation(home):
+        (_fatal if ("실패" in note or "예외" in note) else notes.append)(note)
 
     marker = home / ".namu_sync"
     try:
         marker.touch(exist_ok=True)
         notes.append("마커(.namu_sync) 생성 — 이후 자동 pull/push 활성화")
     except OSError as exc:
-        notes.append(f"마커 생성 실패: {exc}")
+        _fatal(f"마커 생성 실패: {exc}")
+
+    # 앞선 실패(컨테이너 재시작 전 등)가 병합을 멈춘 채 두었으면 커밋 전에 정리한다 —
+    # 그 상태로 add/commit하면 충돌 표시가 커밋된다(_push_steps 가드와 같은 이유).
+    if merge_in_progress(home):
+        resolved, note = settle_failed_merge(home)
+        (notes.append if resolved else _network)(f"멈춘 병합 정리: {note}")
 
     try:
-        add_res = _run(["git", "-C", str(home), "add", "-A"], 10)
-        if add_res.returncode != 0:
-            notes.append(f"git add -A 실패: {(add_res.stderr or '').strip()[:200]}")
+        targets = _add_targets(str(home), [], SETUP_COMMIT_TARGETS)
+        add_res = _run(["git", "-C", str(home), "add", "--", *targets], 10) if targets else None
+        if add_res is not None and add_res.returncode != 0:
+            _fatal(f"git add 실패: {(add_res.stderr or '').strip()[:200]}")
         else:
             diff_res = _run(["git", "-C", str(home), "diff", "--cached", "--quiet"], 5)
             if diff_res.returncode != 0:
                 commit_res = _run(
                     ["git", "-C", str(home), "commit", "-m", "namu: sync 초기 설정"], 10
                 )
-                notes.append(
-                    "초기 커밋 완료"
-                    if commit_res.returncode == 0
-                    else f"초기 커밋 실패: {(commit_res.stderr or '').strip()[:200]}"
-                )
+                if commit_res.returncode == 0:
+                    notes.append("초기 커밋 완료")
+                else:
+                    _fatal(f"초기 커밋 실패: {(commit_res.stderr or '').strip()[:200]}")
             else:
                 notes.append("커밋할 변경 없음")
     except Exception as exc:
-        notes.append(f"add/commit 예외: {type(exc).__name__}: {exc}")
+        _fatal(f"add/commit 예외: {type(exc).__name__}: {exc}")
 
     # 두 번째 이후 PC가 "클론"이 아니라 "빈 홈에서 독립 init"으로 온보딩하는 경우,
     # 이 시점의 로컬 역사는 원격(이미 A가 push해둔 main)과 공통 조상이 전혀 없다
@@ -575,7 +918,7 @@ def sync_setup(remote_url: str) -> str:
     try:
         fetch_res = _run(["git", "-C", str(home), "fetch", "origin"], 10)
         if fetch_res.returncode != 0:
-            notes.append(
+            _network(
                 "원격 fetch 실패(오프라인/인증 미비 등 — push 단계에서 다시 확인): "
                 f"{(fetch_res.stderr or '').strip()[:200]}"
             )
@@ -595,11 +938,24 @@ def sync_setup(remote_url: str) -> str:
                         ],
                         10,
                     )
-                    notes.append(
-                        "원격 기존 기록과 병합 완료(unrelated-histories, 온보딩 전용)"
-                        if merge_res.returncode == 0
-                        else f"원격 기록 병합 실패: {(merge_res.stderr or '').strip()[:300]}"
-                    )
+                    if merge_res.returncode == 0:
+                        notes.append("원격 기존 기록과 병합 완료(unrelated-histories, 온보딩 전용)")
+                    else:
+                        # 충돌 내용(CONFLICT ...)은 stderr가 아니라 stdout으로 나온다 —
+                        # stderr만 적으면 사유 칸이 비어 무엇이 부딪혔는지 알 수 없다.
+                        # 멈춘 병합은 여기서 반드시 풀거나 되돌린다(안 그러면 다음
+                        # commit_pending/sync_push가 충돌 표시를 커밋한다).
+                        resolved, settle = settle_failed_merge(home)
+                        if resolved:
+                            notes.append(f"원격 기존 기록과 병합 완료 — {settle}")
+                        else:
+                            out = (merge_res.stdout or "").strip()
+                            err = (merge_res.stderr or "").strip()
+                            _network(
+                                "원격 기록 병합 실패: "
+                                f"{(out + (' | ' if out and err else '') + err)[:300]}"
+                                + (f" — {settle}" if settle else "")
+                            )
                 else:
                     # 로컬에 커밋이 전혀 없는 예외 경로(위 add/commit이 실패했거나
                     # 애초에 커밋할 변경이 없던 경우) — 병합할 로컬 역사 자체가
@@ -607,24 +963,24 @@ def sync_setup(remote_url: str) -> str:
                     checkout_res = _run(
                         ["git", "-C", str(home), "checkout", "-B", "main", "origin/main"], 10
                     )
-                    notes.append(
-                        "로컬 커밋 없음 — 원격 main을 그대로 채택"
-                        if checkout_res.returncode == 0
-                        else f"원격 main 채택 실패: {(checkout_res.stderr or '').strip()[:300]}"
-                    )
+                    if checkout_res.returncode == 0:
+                        notes.append("로컬 커밋 없음 — 원격 main을 그대로 채택")
+                    else:
+                        _fatal(f"원격 main 채택 실패: {(checkout_res.stderr or '').strip()[:300]}")
     except Exception as exc:
-        notes.append(f"fetch/병합 예외: {type(exc).__name__}: {exc}")
+        settle_failed_merge(home)
+        _network(f"fetch/병합 예외: {type(exc).__name__}: {exc}")
 
     try:
         push_res = _run(["git", "-C", str(home), "push", "-u", "origin", "main"], 10)
         if push_res.returncode == 0:
             notes.append("push 완료")
         else:
-            notes.append(
+            _network(
                 "push 실패(인증 미비 등 사용자가 해결할 문제 — 다음 record가 재시도): "
                 f"{(push_res.stderr or '').strip()[:300]}"
             )
     except Exception as exc:
-        notes.append(f"push 예외: {type(exc).__name__}: {exc}")
+        _network(f"push 예외: {type(exc).__name__}: {exc}")
 
-    return "namu_sync_setup 완료:\n- " + "\n- ".join(notes)
+    return _report()

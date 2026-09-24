@@ -61,6 +61,20 @@ CACHE_PATH = os.path.expanduser("~/.cache/claude-version-drift.json")
 TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
+def _표준출력_utf8():
+    """표준출력을 UTF-8로 맞춘다.
+
+    한글 윈도우에서 훅의 표준출력이 파이프면 기본 인코딩이 cp949라, 🌳·⚠ 같은 글자를
+    찍는 순간 UnicodeEncodeError가 나고 맨 끝의 넓은 except가 그것을 삼켜 **알림이
+    소리 없이 사라진다**(session_recall.py에서 먼저 겪은 버그와 같다 —
+    test_session_recall_encoding.py). 바꿀 수 없는 스트림이면 그대로 둔다.
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 def 목록_읽기(데이터, 키, 칸들):
     """설정의 목록 하나를 (칸1, 칸2, 이름) 꼴로 바꾼다. 없으면 빈 목록."""
     항목들 = 데이터.get(키)
@@ -114,8 +128,10 @@ def 조사(말, 받침있음, 받침없음):
 
 def git(repo, *args, timeout=10):
     try:
+        # 인코딩을 적지 않으면 윈도우에서 cp949로 읽는다(repo_sync_check.git과 같은 까닭).
         r = subprocess.run(["git", "-C", repo, *args],
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, encoding="utf-8", errors="replace",
+                           timeout=timeout)
     except Exception:
         return None
     return r.stdout.strip() if r.returncode == 0 else None
@@ -140,7 +156,8 @@ def 돌고_있는_판(ssh_호스트):
         r = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
              ssh_호스트, "docker ps --format '{{.Names}}\\t{{.Image}}'"],
-            capture_output=True, text=True, timeout=SSH_TIMEOUT,
+            capture_output=True, encoding="utf-8", errors="replace",
+            timeout=SSH_TIMEOUT,
         )
     except Exception:
         return None
@@ -164,10 +181,19 @@ def 뒤처진_판_수(현재, 태그들):
     return sum(1 for t in 태그들 if 판_숫자(t) > n)
 
 
-def 캐시_읽기():
+def 캐시_읽기(base):
+    """30분 안에 **같은 일감 폴더**에서 잰 결과가 있으면 그것을 돌려준다. 없으면 None.
+
+    검사 결과는 일감 폴더(`base`)에 따라 달라진다 — 저장소와 빌린 본체를 그 폴더
+    아래에서 찾기 때문이다. 캐시 파일은 기계에 하나뿐이라, 잰 폴더를 함께 적어 두고
+    대조하지 않으면 다른 폴더에서 연 세션이 앞 폴더의 결과(경보든 침묵이든)를 30분
+    동안 그대로 받는다. 폴더가 다르면 새로 잰다.
+    """
     try:
         with open(CACHE_PATH, encoding="utf-8") as f:
             데이터 = json.load(f)
+        if 데이터.get("기준") != os.path.abspath(base):
+            return None
         if time.time() - 데이터.get("잰_때", 0) < CACHE_MAX_AGE:
             return 데이터.get("줄")
     except Exception:
@@ -175,11 +201,12 @@ def 캐시_읽기():
     return None
 
 
-def 캐시_쓰기(줄):
+def 캐시_쓰기(base, 줄):
     try:
         os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
         with open(CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump({"잰_때": time.time(), "줄": 줄}, f, ensure_ascii=False)
+            json.dump({"잰_때": time.time(), "기준": os.path.abspath(base), "줄": 줄},
+                      f, ensure_ascii=False)
     except Exception:
         pass
 
@@ -233,10 +260,10 @@ def main():
     if 설정 is None:
         return      # 감시 대상을 적어 두지 않은 기계다 — 조용히 끝낸다
     base = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    줄 = 캐시_읽기()
+    줄 = 캐시_읽기(base)
     if 줄 is None:
         줄 = 검사(base, 설정)
-        캐시_쓰기(줄)
+        캐시_쓰기(base, 줄)
     if not 줄:
         return      # 다 맞으면 아무 말도 하지 않는다
     print("\n".join(
@@ -250,6 +277,7 @@ def main():
 
 
 if __name__ == "__main__":
+    _표준출력_utf8()
     try:
         main()
     except Exception:

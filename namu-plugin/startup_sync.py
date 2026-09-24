@@ -25,7 +25,6 @@
 """
 import json
 import sys
-import time
 from pathlib import Path
 
 import memory_sync
@@ -136,15 +135,9 @@ def warning_text(home: "Path | str") -> "str | None":
 
 
 def _git_lock_files(home: "Path | str") -> list[Path]:
-    """`.git` 아래 모든 `*.lock`. 바로 아래만 보면 안 되는 게 이 함수의 존재 이유다 —
-    사고 때 사람을 두 번 막은 `refs/heads/main.lock`이 하위 폴더에 있었다."""
-    git_dir = Path(home) / ".git"
-    if not git_dir.is_dir():
-        return []
-    try:
-        return sorted(p for p in git_dir.rglob("*.lock") if p.is_file())
-    except Exception:
-        return []
+    """`.git` 아래 모든 `*.lock` — 본체는 memory_sync.git_lock_files(개인 PC의
+    sync_pull도 같은 청소를 하게 되며 그쪽으로 옮겼다)."""
+    return memory_sync.git_lock_files(home)
 
 
 def clear_stale_git_locks(
@@ -152,30 +145,27 @@ def clear_stale_git_locks(
 ) -> list[str]:
     """나이가 max_age_seconds를 넘긴 git 잠금 파일만 지우고, 지운 경로 목록을 돌려준다.
 
-    갓 생긴 잠금은 손대지 않는다 — 그건 지금 돌고 있는 git의 것일 수 있다."""
-    removed: list[str] = []
-    now = time.time()
-    for lock in _git_lock_files(home):
-        try:
-            age = now - lock.stat().st_mtime
-        except Exception:
-            continue
-        if age < max_age_seconds:
-            continue
-        try:
-            lock.unlink()
-        except Exception:
-            continue
-        removed.append(str(lock.relative_to(Path(home))))
-    return removed
+    갓 생긴 잠금은 손대지 않는다 — 그건 지금 돌고 있는 git의 것일 수 있다. 본체는
+    memory_sync.clear_stale_git_locks이고, 여기서는 컨테이너 기준 나이(1시간)만 정한다."""
+    return memory_sync.clear_stale_git_locks(home, max_age_seconds)
 
 
 def commit_pending(home: "Path | str", message: str) -> "str | None":
     """커밋 안 된 변경을 커밋해 보존한다. 커밋했으면 사람이 읽을 한 줄, 없으면 None.
 
     사고 때 남아 있던 건 `A`(add만 되고 commit이 안 된) 상태의 파일 2개였다.
-    `git add`를 다시 부르는 이유는 unstaged 변경까지 같이 담기 위해서다."""
+    `git add`를 다시 부르는 이유는 unstaged 변경까지 같이 담기 위해서다.
+
+    가드(2026-09): 병합이 멈춰 있으면 add/commit 전에 먼저 풀거나(memo만의 충돌)
+    되돌린다. 그대로 커밋하면 충돌 표시가 "보존"돼 원격에 올라간다 — 검수 재현:
+    sync_setup 병합 충돌 → exit 1 → 재시작 → 여기서 충돌 표시 커밋. 되돌려도 멈춘
+    채면 커밋하지 않고 사유만 돌려준다."""
     home_s = str(home)
+    settled: "str | None" = None
+    if memory_sync.merge_in_progress(home_s):
+        _, settled = memory_sync.settle_failed_merge(home_s)
+        if memory_sync.merge_in_progress(home_s):
+            return f"병합이 멈춘 채라 미커밋 변경을 커밋하지 않음 — {settled}"
     targets = memory_sync._add_targets(home_s, [], _COMMIT_TARGETS)
     if not targets:
         return None
@@ -195,18 +185,10 @@ def commit_pending(home: "Path | str", message: str) -> "str | None":
 
 
 def _abort_merge(home: "Path | str") -> "str | None":
-    """받아오기가 충돌로 멈춰 있으면 되돌린다. 되돌리지 않으면 워킹트리가 충돌
-    표시(<<<<<<<)가 박힌 채 남아, 서버가 그 상태의 기억 파일을 읽게 된다."""
-    home_s = str(home)
-    if not (Path(home_s) / ".git" / "MERGE_HEAD").exists():
-        return None
-    try:
-        res = memory_sync._run(["git", "-C", home_s, "merge", "--abort"], 30)
-    except Exception as exc:
-        return f"충돌 되돌리기 예외: {type(exc).__name__}: {exc}"
-    if res.returncode != 0:
-        return f"충돌 되돌리기 실패: {(res.stderr or '').strip()[:200]}"
-    return "충돌이 나 받아오기를 되돌림 — 이 기기의 기억은 그대로 남아 있음"
+    """받아오기가 충돌로 멈춰 있으면 되돌린다 — 본체는 memory_sync.abort_merge.
+    런타임 pull·push 복구·sync_setup도 같은 되돌리기를 써야 해서 그쪽으로 옮겼다
+    (여기에만 있던 동안 다른 경로는 충돌 표시를 남긴 채 돌아갔다)."""
+    return memory_sync.abort_merge(home)
 
 
 def startup_pull(home: "Path | str", pull_timeout: int = 60) -> dict:
@@ -236,15 +218,20 @@ def startup_pull(home: "Path | str", pull_timeout: int = 60) -> dict:
         ok = False
         reason = f"{type(exc).__name__}: {exc}"
 
+    if not ok:
+        # memo.yaml 하나만 부딪혔으면 3-way id 병합으로 풀어 성공으로 본다. 그 밖은
+        # 되돌린다(memory_sync.settle_failed_merge — 모든 pull 실패 경로의 공통 뒷정리).
+        resolved, settled = memory_sync.settle_failed_merge(home_s)
+        if settled:
+            steps.append(settled)
+        ok = resolved
+
     if ok:
         steps.append("받아오기 성공")
         clear_status(home_s)
         memory_sync._append_sync_log("STARTUP PULL ok " + " | ".join(steps), home=home_s)
         return {"ok": True, "steps": steps, "reason": ""}
 
-    aborted = _abort_merge(home_s)
-    if aborted:
-        steps.append(aborted)
     steps.append(f"받아오기 실패: {reason}")
     write_status(home_s, "pull", reason, steps)
     memory_sync._append_sync_log("STARTUP PULL FAIL " + " | ".join(steps), home=home_s)

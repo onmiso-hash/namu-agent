@@ -53,6 +53,20 @@ import task_resolve
 _MOVE_LOG_TAG = "기록"
 
 
+def move_log_text(from_project: str, to_project: str) -> str:
+    """이관 줄의 본문. `방을 옮김: <옛 방> → <새 방>`.
+
+    조사를 쓰지 않는 이유(2026-09-25 리뷰 B): 예전 문안 `방을 A에서 B으로 옮김`은
+    받침 없는 방 이름(`web-project` 등) 뒤에도 `으로`를 붙였고, log.md는
+    append-only라 틀린 줄이 영영 남는다. 방 이름은 영문·숫자가 대부분이라 받침을
+    기계로 가릴 수도 없다. 옛 문안의 줄은 로그에 그대로 남아 있지만, 이 문안을
+    **해석하는 코드는 없다**(브리핑·검색·시험 모두 grep으로 확인) — 두 모양이 섞여도
+    읽는 쪽에 영향이 없다. 이 줄에는 `상세:`가 없으므로 브리핑의 "경위는 <날짜>
+    기록에" 포인터도 이 줄을 가리키지 않는다(`task_resolve.latest_record_date`).
+    """
+    return f"방을 옮김: {from_project} → {to_project}"
+
+
 def _move_ask_message(requested: str | None, known: list[str], person: str) -> str:
     """만들기 전에 사람에게 그대로 보여줄 질문 — `project_policy._web_ask_message`와
     같은 형태다. 목록에는 **이미 있는 방뿐**이다 — 새로 만드는 항목이 없으니
@@ -167,12 +181,19 @@ def move_task(*, source_root: Path, dest_root: Path, slug: str, machine: str, ts
       3. `dest_root/slug`가 이미 있으면 ValueError — **합치지 않는다.** log.md는
          append-only라 두 파일을 섞으면 어느 쪽 기록인지 영영 알 수 없어진다.
       4. 폴더를 옮긴다(`dest_root`가 없으면 만든다).
-      5. 이 slug를 가리키는 원본 방의 책갈피를 전부 정리한다(`_move_pins`).
-      6. 목적지 log.md 끝에 `[기록]` 한 줄로 이관 사실을 남긴다(`machine`/`ts`는
+      5. 목적지 log.md 끝에 `[기록]` 한 줄로 이관 사실을 남긴다(`machine`/`ts`는
          이 줄에 쓰인다 — `task_resolve.set_pin`이 시각을 인자로 받는 것과 같은
          이유로, 이 모듈이 config를 직접 부르지 않기 때문이다).
+      6. 이 slug를 가리키는 원본 방의 책갈피를 전부 정리한다(`_move_pins`).
 
-    반환: `{"slug", "from_project", "to_project", "moved_pins", "dropped_pins"}`.
+    5와 6의 순서, 그리고 6의 실패를 삼키는 것은 2026-09-25 리뷰 B 수정이다. 예전에는
+    책갈피 정리가 먼저였고 거기서 예외가 나면(편집기 백업 `.pin.hp~` 같은 파일)
+    폴더는 이미 옮겨졌는데 이관 기록은 없는 반쯤 끝난 상태로 오류가 났다. 폴더
+    이동은 되돌리지 않으므로 기록이 먼저 남아야 하고, 책갈피는 표시의 문제라 실패해도
+    옮기기 전체를 실패로 만들 이유가 없다 — 실패 사유는 `pin_error`로 돌려준다.
+
+    반환: `{"slug", "from_project", "to_project", "moved_pins", "dropped_pins",
+    "pin_error"}` — `pin_error`는 책갈피 정리가 실패했을 때만 그 사유 문자열, 아니면 None.
     `from_project`/`to_project`는 `source_root.name`/`dest_root.name`(=방 이름,
     `tasks_root_for`가 만드는 마지막 폴더명과 같다).
     """
@@ -195,11 +216,16 @@ def move_task(*, source_root: Path, dest_root: Path, slug: str, machine: str, ts
     dest_root.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source_dir), str(dest_dir))
 
-    moved_pins, dropped_pins = _move_pins(source_root, dest_root, slug)
-
     _append_move_log_line(
-        dest_dir, machine, ts, f"방을 {source_root.name}에서 {dest_root.name}으로 옮김"
+        dest_dir, machine, ts, move_log_text(source_root.name, dest_root.name)
     )
+
+    pin_error: str | None = None
+    try:
+        moved_pins, dropped_pins = _move_pins(source_root, dest_root, slug)
+    except (OSError, ValueError) as exc:
+        moved_pins, dropped_pins = [], []
+        pin_error = f"책갈피를 정리하지 못했습니다(작업은 옮겨졌습니다): {exc}"
 
     return {
         "slug": slug,
@@ -207,4 +233,5 @@ def move_task(*, source_root: Path, dest_root: Path, slug: str, machine: str, ts
         "to_project": dest_root.name,
         "moved_pins": moved_pins,
         "dropped_pins": dropped_pins,
+        "pin_error": pin_error,
     }

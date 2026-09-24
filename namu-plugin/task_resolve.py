@@ -69,13 +69,26 @@ def strip_slug_prefix(title: str, slug: str) -> str:
     namu_active_task.py --all --json, namu_recall의 tasks, 웹 대시보드)에는
     중복이 그대로 새어 나갔다. 그래서 제목을 만드는 쪽(task_resolve)으로 옮겨
     모든 소비자가 한 번에 깨끗한 제목을 받게 했다.
+
+    (2026-09-25 리뷰 B) slug 바로 뒤가 **구분자(공백·대시·쌍점)이거나 끝**일 때만
+    걷는다. 예전에는 글자 접두만 봐서 slug `deploy`에 제목 `deployment 절차`가
+    `ment 절차`로 잘렸다 — 낱말 중간을 자른 것이다. slug는 폴더 이름이라 제목의
+    첫 낱말과 우연히 앞부분이 겹치는 일이 드물지 않다.
     """
     while title.startswith(slug):
-        stripped = title[len(slug):].lstrip(" —-–:")
+        rest = title[len(slug):]
+        if rest and rest[0] not in _SLUG_SEPARATORS:
+            break
+        stripped = rest.lstrip(_SLUG_SEPARATORS)
         if not stripped:
             break
         title = stripped
     return title or slug
+
+
+# slug 접두 뒤에 올 수 있는 구분 글자. `strip_slug_prefix`가 "여기서 낱말이 끝났다"고
+# 인정하는 글자이자 걷어낼 글자다(두 역할이 같은 목록이어야 판정과 걷기가 안 갈린다).
+_SLUG_SEPARATORS = " —-–:"
 
 
 # 한 줄 화면(브리핑 목록·statusLine)에 제목을 실을 때의 공통 상한.
@@ -243,10 +256,36 @@ def _sorted_task_dirs(tasks_dir: Path) -> list[Path]:
 # 다른 PC가 무엇을 꽂아뒀는지도 보인다(사용자 결정 2026-08-01).
 _PIN_PREFIX = ".pin."
 
-# 파일 이름에 들어가는 값이라 경로 조작(`../`)·구분자를 원천 차단한다. log 파싱용
-# `_MACHINE_RE`보다 길이를 넉넉히 잡는다 — 저기 20자는 "본문 조각을 machine으로
-# 오인하지 않기" 위한 보수적 상한이고, 여기는 실제 호스트 이름이 그대로 온다.
-_PIN_MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# 기기 이름 규칙 — **한 곳**(2026-09-25 리뷰 B). 예전에는 세 군데가 따로 정했다:
+# ① config가 NAMU_MACHINE을 아무 검사 없이 받고 ② log 파싱은 ASCII 20자까지만
+# machine으로 읽고 ③ 책갈피 파일 이름은 ASCII 64자까지만 받아 ValueError를 던졌다.
+# 그래서 `NAMU_MACHINE='집 컴'`이면 [완료] 줄은 log.md에 적힌 **뒤에** ③에서 터져
+# 도구가 실패로 끝났고(기록은 남았는데 실패 보고), 그 줄의 machine은 ②가 못 읽어
+# None이 됐다. 이제 config가 이 규칙으로 값을 **정규화**해 들이고(normalize_machine_name),
+# 파싱과 책갈피가 같은 정규식을 본다.
+#
+# 64자인 이유: 도커 컨테이너 호스트 이름(전체 id 64자)까지 그대로 받기 위해서다.
+# 파일 이름에 들어가는 값이라 경로 조작(`../`)·구분자는 원천 차단된다.
+MACHINE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_PIN_MACHINE_RE = MACHINE_NAME_RE
+
+
+def normalize_machine_name(value: str | None) -> str | None:
+    """기기 이름을 `MACHINE_NAME_RE`에 맞게 다듬는다. 남는 글자가 없으면 None.
+
+    허용 밖 글자(공백·한글 등)는 `-`로 바꾸고 이어진 `-`는 하나로 접는다. 앞뒤의
+    `-`·`.`은 걷고 64자에서 자른다. 대소문자는 그대로 둔다(`hp`·`samsung`·`web`·
+    컨테이너 id 같은 실사용 값은 이미 규칙 안이라 한 글자도 안 바뀐다).
+
+    거절하지 않고 다듬는 이유: 이 값은 서버가 뜰 때 한 번 정해지는데, 거절하면 서버가
+    아예 안 뜨거나 기록마다 실패한다. 다듬은 이름이 사람이 적은 것과 다를 수는 있어도
+    기록이 새는 것보다 낫다. None이면 부른 쪽(config)이 호스트 이름으로 물러난다.
+    """
+    if value is None:
+        return None
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-.")[:64].rstrip("-.")
+    return cleaned or None
 
 
 def _pin_path(tasks_dir: Path, machine: str) -> Path:
@@ -302,6 +341,11 @@ def read_pins(tasks_dir: Path) -> list[dict[str, str]]:
 
     pins: list[dict[str, str]] = []
     for path in paths:
+        # 기기 이름 규칙에 안 맞는 파일(편집기 백업 `.pin.hp~` 등)은 책갈피가 아니다.
+        # 읽어 들이면 옮기기(task_move)가 그 이름으로 `_pin_path`를 불러 ValueError가
+        # 나고, 그때는 폴더가 이미 옮겨진 뒤라 이관 기록 없이 반쯤 끝난다(리뷰 B 실측).
+        if not _PIN_MACHINE_RE.match(path.name[len(_PIN_PREFIX):]):
+            continue
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
         except OSError:
@@ -342,10 +386,14 @@ def clear_pin_if_points_to(tasks_dir: Path, machine: str, slug: str) -> bool:
     작업을 닫을 때 부른다 — 끝난 작업이 계속 맨 위에 남으면 책갈피가 곧 방해물이
     된다. 다른 기기 것은 건드리지 않는다(닫힌 task를 가리키는 책갈피는 열린 목록과
     맞춰 보는 단계에서 이미 화면에서 사라진다).
+
+    기기 이름이 파일 이름 규칙에 안 맞아도(ValueError) 조용히 False다 — 이 함수는
+    [완료] 줄을 **적은 뒤에** 불리므로, 여기서 터지면 기록은 남았는데 도구는 실패를
+    보고한다(리뷰 B 실측). 그런 이름으로는 애초에 책갈피를 꽂을 수 없었으니 뺄 것도 없다.
     """
     try:
         current = _pin_path(tasks_dir, machine).read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except (OSError, ValueError):
         return False
     if not current or current[0].strip() != slug:
         return False
@@ -488,18 +536,29 @@ def latest_record_date(task_dir: Path) -> str | None:
     고르는 방식은 `next_note()`가 마지막 `[다음]` 줄을 고르는 것과 같다 — 파일 순서
     그대로 훑어 조건에 맞는 **마지막** 줄을 쓴다. 규칙을 여기서만 다르게 하면 같은
     log를 읽고도 두 줄이 서로 다른 항목을 가리키게 된다.
+
+    (2026-09-25 리뷰 B) **`상세:` 이어지는 줄이 있는 `[기록]`을 먼저 본다.** 브리핑이
+    가리키는 것은 "경위가 적힌 자리"인데, 상세 없는 `[기록]`(작업 옮기기가 남기는
+    이관 줄, 짧은 진행 메모)이 뒤에 오면 그 날짜를 가리켜 경위가 없는 날로 안내했다.
+    상세 달린 `[기록]`이 하나도 없는 log(세 줄 묶음 이전의 옛 작업)만 종전처럼
+    마지막 `[기록]`으로 물러난다 — 옛 작업에서 포인터가 통째로 사라지지 않게.
     """
     try:
         lines = (task_dir / "log.md").read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
 
-    found: str | None = None
-    for line in lines:
+    with_detail: str | None = None
+    any_record: str | None = None
+    for index, line in enumerate(lines):
         parsed = _parse_log_line(line)
-        if parsed is not None and parsed["tag"] == _DETAIL_TAG and parsed["text"]:
-            found = (parsed["ts"] or "")[:10] or None
-    return found
+        if parsed is None or parsed["tag"] != _DETAIL_TAG or not parsed["text"]:
+            continue
+        day = (parsed["ts"] or "")[:10] or None
+        any_record = day
+        if _continuations(lines, index).get("상세"):
+            with_detail = day
+    return with_detail or any_record
 
 
 # 세 줄 묶음(namu-65 4단계)의 이어지는 줄. 머리줄 다음에 오는 **들여쓴** 줄들이며,
@@ -624,8 +683,32 @@ def tasks_root_for(project_dir: str | Path) -> Path:
 
     Path.home()은 HOME 환경변수를 존중하므로(POSIX) 테스트는 monkeypatch로
     가짜 HOME을 주입해 실제 ~/.namu를 건드리지 않고 격리할 수 있다.
+
+    **풀 밖을 가리키는 방 이름은 ValueError다**(2026-09-25 리뷰 B). 예전에는
+    `project='..'`가 그대로 `~/.namu/tasks/..` = `~/.namu`가 되어, journal이
+    `~/.namu/*/log.md`를 훑고 기록이 풀 밖 폴더에 쓰일 수 있었다. 방 이름 검사는
+    도구 입구(project_policy)에도 있지만, 모든 읽기·쓰기가 이 함수를 지나므로 마지막
+    방어선을 여기 둔다 — 입구가 새로 생길 때마다 검사를 잊는 일이 반복되기 때문이다.
+    빈 값·`.`·`..`·경로 구분자가 든 이름을 거절하고, 만든 경로가 풀 **바로 아래**인지
+    글자 단위(normpath)로 다시 확인한다. 심볼릭 링크는 따라가지 않는다(resolve를 쓰면
+    사용자가 일부러 링크로 옮겨 둔 방까지 막힌다).
     """
-    return Path.home() / ".namu" / "tasks" / project_key_for(project_dir)
+    key = project_key_for(project_dir)
+    if not _is_room_key(key):
+        raise ValueError(f"작업 방 이름으로 쓸 수 없는 값입니다: {key!r}")
+    pool = _tasks_pool_root()
+    root = pool / key
+    if os.path.dirname(os.path.normpath(str(root))) != os.path.normpath(str(pool)):
+        raise ValueError(f"작업 방 경로가 개인 풀 밖을 가리킵니다: {key!r}")
+    return root
+
+
+def _is_room_key(key: str) -> bool:
+    """풀 바로 아래 폴더 이름으로 쓸 수 있는가 — 비지 않고, `.`/`..`가 아니며,
+    경로 구분자·NUL이 없다."""
+    if not key or not key.strip() or key in (".", ".."):
+        return False
+    return not any(ch in key for ch in ("/", "\\", "\0"))
 
 
 # 프로젝트 뿌리 표시. `.git`은 폴더(보통)일 수도 파일(하위 모듈·worktree)일 수도 있어
@@ -650,11 +733,24 @@ def project_key_for(project_dir: str | Path) -> str:
     뿌리로 인정하면 홈 아래 모든 프로젝트가 한 방으로 합쳐진다(작업 기록이 서로
     섞이는 쪽이 방이 갈리는 것보다 훨씬 나쁘다).
 
-    경로가 실재하지 않으면 탐색하지 않고 곧장 basename을 쓴다 — 이 함수는 폴더
-    경로뿐 아니라 이미 확정된 방 이름(`project='namu-agent'`처럼 웹에서 넘어오는
-    값)으로도 불리기 때문이다.
+    경로가 실재하지 않으면 탐색하지 않고 곧장 basename을 쓴다.
+
+    **방 이름과 폴더 경로를 가른다**(2026-09-25 리뷰 B). 이 함수는 폴더 경로뿐 아니라
+    이미 확정된 방 이름(`project='naite'`처럼 웹·도구 인자로 넘어오는 값)으로도
+    불린다. 예전에는 둘을 구분하지 않고 `Path(raw).resolve()`를 했는데, 상대 이름은
+    **이 프로세스의 현재 폴더** 기준으로 풀린다 — 저장소 안에 우연히 `naite/` 하위
+    폴더가 있으면 `'naite'`가 그 폴더로 풀리고 뿌리를 찾아 올라가 저장소 방
+    (`namu-agent`)이 됐다(현재 폴더에 따라 같은 이름이 다른 방으로 가는 결함).
+    이제 구분자(`/`·`\\`)가 **하나도 없는** 값은 방 이름으로 보고 파일시스템을 전혀
+    보지 않고 그대로 돌려준다. 폴더 경로를 넘기는 쪽(세션 훅·statusLine·
+    `config.tasks_dir_for`)은 모두 절대경로를 주므로 동작이 그대로다.
+    `.`·`..`·빈 값도 이름으로 그대로 돌려주며, 거절은 `tasks_root_for`가 한다
+    (statusLine의 폴더 칸처럼 이름만 필요한 쪽이 예외로 멈추지 않게).
     """
-    raw = str(project_dir).rstrip("/\\")
+    text = str(project_dir)
+    if "/" not in text and "\\" not in text:
+        return text
+    raw = text.rstrip("/\\")
     fallback = os.path.basename(raw)
 
     try:
@@ -704,7 +800,12 @@ _LOG_LINE_RE = re.compile(
 # machine으로 인정할 토큰: 공백 없는 짧은 낱말(hp, samsung, web …).
 # 본문에도 `·`가 흔히 쓰이므로, 앞 조각이 이 모양일 때만 machine으로 본다
 # (`[완료] ... 코어 · 이음새` 같은 줄에서 "코어"를 machine으로 오인하지 않기 위함).
-_MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,20}$")
+#
+# (2026-09-25 리뷰 B) 기기 이름 규칙(`MACHINE_NAME_RE`) 그대로다. 예전에는 20자로
+# 따로 잡아, 쓰는 쪽이 받아 준 21~64자 이름(컨테이너 id 등)이 적힌 줄에서 machine을
+# 못 읽고 본문으로 삼켰다. 오인 방지는 길이가 아니라 "공백 없는 ASCII 한 토큰"이라는
+# 모양이 한다 — 우리말 본문 조각은 애초에 이 모양이 될 수 없다.
+_MACHINE_RE = MACHINE_NAME_RE
 
 
 def _split_machine(rest: str) -> tuple[str | None, str]:
@@ -760,11 +861,23 @@ def _normalize_bound(value: str, *, end: bool) -> str:
 
     날짜만 준 경우 since는 그날 00:00:00, until은 그날 23:59:59로 확장한다 —
     `until='2026-07-25'`가 그날 기록을 잘라내지 않도록(사용자 직관 우선).
+
+    (2026-09-25 리뷰 B) 다른 네 그릇의 저장 형식(ISO, `2026-09-01T12:00:00+09:00`)
+    으로 준 값도 받는다. log.md는 날짜와 시각 사이가 공백이고 `T`(0x54)가 공백
+    (0x20)보다 커서, 예전에는 `since='2026-09-01T00:00:00'`가 그날 기록을 **전부**
+    잘라냈다. 그래서 `T`를 공백으로 바꾸고 소수초·시간대 꼬리는 버린다 — log.md의
+    시각은 기준 시간대(cfg.now) 벽시계라 시간대 표기가 없다. 분까지만 준 값
+    (`HH:MM`)은 since면 :00, until이면 :59초로 채운다.
     """
     value = value.strip()
     if len(value) <= 10:
         return f"{value} 23:59:59" if end else f"{value} 00:00:00"
-    return value
+    if value[10] in "Tt":
+        value = f"{value[:10]} {value[11:]}"
+    match = re.match(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(:\d{2})?", value)
+    if not match:
+        return value
+    return match.group(1) + (match.group(2) or (":59" if end else ":00"))
 
 
 def _task_matches(slug: str, task: str) -> bool:
@@ -884,10 +997,10 @@ def _task_doc_origin(text: str, task_dir: Path) -> tuple[str, str | None]:
     그 task가 처음 기록된 시각을 대신 쓴다 — 생성 시각의 가장 정확한 근사이고 셋 다
     log.md 첫 줄에 시각이 있는 것을 확인했다.
     """
-    for line in text.splitlines()[:_TASK_DOC_HEAD_LINES]:
-        match = _TASK_DOC_CREATED_RE.search(line)
-        if match:
-            return f"{match.group(1)} 00:00:00", match.group(2)
+    index = _task_doc_created_index(text.splitlines())
+    if index is not None:
+        match = _TASK_DOC_CREATED_RE.search(text.splitlines()[index])
+        return f"{match.group(1)} 00:00:00", match.group(2)
 
     try:
         log_lines = (task_dir / "log.md").read_text(encoding="utf-8").splitlines()
@@ -898,6 +1011,18 @@ def _task_doc_origin(text: str, task_dir: Path) -> tuple[str, str | None]:
         return "", None
     earliest = min(parsed, key=lambda p: p["ts"])
     return earliest["ts"], earliest["machine"]
+
+
+def _task_doc_created_index(lines: list[str]) -> int | None:
+    """머리말(앞 _TASK_DOC_HEAD_LINES줄)에서 **처음** 나오는 생성 줄의 위치. 없으면 None.
+
+    생성 시각을 읽는 쪽(`_task_doc_origin`)과 본문에서 그 줄을 빼는 쪽
+    (`parse_task_doc`)이 같은 한 줄을 가리키게 하려고 따로 뺐다.
+    """
+    for i, line in enumerate(lines[:_TASK_DOC_HEAD_LINES]):
+        if _TASK_DOC_CREATED_RE.search(line):
+            return i
+    return None
 
 
 def parse_task_doc(task_md_path: Path, project: str) -> dict[str, str | None] | None:
@@ -929,10 +1054,16 @@ def parse_task_doc(task_md_path: Path, project: str) -> dict[str, str | None] | 
     # 화면에 실을 한 줄은 제목, 나머지(목적·완료조건)는 detail — journal()의
     # `_display_text`와 같은 역할 분담이다. 머리말 두 줄(제목·생성)은 이미 다른
     # 칸으로 갔으므로 detail에서 뺀다.
+    # 빼는 생성 줄은 `_task_doc_origin`이 시각을 읽은 **그 한 줄**뿐이다(2026-09-25
+    # 리뷰 B). 예전에는 문서 전체에서 `생성 YYYY-MM-DD`가 든 줄을 모두 지워, 본문의
+    # "색인을 생성 2026-01-01에 …" 같은 서술 줄이 검색에서 사라졌다. 머리말 5줄로만
+    # 좁혀도 짧은 설명서에서는 `## 목적` 바로 아래 줄이 그 안에 들어와 똑같이 사라진다.
+    all_lines = raw.splitlines()
+    created_index = _task_doc_created_index(all_lines)
     body_lines = [
         line
-        for line in raw.splitlines()
-        if not line.startswith("# ") and not _TASK_DOC_CREATED_RE.search(line)
+        for i, line in enumerate(all_lines)
+        if not line.startswith("# ") and i != created_index
     ]
     detail = "\n".join(body_lines).strip()
 
@@ -996,7 +1127,13 @@ def resolve_active_task(ws: str) -> tuple[str, str] | None:
     """
     if not ws:
         return None
-    return find_active_task(tasks_root_for(ws))
+    try:
+        root = tasks_root_for(ws)
+    except ValueError:
+        # 파일시스템 최상단(`/`) 같은 곳은 방 이름이 비어 풀 밖이 된다 — 한 줄
+        # 화면을 멈추지 않고 "진행 task 없음"으로 둔다.
+        return None
+    return find_active_task(root)
 
 
 _MARKER_FILENAME = ".project"

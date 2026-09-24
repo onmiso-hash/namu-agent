@@ -52,6 +52,56 @@ from __future__ import annotations
 WEB_PROJECT = "web-project"
 
 
+# 방 이름·작업 이름 안에 들어가면 안 되는 글자. `/`·`\`는 경로를 가르는 글자이고,
+# `:`는 윈도우에서 `Path(뿌리) / "C:"`가 뿌리를 통째로 갈아 끼우는 글자다(미니PC가
+# 윈도우라 실제로 도는 자리다).
+_PATH_CHARS = ("/", "\\", ":")
+
+
+def validate_room_name(name: str | None, *, label: str = "project(방 이름)") -> str:
+    """방 이름(또는 작업 이름) 하나를 **폴더 이름 한 칸**으로만 쓸 수 있게 거른다.
+
+    ## 왜 필요한가 (2026-09-25 실측)
+
+    방 이름은 `~/.namu/tasks/<이름>`에 그대로 이어 붙는다. 그런데 `'..'`를 주면 그
+    자리가 `~/.namu` 자체가 되고, `'/'`를 주면 방 목록이 통째로 "작업"으로 보인다.
+    검토에서 `namu_task_move(task='memory', to='web-project', project='..')` 한 번에
+    교훈 원본 폴더(`~/.namu/memory`)가 남의 방 안으로 옮겨지는 것을 재현했다 — 웹
+    주소로도 부를 수 있는 도구다.
+
+    ## 왜 허용 목록이 아니라 금지 목록인가
+
+    클라우드의 `_validate_project_name`은 영숫자·점·하이픈·밑줄만 받는다. 거기서는
+    회원이 고른 이름만 방이 되므로 그걸로 충분하다. 개인용에서는 **방 이름이 사람이
+    연 폴더의 이름**이라 한글·공백이 섞일 수 있고, 허용 목록으로 좁히면 이미 있는
+    방을 못 부르게 된다. 그래서 "폴더 한 칸을 벗어나게 하는 것"만 막는다 — 빈 값,
+    `.`/`..`, 경로 글자(`/`·`\\`·`:`), 제어 문자, 그리고 `.`으로 시작하는 이름(숨은
+    폴더 — `.git`이나 책갈피 `.pin.*` 같은 살림 파일 자리다). 클라우드 규칙을 통과하는
+    이름은 전부 여기서도 통과하므로 두 규칙이 서로 어긋나지 않는다.
+
+    통과하면 앞뒤 공백을 걷은 이름을, 아니면 ValueError(부르는 쪽에 그대로 보일 안내문).
+    """
+    raw = "" if name is None else str(name)
+    value = raw.strip()
+    problem = None
+    if not value:
+        problem = "비어 있습니다"
+    elif value in (".", ".."):
+        problem = f"{value!r}는 폴더 자신이나 그 위를 가리킵니다"
+    elif any(ch in value for ch in _PATH_CHARS):
+        problem = "경로 글자('/', '\\\\', ':')가 들어 있습니다"
+    elif any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        problem = "제어 문자(줄바꿈 등)가 들어 있습니다"
+    elif value.startswith("."):
+        problem = "'.'으로 시작합니다(숨은 폴더 자리입니다)"
+    if problem:
+        raise ValueError(
+            f"{label} {raw!r}는 쓸 수 없습니다 — {problem}. 이름은 폴더 이름 한 칸이어야 "
+            "하며 다른 폴더를 가리킬 수 없습니다. 예: 'namu-agent'"
+        )
+    return value
+
+
 def _unknown_project_message(
     project: str, cwd_project: str, existing: list[str]
 ) -> str:
@@ -133,6 +183,10 @@ def resolve_create_project(
     `is_web`이면 `cwd_project`는 보지 않는다(웹에는 열린 폴더가 없다).
     """
     requested = (project or "").strip() or None
+    if requested is not None:
+        # 목록 대조보다 먼저 거른다 — 목록에 없는 이름은 어차피 거절되지만, 그 안내문이
+        # '..'를 "아직 없는 방"처럼 말하게 두면 안 된다.
+        requested = validate_room_name(requested)
     known = list(existing or [])
 
     if is_web:

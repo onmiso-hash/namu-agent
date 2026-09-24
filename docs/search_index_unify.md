@@ -532,3 +532,23 @@ v0.1.60 배포 직후 확인된 것: **낱말 AND 개선이 클라우드의 작�
 함께 만들고 있어서 작업일지 그릇 조회가 1건이 아니라 2건이 됐다. 결함이 아니라
 결정한 동작이므로, 확인하려던 것(어느 방이 걸렸나 / 일지 줄이 반환되나)을 건수가
 아닌 축으로 다시 적었다. 코어 703개·클라우드 502개 전부 통과.
+
+## 12. 리뷰 B 후속 수정 (2026-09-25)
+
+색인이 들어간 뒤 리뷰에서 재현된 결함 여섯 가지를 고쳤다. 회귀 시험은
+`namu-plugin/test_fixB_db.py`·`test_fixB_tasks.py`.
+
+| 결함 | 고친 자리 | 무엇 |
+|---|---|---|
+| 재색인 경합 — 행을 읽은 **뒤에** 서명을 재서, 그 사이 붙은 한 건이 "최신" 판정 아래 영영 안 잡힘 | `db.rebuild_bowl_index` | 서명을 원본보다 **먼저** 잰다. 경합이 나도 최악이 "한 번 더 다시 만들기"다 |
+| 재색인 도중 읽으면 빈 표·`no such table` | `db._rebuild_in_one_transaction` | DROP/CREATE/INSERT/index_meta를 `BEGIN IMMEDIATE … COMMIT` 하나로. 교훈 재생성(`rebuild_from_yaml`)도 같다 |
+| since/until 구분자 — 작업일지는 공백, 나머지는 `T`로 저장하는데 경계값을 그대로 비교 | `task_resolve._normalize_bound`, `db._iso_bound`, `db._until_bound` | 경계값을 그릇의 저장 형식으로 맞춘다(작업일지는 `T`→공백·시간대 꼬리 버림, 나머지는 공백→`T`). 시각까지 준 until은 준 자리수까지 포함한다 |
+| 따옴표 없는 yaml 시각이 datetime으로 읽혀 공백 구분으로 담기고, 개인 사실 정렬이 str/datetime 혼합으로 TypeError | `db._iso_text`/`_iso_doc` | 읽는 즉시 ISO 문자열로 맞춘다(`rebuild_from_yaml`, `_bowl_rows`) |
+| 교훈 LIKE 폴백만 `%`·`_`를 안 막음 | `db._learnings_match_clause`, `db._axis_conds` | `_like_escape` + `ESCAPE '\'` — 다른 네 그릇과 같은 규칙 |
+| 설명서 본문의 `생성 YYYY-MM-DD` 줄이 검색에서 사라짐 | `task_resolve.parse_task_doc` | 생성 줄을 빼는 범위를 머리말 5줄로 좁혔다(11.3과 같은 범위) |
+
+**작업일지 색인은 `paths`를 보지 않는다.** 작업일지 풀은 늘 이 프로세스 HOME의
+`~/.namu/tasks`이고(`DataPaths`에 그 칸이 없다), 다른 데이터 루트를 `paths`로 줘도
+작업일지 색인은 HOME 풀을 담는다. 거절하지 않고 문서로 남긴 이유: 시험과
+`ensure_indexes(paths)`가 가짜 HOME과 가짜 데이터 루트를 함께 쓰며 이 경로를 정상으로
+탄다. 클라우드는 이 때문에 작업일지만 코어 색인을 안 쓰고 회원 폴더를 직접 훑는다.

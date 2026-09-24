@@ -2,7 +2,7 @@ import hashlib
 import json
 import sqlite3
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import yaml
 from ulid import ULID
@@ -241,6 +241,52 @@ def record(
     return entry_id
 
 
+def _iso_text(value):
+    """yaml이 날짜·시각으로 읽어 버린 값을 ISO 문자열로 되돌린다. 나머지는 그대로.
+
+    원본 yaml에 따옴표 없이 `timestamp: 2026-09-01T12:00:00+09:00`이 적혀 있으면
+    PyYAML이 문자열이 아니라 datetime으로 읽는다(손으로 고친 파일, 다른 도구가 쓴
+    파일). 그대로 SQLite에 넘기면 기본 변환기가 `2026-09-01 12:00:00+09:00`(공백
+    구분)으로 담아 since/until 사전순 비교가 어긋나고(파이썬 3.12부터는
+    DeprecationWarning), 따옴표 있는 항목(str)과 섞이면 정렬이 TypeError로 터진다
+    (2026-09-25 리뷰 B 실측 — 개인 사실 검색 전체가 멈췄다). isoformat은 `T` 구분이라
+    db.record가 적는 모양과 같다.
+    """
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _iso_doc(doc: dict) -> dict:
+    """기록 dict 한 건의 최상위 칸을 `_iso_text`로 맞춘 사본."""
+    return {k: _iso_text(v) for k, v in doc.items()}
+
+
+def _rebuild_in_one_transaction(db_path, script: str, fill) -> None:
+    """표를 지우고 다시 채우는 일을 **트랜잭션 하나**로 한다(2026-09-25 리뷰 B).
+
+    예전에는 DROP/CREATE(executescript, 자동 커밋)와 INSERT(`with conn:`)가 따로
+    커밋돼, 그 사이에 다른 프로세스(다른 세션의 검색, 웹 서버)가 읽으면 빈 표나
+    `no such table`을 받았다 — "쪽지 0건"이 오류 없이 답으로 나간다. 한 트랜잭션이면
+    읽는 쪽은 커밋 전까지 **옛 색인 전체**를 본다.
+
+    `BEGIN IMMEDIATE`를 스크립트 **안에** 넣는 이유: `executescript`는 이미 열린
+    트랜잭션이 있으면 먼저 COMMIT해 버린다(파이썬 sqlite3의 옛 트랜잭션 모드). 스크립트가
+    스스로 트랜잭션을 열게 하면 그 커밋이 끼어들 틈이 없고, 트리거 본문의 `;` 때문에
+    스크립트를 문장별로 쪼갤 필요도 없다. isolation_level=None이라 뒤따르는
+    executemany도 암묵 BEGIN/COMMIT 없이 같은 트랜잭션 안에서 돈다.
+    """
+    with closing(sqlite3.connect(db_path, isolation_level=None)) as conn:
+        try:
+            conn.executescript("BEGIN IMMEDIATE;" + script)
+            fill(conn)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+
+
 def rebuild_from_yaml(paths: "cfg.DataPaths | None" = None) -> int:
     p = paths or cfg.data_paths_for()
     yaml_path = p.learnings_yaml
@@ -248,29 +294,35 @@ def rebuild_from_yaml(paths: "cfg.DataPaths | None" = None) -> int:
 
     docs = []
     if yaml_path.exists():
-        docs = [d for d in yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")) if d]
+        docs = [
+            _iso_doc(d)
+            for d in yaml.safe_load_all(yaml_path.read_text(encoding="utf-8"))
+            if d
+        ]
 
-    with closing(sqlite3.connect(p.db_path)) as conn:
-        conn.executescript(
-            "DROP TRIGGER IF EXISTS learnings_ai;"
-            "DROP TABLE IF EXISTS learnings_fts;"
-            "DROP TABLE IF EXISTS learnings;"
-            + _SCHEMA
-        )
-        with conn:
-            for d in docs:
-                tags = d.get("tags") or []
-                kind = d.get("kind") or "lesson"
-                conn.execute(
-                    """INSERT OR IGNORE INTO learnings
-                       (id, timestamp, task, task_type, outcome, reason, machine, verified_by,
-                        tags, kind, via, summary, body)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (d.get("id"), d.get("timestamp"), d.get("task"), d.get("task_type"),
-                     d.get("outcome"), d.get("reason"), d.get("machine"), d.get("verified_by"),
-                     json.dumps(tags, ensure_ascii=False), kind, d.get("via"),
-                     d.get("summary"), d.get("body")),
-                )
+    def fill(conn: sqlite3.Connection) -> None:
+        for d in docs:
+            tags = d.get("tags") or []
+            kind = d.get("kind") or "lesson"
+            conn.execute(
+                """INSERT OR IGNORE INTO learnings
+                   (id, timestamp, task, task_type, outcome, reason, machine, verified_by,
+                    tags, kind, via, summary, body)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (d.get("id"), d.get("timestamp"), d.get("task"), d.get("task_type"),
+                 d.get("outcome"), d.get("reason"), d.get("machine"), d.get("verified_by"),
+                 json.dumps(tags, ensure_ascii=False), kind, d.get("via"),
+                 d.get("summary"), d.get("body")),
+            )
+
+    _rebuild_in_one_transaction(
+        p.db_path,
+        "DROP TRIGGER IF EXISTS learnings_ai;"
+        "DROP TABLE IF EXISTS learnings_fts;"
+        "DROP TABLE IF EXISTS learnings;"
+        + _SCHEMA,
+        fill,
+    )
     return len(docs)
 
 
@@ -322,6 +374,14 @@ def _bowl_source_files(bowl: str, paths: "cfg.DataPaths") -> list:
 
     첨부 기록은 yaml 한 장뿐이다 — 사용자 저장소(attach_file/)는 여기 절대 들어오지
     않는다(설계서 9.3).
+
+    ⚠️ 작업일지는 `paths`를 보지 않는다 — 늘 `Path.home()/.namu/tasks` 풀이다
+    (`task_resolve._tasks_pool_root`, DataPaths에 그 칸이 없다). 다른 데이터 루트를
+    `paths`로 줘도 작업일지 색인은 **이 프로세스 HOME의 풀**을 담는다. 클라우드는
+    그래서 작업일지만 코어 색인을 안 쓰고 회원 폴더를 직접 훑는다
+    (namu-cloud-routing `_task_journal_for_user`). 막지 않고 적어 두는 이유: 시험과
+    `ensure_indexes(paths)`가 가짜 HOME과 가짜 데이터 루트를 함께 쓰며 이 경로를
+    정상으로 타기 때문이다.
     """
     if bowl == "tasks":
         try:
@@ -416,9 +476,11 @@ def _bowl_rows(bowl: str, paths: "cfg.DataPaths") -> list[tuple]:
             ))
         return rows
 
+    # 아래 셋은 yaml을 읽으므로 따옴표 없는 시각이 datetime으로 올 수 있다 — 정렬·
+    # 비교·JSON 담기 전에 ISO 문자열로 맞춘다(`_iso_text`).
     if bowl == "memo":
         # 붙인 순서(오래된 것 먼저)가 스틱노트의 자연스러운 순서라 뒤집지 않는다.
-        for m in _memo.load_all(paths):
+        for m in map(_iso_doc, _memo.load_all(paths)):
             summary, reason, body = _memo.layers(m)
             rows.append((
                 m.get("id"),
@@ -436,7 +498,7 @@ def _bowl_rows(bowl: str, paths: "cfg.DataPaths") -> list[tuple]:
         # active()는 정정된(supersede된) 옛 항목을 뺀 목록이다. 색인 대상도 그것이며,
         # 정정이 추가되면 profile.yaml이 바뀌므로 서명이 달라져 다시 만들어진다.
         docs = sorted(
-            _profile.active(paths=paths),
+            map(_iso_doc, _profile.active(paths=paths)),
             key=lambda d: d.get("timestamp") or "",
             reverse=True,
         )
@@ -459,7 +521,7 @@ def _bowl_rows(bowl: str, paths: "cfg.DataPaths") -> list[tuple]:
         # 올림 → 새 판 → 지움이 여러 줄 쌓이는데, 최신 한 줄만 담으면 지운 파일의
         # 기록과 그 이유가 검색에서 사라져 "그 자료 어디 갔지"에 답할 수 없게 된다.
         items = sorted(
-            _attachments.load_all(paths),
+            map(_iso_doc, _attachments.load_all(paths)),
             key=lambda a: str(a.get("timestamp") or ""),
             reverse=True,
         )
@@ -500,33 +562,46 @@ def rebuild_bowl_index(bowl: str, paths: "cfg.DataPaths | None" = None) -> int:
     증분이 아니라 전량이다. 지금 규모에서 전량 재색인은 작업일지 579줄 86ms(설계서
     7장 실측)이고 나머지 셋은 그보다 훨씬 작다 — 증분은 "어디까지 반영됐나"라는
     상태를 하나 더 만들고, 그 상태가 틀어지면 조용히 일부만 검색되는 결함이 된다.
+
+    **서명을 원본보다 먼저 잰다**(2026-09-25 리뷰 B). 예전에는 행을 읽은 **뒤에**
+    서명을 재서, 그 사이 다른 프로세스가 원본에 한 건을 붙이면 "새 파일의 서명 +
+    옛 내용의 행"이 저장됐다 — 다음 판정은 서명이 같으니 "최신"이라 하고, 그 한 건은
+    원본이 또 바뀔 때까지 검색에 영영 안 잡혔다. 먼저 재면 경합이 나도 최악이
+    "옛 서명 + 새 내용"이라 다음 판정에서 한 번 더 다시 만들 뿐이다(틀리는 쪽이
+    안전한 쪽으로 바뀐다).
+
+    지우고 채우는 일은 트랜잭션 하나다(`_rebuild_in_one_transaction`) — 도중에 읽는
+    쪽이 빈 표를 보지 않는다.
     """
     p = paths or cfg.data_paths_for()
     table = _bowl_table(bowl)
-    rows = _bowl_rows(bowl, p)
     signature = _bowl_signature(bowl, p)
+    rows = _bowl_rows(bowl, p)
 
     p.db_path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(p.db_path)) as conn:
-        conn.executescript(
-            f"DROP TRIGGER IF EXISTS {table}_ai;"
-            f"DROP TABLE IF EXISTS {table}_fts;"
-            f"DROP TABLE IF EXISTS {table};"
-            + _INDEX_META_SCHEMA
-            + _bowl_schema_sql(bowl)
+
+    def fill(conn: sqlite3.Connection) -> None:
+        conn.executemany(
+            f"INSERT INTO {table}"
+            " (id, timestamp, machine, via, project, task, text, doc)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            rows,
         )
-        with conn:
-            conn.executemany(
-                f"INSERT INTO {table}"
-                " (id, timestamp, machine, via, project, task, text, doc)"
-                " VALUES (?,?,?,?,?,?,?,?)",
-                rows,
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO index_meta (bowl, signature, indexed_at, n)"
-                " VALUES (?,?,?,?)",
-                (bowl, signature, cfg.now().isoformat(), len(rows)),
-            )
+        conn.execute(
+            "INSERT OR REPLACE INTO index_meta (bowl, signature, indexed_at, n)"
+            " VALUES (?,?,?,?)",
+            (bowl, signature, cfg.now().isoformat(), len(rows)),
+        )
+
+    _rebuild_in_one_transaction(
+        p.db_path,
+        f"DROP TRIGGER IF EXISTS {table}_ai;"
+        f"DROP TABLE IF EXISTS {table}_fts;"
+        f"DROP TABLE IF EXISTS {table};"
+        + _INDEX_META_SCHEMA
+        + _bowl_schema_sql(bowl),
+        fill,
+    )
     return len(rows)
 
 
@@ -656,8 +731,13 @@ def _bowl_axis_conds(
 
     그릇마다 다른 곳(경계 해석과 task 매칭)만 갈라진다:
     - 작업일지의 since/until은 날짜만 주면 그날 00:00:00~23:59:59로 넓힌다
-      (`task_resolve._normalize_bound`, log.md의 벽시계 문자열 기준).
-    - 나머지 셋은 ISO 타임스탬프라 `_until_bound`(다음날 미만) 규칙을 쓴다.
+      (`task_resolve._normalize_bound`, log.md의 벽시계 문자열 `YYYY-MM-DD HH:MM:SS`
+      기준 — `T` 구분·시간대 꼬리로 줘도 이 모양으로 맞춘다).
+    - 나머지 셋은 ISO 타임스탬프(`YYYY-MM-DDTHH:MM:SS…+09:00`)라 경계값의 공백
+      구분을 `T`로 맞추고(`_iso_bound`) `_until_bound`(다음날 미만) 규칙을 쓴다.
+      예전에는 그릇마다 저장 구분자가 다른데 경계값을 그대로 비교해, 같은
+      `since='2026-09-01 23:59:59'`가 쪽지에서는 그날 전부를 통과시키고 작업일지에서는
+      `T` 형식이 그날 전부를 잘랐다(`T`(0x54) > 공백(0x20), 2026-09-25 리뷰 B).
     - 작업일지의 task는 폴더명 완전 일치 **또는 앞부분 지목**(`namu-49` →
       `namu-49-...`)이고, 첨부 기록의 task는 완전 일치다(옛 동작 그대로).
     """
@@ -698,12 +778,24 @@ def _bowl_axis_conds(
 
     if since is not None:
         conds.append("t.timestamp >= ?")
-        params.append(since)
+        params.append(_iso_bound(since))
     if until is not None:
-        op, bound = _until_bound(until)
+        op, bound = _until_bound(_iso_bound(until))
         conds.append(f"t.timestamp {op} ?")
         params.append(bound)
     return conds, params
+
+
+def _iso_bound(value: str) -> str:
+    """since/until 경계값을 ISO 저장 형식(교훈·사실·쪽지·첨부 기록)의 구분자로 맞춘다.
+
+    날짜 뒤 11번째 글자가 공백이면(`2026-09-01 12:00:00`, 작업일지 형식) `T`로 바꾼다.
+    날짜만 준 값은 그대로다. 작업일지 쪽 짝은 `task_resolve._normalize_bound`다.
+    """
+    value = value.strip()
+    if len(value) > 10 and value[10] == " ":
+        value = f"{value[:10]}T{value[11:]}"
+    return value
 
 
 # 조회 컬럼 목록. **끝에 추가한다** — `_row_to_dict`가 SELECT 결과를 이 순서로
@@ -735,12 +827,21 @@ def _until_bound(until: str) -> tuple[str, str]:
     """until 인자를 (비교연산자, 경계값)으로 정규화한다. SQL과 파이썬 필터 양쪽에서 재사용.
 
     날짜만(길이<=10) 주면 그날을 포함해야 하므로 다음날 날짜 미만(`<`, 다음날)으로
-    확장하고, 시각까지 주면 그 값 이하(`<=`, 그대로)로 비교한다.
+    확장하고, 시각까지 주면 그 값 이하(`<=`)로 비교한다.
+
+    시각까지 주되 시간대 꼬리가 없으면(`2026-09-01T23:59:59`) 경계 뒤에 `~`를 붙여
+    **준 자리수까지 포함**한다. 저장값은 소수초·시간대 꼬리(`…:59.123456+09:00`)를
+    달고 있어, 그대로 `<=`로 비교하면 바로 그 초(분)에 적힌 기록이 빠진다. `~`는
+    ISO 문자열에 나오는 어떤 글자(숫자·`.`·`+`·`-`·`:`)보다 커서, 그 접두로 시작하는
+    값은 전부 경계 안에 든다.
     """
     value = until.strip()
     if len(value) <= 10:
         d = date.fromisoformat(value)
         return ("<", (d + timedelta(days=1)).isoformat())
+    time_part = value[11:]
+    if not any(mark in time_part for mark in ("+", "-", "Z", "z")):
+        return ("<=", value + "~")
     return ("<=", value)
 
 
@@ -768,10 +869,14 @@ def _axis_conds(
     (learnings의 task 컬럼은 "namu-57 1단계 — …" 같은 자유 문장이라 정확 일치로
     걸면 못 찾는다). since/until은 timestamp(ISO8601 문자열) 사전순 비교.
 
-    ⚠️ timestamp는 기준 시간대(cfg.now) 저장값이다(db.record, namu-71) — 이제
-    tasks/memo 그릇과 같은 벽시계라 since/until 값을 그릇 간에 재사용해도 된다.
-    다만 namu-71 이전에 쌓인 항목은 UTC(+00:00)로 적혀 있어 사전순 비교가 그
-    구간에서만 최대 9시간 어긋난다(과거 항목이라 최신순 정렬은 뒤집히지 않는다).
+    ⚠️ timestamp는 기준 시간대(cfg.now) 저장값이다(db.record, namu-71) — tasks/memo
+    그릇과 같은 벽시계다. 다만 **저장 형식은 그릇마다 다르다**: 교훈·사실·쪽지·첨부
+    기록은 `2026-09-01T12:00:00.123456+09:00`(`T` 구분), 작업일지는
+    `2026-09-01 12:00:00`(공백 구분, 시간대 없음)이다. 그래서 경계값은 비교 전에
+    그릇의 형식으로 맞춘다(여기서는 `_iso_bound` — 공백을 `T`로). 날짜만 주거나
+    어느 형식으로 줘도 같은 뜻이 되는 것은 이 정규화 덕이지 형식이 같아서가 아니다.
+    namu-71 이전에 쌓인 항목은 UTC(+00:00)로 적혀 있어 사전순 비교가 그 구간에서만
+    최대 9시간 어긋난다(과거 항목이라 최신순 정렬은 뒤집히지 않는다).
     """
     conds: list[str] = []
     params: list = []
@@ -788,13 +893,14 @@ def _axis_conds(
         conds.append(f"{prefix}via = ?")
         params.append(via)
     if task:
-        conds.append(f"{prefix}task LIKE ?")
-        params.append(f"%{task}%")
+        # `%`·`_`를 글자 그대로 — 다른 네 그릇의 LIKE와 같은 규칙(`_like_escape`).
+        conds.append(f"{prefix}task LIKE ? ESCAPE '\\'")
+        params.append(f"%{_like_escape(task)}%")
     if since:
         conds.append(f"{prefix}timestamp >= ?")
-        params.append(since)
+        params.append(_iso_bound(since))
     if until:
-        clause, val = _until_clause(f"{prefix}timestamp", until)
+        clause, val = _until_clause(f"{prefix}timestamp", _iso_bound(until))
         conds.append(clause)
         params.append(val)
     return conds, params
@@ -869,9 +975,13 @@ def _learnings_match_clause(query: "str | None") -> tuple[bool, list[str], list]
         return False, [], []
     if _use_index(tokens):
         return True, ["learnings_fts MATCH ?"], [_fts_match_expr(tokens)]
-    like_group = "(" + " OR ".join(f"{c} LIKE ?" for c in _LEARNINGS_TEXT_COLS) + ")"
+    # `%`·`_`는 글자 그대로 찾는다(`_like_escape`) — 다른 네 그릇의 LIKE는 이미 막고
+    # 있었고 교훈만 빠져, `%` 한 글자 검색이 교훈 전부를 돌려줬다(2026-09-25 리뷰 B).
+    like_group = (
+        "(" + " OR ".join(f"{c} LIKE ? ESCAPE '\\'" for c in _LEARNINGS_TEXT_COLS) + ")"
+    )
     conds = [like_group] * len(tokens)
-    params = [f"%{t}%" for t in tokens for _ in _LEARNINGS_TEXT_COLS]
+    params = [f"%{_like_escape(t)}%" for t in tokens for _ in _LEARNINGS_TEXT_COLS]
     return False, conds, params
 
 
@@ -983,12 +1093,14 @@ def search(
       - machine/via/task_type/outcome_filter: 정확히 일치.
       - task: task 컬럼 부분일치(LIKE `%값%`) — learnings의 task 컬럼은
         "namu-57 1단계 — …" 같은 자유 문장이라 `task='namu-57'`로 걸려야 한다.
-      - since/until: timestamp(ISO8601 문자열) 사전순 비교. since는
-        `timestamp >= ?`. until은 날짜만 주면(길이<=10) 그날을 포함해야 하므로
-        다음날 날짜로 `timestamp < ?`, 시각까지 주면 `timestamp <= ?`.
+      - since/until: timestamp(ISO8601 문자열, `T` 구분) 사전순 비교. 경계값은
+        `YYYY-MM-DD`·`YYYY-MM-DDTHH:MM:SS`·`YYYY-MM-DD HH:MM:SS` 어느 것이든 받고
+        비교 전에 `T` 구분으로 맞춘다(`_iso_bound`). since는 `timestamp >= ?`.
+        until은 날짜만 주면(길이<=10) 그날을 포함해야 하므로 다음날 날짜로
+        `timestamp < ?`, 시각까지 주면 준 자리수까지 포함한다(`_until_bound`).
         ⚠️ 이 timestamp는 기준 시간대(cfg.now) 저장값이다(db.record, namu-71) —
-        tasks(log.md)·memo와 같은 벽시계다. namu-71 이전 항목만 UTC로 남아 있어
-        그 구간의 날짜 경계가 9시간 어긋난다.
+        tasks(log.md)·memo와 같은 벽시계다(형식은 다르다 — `_axis_conds` 참고).
+        namu-71 이전 항목만 UTC로 남아 있어 그 구간의 날짜 경계가 9시간 어긋난다.
 
     summary(outcome 집계)는 기존 의미를 유지한다 — outcome_filter와 limit은
     무시하고 query + 나머지 필터(machine/via/task/task_type/since/until)에 걸린
@@ -1075,6 +1187,14 @@ def search_bowl(
     미만이 섞이면 색인을 건너뛰고 LIKE 전수 조회로 돌린다(설계서 5장 — 두 글자 우회).
     첨부 기록에서는 파일 이름(path)도 검색 대상이고, 크기는 기록의 `bytes` 칸에서만
     읽는다 — 저장소에 물으면 첨부 격리가 뚫린다(설계서 9.3).
+
+    since/until은 `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM:SS`, `YYYY-MM-DD HH:MM:SS` 어느
+    형식으로 줘도 다섯 그릇에서 같은 뜻이다 — 그릇마다 저장 형식이 달라(작업일지만
+    공백 구분·시간대 없음) 경계값을 그 그릇의 형식으로 맞춘 뒤 비교한다.
+
+    ⚠️ `paths`는 작업일지(tasks)에는 효과가 없다 — 작업일지 색인은 늘 이 프로세스
+    HOME의 개인 풀(`~/.namu/tasks`)을 담는다(`_bowl_source_files` 참고). 색인
+    표 자체는 `paths.db_path`에 만들어진다.
 
     `project`는 tasks·attachments 전용 축이다 — learnings/profile에 project를 주면
     조용히 무시하지 않고 ValueError로 명시 거절한다(조용히 무시하면 웹 AI가 필터가

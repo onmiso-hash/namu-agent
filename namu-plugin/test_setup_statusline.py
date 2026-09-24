@@ -160,6 +160,36 @@ def test_preserves_other_settings_keys(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 2-1. 못 읽는 settings는 덮어쓰지 않는다
+#
+# 예전에는 JSON이 깨진 settings.json을 빈 설정으로 읽고 statusLine 하나만 얹어 통째로
+# 덮어써, 그 안의 훅·권한이 전부 사라졌다.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("원래", [
+    '{"hooks": {"Stop": []}, "permissions": {"allow": ["Bash(ls)"]},}',   # 끝 쉼표
+    '["객체가 아니다"]',
+])
+def test_unreadable_settings_is_left_untouched(tmp_path, 원래):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    install_path = _make_install(tmp_path)
+    _write_installed_plugins(fake_home, _installed_plugins_json(install_path))
+
+    settings_path = _settings_path(fake_home)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(원래, encoding="utf-8")
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode != 0
+    assert settings_path.read_text(encoding="utf-8") == 원래, "못 읽는 파일을 덮어썼다"
+    assert list(settings_path.parent.glob("settings.json.bak.*")) == [], "쓰지 않으면 백업도 없어야 한다"
+    assert "설정 파일을 읽을 수 없어 손대지 않았습니다" in result.stdout
+    assert str(settings_path) in result.stdout
+
+
+# ---------------------------------------------------------------------------
 # 3. NAMU 구버전 경로 -> 자동 갱신 + 백업
 # ---------------------------------------------------------------------------
 
