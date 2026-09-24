@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 # namu_setup_statusline.py는 오직 namu-plugin/scripts/에만 존재한다(repo 루트 scripts/에는
 # 짝이 없음 — 스크립트 자체 docstring 참고). 다른 statusline 계열 테스트가 참조하는
 # repo 루트 scripts/의 "원본" 관례와 다르다는 점에 주의.
@@ -51,6 +53,7 @@ def _run_cli(fake_home: Path, args: list[str] | None = None) -> subprocess.Compl
     env = os.environ.copy()
     env["HOME"] = str(fake_home)
     env["USERPROFILE"] = str(fake_home)
+    env.pop("GROK_HOME", None)
     return subprocess.run(
         [sys.executable, str(_SCRIPT), *(args or [])],
         capture_output=True,
@@ -488,6 +491,75 @@ def test_autodetect_agy_only_skips_claude(tmp_path):
         _expected_command(agy_install)
     )
     assert not _settings_path(fake_home).exists()
+
+
+def _write_grok_registry(fake_home: Path, install_path: Path) -> None:
+    path = fake_home / ".grok" / "installed-plugins" / "registry.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "version": 1,
+        "repos": {
+            "namu-local": {
+                "path": str(install_path),
+                "plugins": {"namu": {"version": "0.1.89"}},
+            }
+        },
+    }), encoding="utf-8")
+
+
+def test_autodetect_grok_only_writes_config_toml(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    install = _make_install(tmp_path, "grok_install")
+    _write_grok_registry(fake_home, install)
+    config = fake_home / ".grok" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("[plugins]\nenabled = [\"namu\"]\n", encoding="utf-8")
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = config.read_text(encoding="utf-8")
+    assert "[ui.status_line]" in text
+    assert _expected_command(install) in text
+    assert "enabled = [\"namu\"]" in text
+    assert "[grok] [신규]" in result.stdout
+    assert "Grok CLI를 재시작하면 반영됩니다." in result.stdout
+
+
+def test_grok_statusline_refuses_a_foreign_command(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    install = _make_install(tmp_path, "grok_install")
+    _write_grok_registry(fake_home, install)
+    config = fake_home / ".grok" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[ui.status_line]\ntype = \"command\"\ncommand = \"echo other\"\n",
+        encoding="utf-8",
+    )
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode != 0
+    assert "이미 다른 statusLine" in result.stdout
+    assert "echo other" in config.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="윈도우 파일 이름에는 큰따옴표를 넣을 수 없다")
+def test_grok_statusline_reports_a_quoted_install_path_separately(tmp_path):
+    """경로에 큰따옴표가 있으면 '다른 설정이 있다'가 아니라 경로 오류로 알린다."""
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    install = _make_install(tmp_path, 'grok"install')
+    _write_grok_registry(fake_home, install)
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode != 0
+    assert "경로에 큰따옴표가 들어 있어" in result.stdout
+    assert "이미 다른 statusLine" not in result.stdout
+    assert not (fake_home / ".grok" / "config.toml").exists()
 
 
 def test_autodetect_neither_host_installed_errors(tmp_path):

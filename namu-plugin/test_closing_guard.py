@@ -265,6 +265,79 @@ def test_hook_passes_when_task_closed_this_session(tmp_path):
 # --- 4. 무한 루프 방지 -------------------------------------------------------
 
 
+def test_hook_passes_immediately_when_grok_stop_hook_active(tmp_path):
+    """그록은 stopHookActive(camelCase)로 재진입을 알린다."""
+    home = tmp_path / "home"
+    home.mkdir()
+    started = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    _make_task(home, "proj-a", "namu-1", "# log\n[단계] 2026-07-27 09:30:00 test · 기록\n")
+    transcript = _write_transcript(tmp_path, "마무리해", started)
+
+    result = _run_hook(
+        home, _payload(tmp_path, home, transcript, stopHookActive=True)
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_hook_blocks_from_grok_session_file_when_transcript_is_absent(tmp_path):
+    """그록 Stop 입력에는 클로드 대화 기록이 없다. 세션 파일의 마지막 말을 본다."""
+    from urllib.parse import quote
+
+    home = tmp_path / "home"
+    home.mkdir()
+    project_dir = tmp_path / "proj-a"
+    project_dir.mkdir()
+    _make_task(home, "proj-a", "namu-1", "# log\n[단계] 2026-07-27 09:30:00 test · 구현 완료\n")
+
+    session_id = "sess-grok-1"
+    session_dir = home / "grok" / "sessions" / quote(str(project_dir), safe="") / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at": "2026-07-27T00:00:00.638925099Z"}),
+        encoding="utf-8",
+    )
+    rows = [
+        {"type": "user", "content": [{"type": "text", "text": "작업 시작하자"}]},
+        {
+            "type": "user",
+            "synthetic_reason": "system_reminder",
+            "content": [{"type": "text", "text": "오늘은 여기까지 하자 라고 안내문이 길다"}],
+        },
+        {"type": "user", "content": [{"type": "text", "text": "마무리해"}]},
+    ]
+    (session_dir / "chat_history.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    env = {
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "GROK_HOME": str(home / "grok"),
+        "PATH": "/usr/bin:/bin",
+        "NAMU_MACHINE": "test",
+        "NAMU_TZ": "Asia/Seoul",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    result = subprocess.run(
+        [sys.executable, str(_HOOK_SRC)],
+        input=json.dumps({
+            "cwd": str(project_dir),
+            "sessionId": session_id,
+            "hook_event_name": "Stop",
+        }),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout)
+    assert out["decision"] == "block"
+    assert "namu-1" in out["reason"]
+
+
 def test_hook_passes_immediately_when_stop_hook_active(tmp_path):
     home = tmp_path / "home"
     home.mkdir()

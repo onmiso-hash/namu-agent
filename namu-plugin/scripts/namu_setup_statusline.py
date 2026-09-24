@@ -36,6 +36,7 @@ agy까지 설치돼 있으면 둘 다). 어느 호스트도 설치돼 있지 않
 """
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -147,6 +148,119 @@ def _agy_resolve_install_path() -> Optional[str]:
 
 def _agy_build_statusline(command: str) -> dict:
     return {"type": "", "command": command, "enabled": True}
+
+
+# ---------------------------------------------------------------------------
+# 호스트 어댑터 — grok
+# ---------------------------------------------------------------------------
+
+GROK_RESTART_NAME = "Grok CLI"
+
+
+def _grok_data_root() -> Path:
+    """그록 데이터 뿌리. GROK_HOME이 있으면 그 경로(테스트·격리), 없으면 ~/.grok."""
+    override = os.environ.get("GROK_HOME")
+    if override:
+        return Path(override)
+    return Path.home() / ".grok"
+
+
+def _grok_registry_path() -> Path:
+    return _grok_data_root() / "installed-plugins" / "registry.json"
+
+
+def _grok_settings_path() -> Path:
+    return _grok_data_root() / "config.toml"
+
+
+def _grok_resolve_install_path() -> Optional[str]:
+    """installed-plugins/registry.json에서 name이 namu인 설치 경로를 찾는다.
+
+    스키마(실측, grok 1.0.41): {"version":1,"repos":{"<key>":{"path":...,"plugins":{"namu":{...}}}}}
+    여러 개면 scripts/namu_statusline.py가 있는 경로를 우선한다.
+    """
+    path = _grok_registry_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    repos = data.get("repos")
+    if not isinstance(repos, dict):
+        return None
+    found: list[str] = []
+    for repo in repos.values():
+        if not isinstance(repo, dict):
+            continue
+        plugins = repo.get("plugins")
+        if not isinstance(plugins, dict) or PLUGIN_SHORT_NAME not in plugins:
+            continue
+        install = repo.get("path")
+        if isinstance(install, str) and install:
+            found.append(install)
+    for install in found:
+        if (Path(install) / "scripts" / STATUSLINE_MARKER).exists():
+            return install
+    return found[0] if found else None
+
+
+def _grok_upsert_statusline(text: str, command: str, force: bool) -> tuple[str, str, str | None]:
+    """config.toml의 [ui.status_line]만 갈아 끼운다.
+
+    반환: (새 본문, 상태, 기존 command). 상태는 fresh|updated|noop|reject|badpath.
+    다른 표는 그대로 둔다. 새 command에 큰따옴표가 있으면 badpath다(경로 규약상 없다) —
+    reject와 섞으면 안내문이 기존 설정 자리에 새 설정을 보여주게 된다.
+    """
+    if '"' in command:
+        return text, "badpath", None
+
+    header = "[ui.status_line]"
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+    block = [header, 'type = "command"', f'command = "{command}"', ""]
+
+    if start is None:
+        body = text
+        if body and not body.endswith("\n"):
+            body += "\n"
+        if body and not body.endswith("\n\n"):
+            body += "\n"
+        return body + "\n".join(block), "fresh", None
+
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        stripped = lines[index].strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            end = index
+            break
+
+    existing_cmd = None
+    kept: list[str] = []
+    for line in lines[start + 1:end]:
+        match = re.match(r'\s*command\s*=\s*"(.*)"\s*$', line)
+        if match:
+            existing_cmd = match.group(1)
+            continue
+        if re.match(r"\s*type\s*=", line):
+            continue
+        if line.strip() == "" and not kept:
+            continue
+        kept.append(line)
+
+    if existing_cmd == command:
+        normalized = text if text.endswith("\n") else text + "\n"
+        return normalized, "noop", existing_cmd
+    if existing_cmd and STATUSLINE_MARKER not in existing_cmd and not force:
+        return text, "reject", existing_cmd
+
+    new_section = [header, 'type = "command"', f'command = "{command}"']
+    new_section.extend(kept)
+    if new_section[-1].strip() != "":
+        new_section.append("")
+    new_lines = lines[:start] + new_section + lines[end:]
+    status = "updated" if existing_cmd else "fresh"
+    return "\n".join(new_lines).rstrip() + "\n", status, existing_cmd
 
 
 # ---------------------------------------------------------------------------
@@ -306,25 +420,89 @@ def setup_one(host: Host, force: bool) -> HostResult:
     return HostResult(status, "\n".join(lines), True)
 
 
+def setup_grok(force: bool) -> HostResult:
+    """그록은 settings.json이 아니라 ~/.grok/config.toml의 [ui.status_line]이다."""
+    install_path = _grok_resolve_install_path()
+    if install_path is None:
+        return HostResult("skip", "[grok] 미설치 — 건너뜁니다.", True)
+
+    command = build_command(install_path)
+    if command is None:
+        expected = Path(install_path) / "scripts" / STATUSLINE_MARKER
+        return HostResult(
+            "broken",
+            f"[grok] [오류] statusline 스크립트를 찾지 못했습니다: {expected}\n"
+            "  Grok의 namu 플러그인이 최신이 아닐 수 있습니다 — "
+            "`grok plugin update namu` 뒤 다시 실행하세요.",
+            False,
+        )
+
+    settings_path = _grok_settings_path()
+    original = settings_path.read_text(encoding="utf-8") if settings_path.exists() else ""
+    new_text, status, existing_cmd = _grok_upsert_statusline(original, command, force)
+
+    if status == "badpath":
+        return HostResult(
+            "badpath",
+            "[grok] [오류] statusLine 경로에 큰따옴표가 들어 있어 설정할 수 없습니다:\n"
+            f"  {command}\n"
+            "플러그인 설치 경로에서 큰따옴표를 없앤 뒤 다시 실행하세요.",
+            False,
+        )
+    if status == "reject":
+        return HostResult(
+            "reject",
+            "[grok] [거부] 이미 다른 statusLine 설정이 있습니다:\n"
+            f"  {existing_cmd}\n"
+            "NAMU statusLine으로 덮어쓰려면 --force 옵션을 붙여 다시 실행하세요.",
+            False,
+        )
+    if status == "noop":
+        return HostResult(
+            "noop",
+            f"[grok] [변경 없음] statusLine이 이미 최신 상태입니다: {command}",
+            True,
+        )
+
+    backup_path = backup_settings(settings_path)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(new_text, encoding="utf-8")
+
+    if status == "updated":
+        message = (
+            "[grok] [갱신] statusLine 경로를 최신으로 교체했습니다.\n"
+            f"  이전: {existing_cmd}\n"
+            f"  이후: {command}"
+        )
+    else:
+        message = f"[grok] [신규] statusLine을 새로 설정했습니다.\n  {command}"
+    if backup_path is not None:
+        message += f"\n  백업: {backup_path}"
+    return HostResult(status, message, True)
+
+
 def main(argv: list[str]) -> int:
     force = "--force" in argv
 
     results = [(host, setup_one(host, force)) for host in HOSTS]
-    attempted = [(host, result) for host, result in results if result.status != "skip"]
+    grok_result = setup_grok(force)
+    attempted = [item for item in results if item[1].status != "skip"]
+    grok_attempted = grok_result.status != "skip"
 
-    if not attempted:
+    if not attempted and not grok_attempted:
         registries = "\n".join(f"  - {host.label}: {host.registry_path()}" for host in HOSTS)
+        registries += f"\n  - grok: {_grok_registry_path()}"
         print(
             "[오류] NAMU 플러그인이 설치돼 있지 않습니다 — 아래 경로 어디에서도 'namu' "
             "항목을 찾지 못했습니다.\n"
             f"{registries}\n"
-            "먼저 Claude Code 또는 agy(Antigravity CLI)에 NAMU 플러그인을 설치한 뒤 "
+            "먼저 Claude Code, agy(Antigravity CLI), 또는 Grok에 NAMU 플러그인을 설치한 뒤 "
             "다시 실행하세요."
         )
         return 1
 
     exit_code = 0
-    changed_hosts: list[Host] = []
+    restart_names: list[str] = []
     for host, result in results:
         if result.status == "skip":
             continue
@@ -332,11 +510,17 @@ def main(argv: list[str]) -> int:
         if not result.ok:
             exit_code = 1
         if result.status in ("fresh", "updated"):
-            changed_hosts.append(host)
+            restart_names.append(host.restart_name)
 
-    if changed_hosts:
-        names = "/".join(host.restart_name for host in changed_hosts)
-        print(f"{names}를 재시작하면 반영됩니다.")
+    if grok_attempted:
+        print(grok_result.message)
+        if not grok_result.ok:
+            exit_code = 1
+        if grok_result.status in ("fresh", "updated"):
+            restart_names.append(GROK_RESTART_NAME)
+
+    if restart_names:
+        print(f"{'/'.join(restart_names)}를 재시작하면 반영됩니다.")
 
     return exit_code
 

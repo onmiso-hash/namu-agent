@@ -53,13 +53,20 @@ procedure needs a **host-specific plugin envelope** built for it.
 |---|---|---|---|---|
 | **Claude Code** (terminal) | plugin | full (14 tools) | full | ✅ supported |
 | **agy** (terminal, Antigravity CLI) | plugin | full (14 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
+| **Grok** (terminal) | plugin | full (same MCP server as the plugin) | nearly full — session-start text and standing reminders are not injected; call `/namu` | ✅ supported |
 | **claude.ai** (web) | MCP address | full (5 bowls + journals + attachments, 10 tools) | not yet | ✅ supported |
 | ChatGPT · Gemini (web) · Copilot · Cursor, etc. | — | not yet | not yet | ⏳ not wired up |
 
 - **"Not yet" does not mean the client can't do it — it means NAMU hasn't taken
   that seat yet.** Memory works in principle with any client that can add a remote
   MCP server (claude.ai is the one we've confirmed); the procedure needs a per-host
-  envelope, and so far only Claude Code and agy have one.
+  envelope. Claude Code, agy, and Grok have one.
+- **Grok reads the same plugin folder** (`.claude-plugin/marketplace.json`, `.mcp.json`,
+  `hooks/hooks.json`). It sets `CLAUDE_PLUGIN_ROOT` as an alias of `GROK_PLUGIN_ROOT`.
+  Two hook outputs do not reach the model: SessionStart stdout (the auto briefing)
+  and an allowing UserPromptSubmit's `additionalContext` (standing reminders).
+  The briefing is `/namu`. The close-out guard (Stop) reads Grok's session file.
+  Session measurement still reads Claude-format transcripts only.
 - **Guard hooks** = blocking a close-out that forgot the `[다음]` line (Stop) +
   re-injecting standing reminders (UserPromptSubmit). agy has no matching events,
   so only these two are missing (namu-62). Its session briefing ships separately
@@ -79,6 +86,12 @@ claude plugin install namu@namu-marketplace
 ```
 
 For agy: `agy plugin install https://github.com/onmiso-hash/namu-agent.git`.
+For Grok:
+
+```
+grok plugin marketplace add onmiso-hash/namu-agent
+grok plugin install namu --trust
+```
 Updating is one line too — say `/namu:update` in a chat session.
 
 Full steps, verification, and troubleshooting live in the
@@ -91,7 +104,7 @@ NAMU's differentiator isn't the execution engine — it's the **memory layer
 "two envelopes, one payload" structure: the same memory core
 (`mcp_server.py`), the same worker definitions
 (`namu-coder`/`namu-reviewer`), and the same orchestration skill
-(`/namu-task`) are shared as-is between Claude Code and agy. The only thing
+(`/namu-task`) are shared as-is between Claude Code, agy, and Grok. The only thing
 that differs is the registration format each engine requires.
 
 ## Architecture overview

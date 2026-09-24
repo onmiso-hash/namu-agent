@@ -133,7 +133,11 @@ def mode_pretool():
         payload = json.load(sys.stdin)
     except Exception:
         return
-    target = (payload.get("tool_input") or {}).get("file_path") or ""
+    tool_input = payload.get("tool_input") or payload.get("toolInput") or {}
+    if not isinstance(tool_input, dict):
+        return
+    # 클로드 Edit은 file_path, 그록 search_replace도 file_path. 옛 이름도 받는다.
+    target = tool_input.get("file_path") or tool_input.get("target_file") or ""
     if not target:
         return
     folder = os.path.dirname(os.path.abspath(target))

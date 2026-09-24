@@ -42,12 +42,18 @@ NAMU는 두 부분이다 — **기억**(그릇 5개·작업일지·파일 첨부
 |---|---|---|---|---|
 | **Claude Code** (터미널) | 플러그인 | 전부 (도구 14개) | 전부 | ✅ 지원 |
 | **agy** (터미널, Antigravity CLI) | 플러그인 | 전부 (도구 14개) | 거의 전부 — 실수 방지 훅 2개만 빠짐 | ✅ 지원 |
+| **Grok** (터미널) | 플러그인 | 전부 (플러그인과 같은 기억 서버) | 거의 전부 — 세션 시작 글과 상시 재알림은 안 들어가고, 브리핑은 `/namu` | ✅ 지원 |
 | **claude.ai** (웹) | MCP 주소 | 전부 (다섯 그릇 + 작업일지 + 파일 첨부, 도구 10개) | 아직 | ✅ 지원 |
 | ChatGPT · Gemini(웹) · Copilot · Cursor 등 | — | 아직 | 아직 | ⏳ 준비 안 됨 |
 
 - **"아직"은 그 AI가 못 한다는 뜻이 아니라, NAMU 쪽이 아직 그 자리를 잡지 않았다는 뜻이다.**
   기억은 원격 MCP를 붙일 수 있는 클라이언트면 원리상 동작하고(확인한 것은 claude.ai),
-  절차는 호스트별 봉투가 필요한데 지금 만들어진 것은 Claude Code·agy 둘뿐이다.
+  절차는 호스트별 봉투가 필요한데 지금 만들어진 것은 Claude Code·agy·Grok이다.
+- **Grok은 같은 플러그인 폴더를 읽는다** (`.claude-plugin/marketplace.json`, `.mcp.json`,
+  `hooks/hooks.json`). `CLAUDE_PLUGIN_ROOT`는 `GROK_PLUGIN_ROOT`의 별명으로 채워진다.
+  모델에 닿지 않는 훅 출력이 둘이다. 세션 시작 훅의 출력(자동 브리핑)과, 통과시킨
+  입력 훅의 `additionalContext`(상시 재알림). 브리핑은 `/namu`로 본다. 마무리 검사(Stop)는
+  그록 세션 파일에서 마지막 말을 읽는다. 세션 측정은 아직 클로드 대화 기록 형식만 읽는다.
 - **실수 방지 훅** = 마무리 시 `[다음]` 줄 누락 차단(Stop) + 상시 주의 재알림(UserPromptSubmit).
   agy에는 대응 이벤트가 없어 이 둘만 빠진다(namu-62). 세션 브리핑은 agy용 PreInvocation 훅이 따로 동봉돼 동작한다.
 - MCP 주소로 붙었을 때 노출되는 도구는 14개 중 10개다 — 기억 3종
@@ -63,13 +69,19 @@ claude plugin install namu@namu-marketplace
 ```
 
 agy는 `agy plugin install https://github.com/onmiso-hash/namu-agent.git`.
+Grok은 아래 두 줄이다.
+
+```
+grok plugin marketplace add onmiso-hash/namu-agent
+grok plugin install namu --trust
+```
 업데이트는 대화창에서 `/namu:update` 한 줄이면 끝난다.
 
 자세한 절차·확인법·문제 해결은 [설치하기](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html)에 있다.
 
 ## 정체성
 
-NAMU의 차별점은 실행 엔진이 아니라 **메모리 레이어(MCP)**에 있다. 이 원칙은 "봉투 둘, 내용물 하나" 구조로 구현된다 — 같은 메모리 코어(`mcp_server.py`), 같은 워커 정의(`namu-coder`/`namu-reviewer`), 같은 오케스트레이션 스킬(`/namu-task`)을 Claude Code와 agy가 그대로 공유한다. 다른 건 각 엔진이 요구하는 등록 형식(봉투)뿐이다.
+NAMU의 차별점은 실행 엔진이 아니라 **메모리 레이어(MCP)**에 있다. 이 원칙은 "봉투 둘, 내용물 하나" 구조로 구현된다 — 같은 메모리 코어(`mcp_server.py`), 같은 워커 정의(`namu-coder`/`namu-reviewer`), 같은 오케스트레이션 스킬(`/namu-task`)을 Claude Code와 agy와 Grok이 그대로 공유한다. 다른 건 각 엔진이 요구하는 등록 형식(봉투)뿐이다.
 
 ## 아키텍처 개요
 

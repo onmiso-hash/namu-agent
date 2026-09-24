@@ -1,6 +1,6 @@
 # NAMU Plugin
 
-NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code / agy 플러그인으로 패키징한 것.
+NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code / agy / Grok 플러그인으로 패키징한 것.
 
 > **설치하려는 분은 이 문서가 아닙니다** → [설치하기](https://onmiso-hash.github.io/namu-agent/docs/install_guide.html).
 > 이 문서는 이 폴더의 코드를 고치는 사람을 위한 구성 설명이다.
@@ -52,6 +52,15 @@ claude plugin install namu@namu-marketplace
 agy는 `agy plugin install ./namu-plugin`. 설치 로그의
 `agents: skipped (not found)`는 정상이다 — 워커 정의는 플러그인 봉투가 아니라
 워크스페이스(`.claude/agents/`·`.agents/agents/`)에 두기로 했기 때문이다.
+
+Grok은 같은 폴더를 읽는다(`.claude-plugin/marketplace.json`을 마켓플레이스 색인으로 인정한다).
+
+```
+grok plugin marketplace add /path/to/namu-agent
+grok plugin install namu --trust
+```
+
+개발 폴더만 바로 붙일 때는 `grok plugin install /path/to/namu-agent/namu-plugin --trust`.
 
 **설치본은 복사본이다.** GitHub 원격으로 설치한 상태라면 이 폴더를 고쳐도 반영되지
 않는다 — 로컬 경로로 등록했을 때만 즉시 반영된다.

@@ -63,6 +63,7 @@ description: 멀티스텝 구현 작업을 오케스트레이션한다. /namu-ta
 
 - Claude Code: `Agent` 도구. `subagent_type`은 **호출명 폴백 규칙**을 따른다 — 사용 가능한 에이전트 목록에 명단의 `agent` 값(예: `namu-coder`)이 있으면 그대로 쓰고, 없으면 플러그인 네임스페이스 이름 `namu:<agent>`(예: `namu:namu-coder`)를 쓴다. (개발 repo에선 프로젝트 `.claude/agents/`의 비네임스페이스 이름이 우선 존재하고, 설치형에선 플러그인 동봉 정의라 `namu:` 접두사가 강제로 붙기 때문)
 - agy(Antigravity): `invoke_subagent` (`TypeName` = 명단의 `agent` 값 그대로 — agy는 네임스페이스를 붙이지 않는다. 정의는 워크스페이스 `.agents/agents/<agent>/agent.md` 또는 플러그인 설치본 `agents/<agent>/agent.md`에서 자동 로드). 비동기이므로 서브에이전트의 `send_message` 수신까지 대기 후 다음 단계로.
+- Grok: `spawn_subagent`. 이 도구에는 에이전트 종류 인자가 없으므로, 프롬프트 안에 역할을 적는다. 구현은 플러그인 `cc-agents/namu-coder.md`의 본문(반환 형식·가짜 데이터 원칙)을 프롬프트에 옮기고, 검수는 `cc-agents/namu-reviewer.md` 본문을 옮긴다. 결과를 받은 뒤에 다음 단계로 가므로 `run_in_background`는 false로 준다(기본값이 true다). 자식은 다시 자식을 띄우지 못한다.
 
 engine이 `native`가 아니면 사용자에게 알리고 멈춘다.
 

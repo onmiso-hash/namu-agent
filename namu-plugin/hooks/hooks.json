@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/session_recall.py"
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/session_recall.py",
+            "timeout": 60
           },
           {
             "type": "command",
@@ -40,7 +41,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|NotebookEdit",
+        "matcher": "Edit|Write|NotebookEdit|search_replace",
         "hooks": [
           {
             "type": "command",

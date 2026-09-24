@@ -128,6 +128,31 @@ def update_agy() -> tuple[str, str, str, bool]:
     return "updated", before_version, after_version, had_failure
 
 
+def update_grok() -> tuple[str, str, str, bool]:
+    """그록은 `grok plugin update namu` 한 번으로 설치본을 다시 받는다."""
+    install_path = namu_setup_statusline._grok_resolve_install_path()
+    if not install_path:
+        return "skip", "", "", False
+
+    before_version = _get_version(install_path)
+    print(f"  - [grok] 업데이트 전 버전: {before_version}")
+
+    grok_cli = _resolve_cli("grok")
+    had_failure = False
+
+    print("  - [grok] 플러그인 업데이트 중...")
+    result = subprocess.run([grok_cli, "plugin", "update", "namu"], check=False)
+    if result.returncode != 0:
+        had_failure = True
+        print(f"  - [grok] 경고: 플러그인 업데이트 실패 (exit {result.returncode})")
+
+    new_install_path = namu_setup_statusline._grok_resolve_install_path()
+    after_version = _get_version(new_install_path)
+    print(f"  - [grok] 업데이트 후 버전: {after_version}")
+
+    return "updated", before_version, after_version, had_failure
+
+
 def _summarize(label: str, status: str, before: str, after: str, had_failure: bool) -> str | None:
     """호스트별 최종 요약 한 줄. skip이면 None(호출 측에서 별도 처리)."""
     if status == "skip":
@@ -142,7 +167,7 @@ def _summarize(label: str, status: str, before: str, after: str, had_failure: bo
 
 
 def main(argv: list[str] | None = None) -> int:
-    print("NAMU 플러그인 일괄 자동 업데이트 시작 (Claude Code, Antigravity CLI)...")
+    print("NAMU 플러그인 일괄 자동 업데이트 시작 (Claude Code, Antigravity CLI, Grok)...")
 
     c_status, c_before, c_after, c_failed = update_claude()
     if c_status == "skip":
@@ -154,8 +179,14 @@ def main(argv: list[str] | None = None) -> int:
     if a_status == "skip":
         print("  - [agy] 미설치 — 건너뜁니다.")
 
-    if c_status == "skip" and a_status == "skip":
-        print("\n[오류] 업데이트할 대상이 없습니다. (Claude Code 또는 Antigravity CLI에 NAMU 플러그인이 미설치)")
+    print()
+
+    g_status, g_before, g_after, g_failed = update_grok()
+    if g_status == "skip":
+        print("  - [grok] 미설치 — 건너뜁니다.")
+
+    if c_status == "skip" and a_status == "skip" and g_status == "skip":
+        print("\n[오류] 업데이트할 대상이 없습니다. (Claude Code, Antigravity CLI, 또는 Grok에 NAMU 플러그인이 미설치)")
         return 1
 
     print("\n[공통] statusLine 셋업 갱신...")
@@ -169,12 +200,17 @@ def main(argv: list[str] | None = None) -> int:
     a_summary = _summarize("agy", a_status, a_before, a_after, a_failed)
     if a_summary:
         print(f"  - {a_summary}")
+    g_summary = _summarize("grok", g_status, g_before, g_after, g_failed)
+    if g_summary:
+        print(f"  - {g_summary}")
 
     updated_hosts = []
     if c_status == "updated":
         updated_hosts.append("Claude Code")
     if a_status == "updated":
         updated_hosts.append("Antigravity CLI")
+    if g_status == "updated":
+        updated_hosts.append("Grok")
 
     hosts_str = " 및 ".join(updated_hosts)
     print(f"\n업데이트가 완료되었습니다. 반영하려면 {hosts_str}를 재시작하세요.")

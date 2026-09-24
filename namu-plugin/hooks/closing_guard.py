@@ -32,6 +32,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
+
+import hook_input
 
 # 마무리 신호. "정리"는 단독으로 쓰면 오탐이 많아(코드 정리 등) 넣지 않는다.
 _CLOSING_RE = re.compile(
@@ -253,8 +256,8 @@ def _measure_session_now(data: dict) -> None:
 
     어떤 에러가 나도 조용히 지나간다 — 마무리를 막으면 안 된다.
     """
-    transcript_path = (data.get("transcript_path") or "").strip()
-    session_id = (data.get("session_id") or "").strip()
+    transcript_path = hook_input.text(data, "transcript_path", "transcriptPath")
+    session_id = hook_input.text(data, "session_id", "sessionId")
     if not transcript_path or not session_id:
         return
     try:
@@ -281,11 +284,34 @@ def main() -> None:
         data = _read_stdin_json()
 
         # 이미 이 훅 때문에 한 번 이어붙인 턴이면 다시 막지 않는다(무한 루프 방지).
-        if data.get("stop_hook_active"):
+        # 그록은 stopHookActive, 클로드는 stop_hook_active.
+        if hook_input.flag_true(data, "stop_hook_active", "stopHookActive"):
             sys.exit(0)
 
-        entries = _transcript_entries(data.get("transcript_path"))
-        if not _is_closing_signal(_last_user_text(entries)):
+        transcript_path = hook_input.text(data, "transcript_path", "transcriptPath")
+        session_id = hook_input.text(data, "session_id", "sessionId")
+        if transcript_path:
+            data["transcript_path"] = transcript_path
+        if session_id:
+            data["session_id"] = session_id
+
+        entries = _transcript_entries(transcript_path)
+        user_text = _last_user_text(entries)
+        project_dir = hook_input.text(data, "cwd", "workspaceRoot") or os.getcwd()
+        # 그록 Stop 입력에는 클로드식 대화 기록이 없다. 사람 말이 비면 그록 세션
+        # 파일에서 마지막 발화와 세션 시작 시각을 읽는다.
+        if not user_text:
+            session_dir = hook_input.grok_session_dir(session_id, project_dir)
+            if session_dir is not None:
+                user_text = hook_input.grok_last_user_text(session_dir)
+                created = hook_input.grok_created_at(session_dir)
+                if user_text and created:
+                    entries = [{
+                        "timestamp": created,
+                        "type": "user",
+                        "message": {"role": "user", "content": user_text},
+                    }]
+        if not _is_closing_signal(user_text):
             sys.exit(0)
 
         # `[다음]` 줄 검사보다 먼저 한다 — 막는 쪽으로 판정되면 대화가 이어지는데,
@@ -295,7 +321,7 @@ def main() -> None:
         import config as cfg  # tz 기준 통일 + 기계 도장(NAMU_MACHINE)
         import task_resolve
 
-        project_dir = data.get("cwd") or os.getcwd()
+        project_dir = project_dir or os.getcwd()
         # 조회에는 안 쓴다(아래 참고). 안내문에서 "지금 열려 있는 폴더"를 짚어
         # 주는 용도다. 방 이름은 basename이 아니라 project_key_for로 정한다 —
         # cwd가 하위 폴더면 basename이 방 이름과 달라진다(namu-73, 특례 0).

@@ -85,12 +85,15 @@ def 입력_읽기():
     except Exception:
         return None
 
-    기록_경로 = (들어온값.get("transcript_path") or "").strip()
-    세션_id = (들어온값.get("session_id") or "").strip()
+    기록_경로 = (들어온값.get("transcript_path") or 들어온값.get("transcriptPath") or "").strip()
+    세션_id = (들어온값.get("session_id") or 들어온값.get("sessionId") or "").strip()
     if not 기록_경로 or not 세션_id:
         return None
     if not pathlib.Path(기록_경로).exists():
         return None
+    # 일하기는 snake_case만 읽는다. 그록이 camelCase로 넣어도 여기서 맞춘다.
+    들어온값["transcript_path"] = 기록_경로
+    들어온값["session_id"] = 세션_id
     return 들어온값
 
 

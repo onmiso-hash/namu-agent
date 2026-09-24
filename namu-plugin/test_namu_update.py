@@ -55,6 +55,7 @@ def _write_agy_installed(fake_home: Path, version: str = "0.1.0") -> None:
 def test_update_skip_if_not_installed(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
     
     with patch("subprocess.run") as mock_run:
         exit_code = namu_update.main()
@@ -66,6 +67,7 @@ def test_update_skip_if_not_installed(tmp_path, monkeypatch):
 def test_update_claude_only(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
 
     _write_claude_installed(tmp_path, "1.0.0")
 
@@ -93,6 +95,7 @@ def test_update_claude_only(tmp_path, monkeypatch, capsys):
 def test_update_agy_only(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
 
     _write_agy_installed(tmp_path, "2.0.0")
 
@@ -115,9 +118,47 @@ def test_update_agy_only(tmp_path, monkeypatch, capsys):
     assert "[claude] 미설치" in out
     assert "[agy] 버전 변화 없음(이미 최신이거나 갱신 실패) — 현재 2.0.0" in out
 
+def _write_grok_installed(fake_home: Path, version: str = "0.1.0") -> None:
+    install_path = fake_home / "grok_install"
+    install_path.mkdir()
+    (install_path / "plugin.json").write_text(json.dumps({"version": version}), encoding="utf-8")
+    registry = fake_home / ".grok" / "installed-plugins" / "registry.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(json.dumps({
+        "version": 1,
+        "repos": {
+            "namu-local": {
+                "path": str(install_path),
+                "plugins": {"namu": {"version": version}},
+            }
+        },
+    }), encoding="utf-8")
+
+
+def test_update_grok_only(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    _write_grok_installed(tmp_path, "4.0.0")
+
+    with patch("subprocess.run") as mock_run, patch("namu_update.shutil.which", return_value=None):
+        mock_run.return_value.returncode = 0
+        exit_code = namu_update.main()
+
+    assert exit_code == 0
+    calls = mock_run.call_args_list
+    assert ["grok", "plugin", "update", "namu"] == calls[0][0][0]
+    assert "namu_setup_statusline.py" in calls[1][0][0][-1]
+    out, _ = capsys.readouterr()
+    assert "[grok] 업데이트 전 버전: 4.0.0" in out
+    assert "[claude] 미설치" in out
+    assert "[agy] 미설치" in out
+
+
 def test_update_both(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("GROK_HOME", raising=False)
 
     _write_claude_installed(tmp_path, "1.0.0")
     _write_agy_installed(tmp_path, "2.0.0")
@@ -134,6 +175,7 @@ def test_update_both(tmp_path, monkeypatch, capsys):
 
 def test_update_cli_resolved_via_which(tmp_path, monkeypatch, capsys):
     """shutil.which가 절대경로를 찾아주면 그 경로로 CLI를 호출해야 한다(Windows .cmd 대응)."""
+    monkeypatch.delenv("GROK_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
