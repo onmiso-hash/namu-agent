@@ -301,7 +301,7 @@
     <div class="item"><span class="sw truth"></span><span class="lab"><b>진실의 원천 · 동기화</b><span>append-only YAML. Git으로 PC 간 공유. 지우거나 고치지 않음.</span></span></div>
     <div class="item"><span class="sw cache"></span><span class="lab"><b>로컬 캐시 · 재생성</b><span>기기 종속. gitignore. 언제든 원천에서 다시 만들어짐.</span></span></div>
     <div class="item"><span class="sw net"></span><span class="lab"><b>네트워크 · 원격</b><span>MCP 서버·터널·클라우드 컨테이너 등 전송/호스팅 계층.</span></span></div>
-    <div class="item"><span class="sw client"></span><span class="lab"><b>AI 클라이언트 · 엔진</b><span>Claude Code·agy·웹 등. 빌려 쓰고 교체 가능한 부품.</span></span></div>
+    <div class="item"><span class="sw client"></span><span class="lab"><b>AI 클라이언트 · 엔진</b><span>Claude Code·agy·Grok·웹 등. 빌려 쓰고 교체 가능한 부품.</span></span></div>
     <div class="item"><span class="sw plan"></span><span class="lab"><b>예정 · 미구현</b><span>설계는 확정, 코드는 아직. 지금 이 문서에는 해당 항목이 없습니다.</span></span></div>
   </div>
 </div></section>
@@ -309,7 +309,7 @@
 <section id="overview"><div class="wrap">
   <div class="kicker"><span class="num">01</span> 전체상</div>
   <h2>어떤 AI가 붙어도, 바라보는 기억은 하나다</h2>
-  <p>NAMU의 독립성은 인터페이스가 아니라 <strong>메모리 레이어(MCP)</strong>에 있습니다. Claude Code·agy·웹 Claude 등 실행 엔진은 전부 같은 MCP 서버를 통해 같은 <code>~/.namu</code> 기억 풀을 읽고 씁니다. 엔진은 교체돼도 기억은 그대로 누적됩니다.</p>
+  <p>NAMU의 독립성은 인터페이스가 아니라 <strong>메모리 레이어(MCP)</strong>에 있습니다. Claude Code·agy·Grok·웹 Claude 등 실행 엔진은 전부 같은 MCP 서버를 통해 같은 <code>~/.namu</code> 기억 풀을 읽고 씁니다. 엔진은 교체돼도 기억은 그대로 누적됩니다.</p>
   <div class="sheet">
     <div class="sheet-cap">전체 구성 — 클라이언트 → MCP → 코어 → 원천 → 동기화</div>
     <pre class="mermaid">
@@ -319,6 +319,7 @@ flowchart LR
     direction TB
     cc["Claude Code"]
     agy["agy / Gemini"]
+    grok["Grok"]
     web["claude.ai 웹"]
     cur["Cursor 등 MCP 클라이언트"]
   end
@@ -341,6 +342,7 @@ flowchart LR
 
   cc --&gt; SRV
   agy --&gt; SRV
+  grok --&gt; SRV
   web --&gt; SRV
   cur --&gt; SRV
   SRV --&gt; core
@@ -356,7 +358,7 @@ flowchart LR
   classDef cache fill:#F5EAD5,stroke:#A9711F,color:#4A3410,stroke-width:1.5px;
   classDef net fill:#E4EBF5,stroke:#3B679C,color:#16304F,stroke-width:1.5px;
   classDef client fill:#E9EBEF,stroke:#586171,color:#2A2F36,stroke-width:1.5px;
-  class cc,agy,web,cur client;
+  class cc,agy,grok,web,cur client;
   class t1,t2,t3,t4,core net;
   class ly,py,git,pcs truth;
   class cache cache;
@@ -784,7 +786,7 @@ flowchart TB
       <p>기억의 원천은 <b>사용자 본인의 GitHub 비공개 저장소</b>이고, 서버가 갖는 것은 그 사본뿐입니다. 그만둘 때는 주소만 폐기하면 되고, 저장소는 원래부터 사용자 계정에 있으므로 그대로 남습니다. <code>?client=</code>(어느 AI가 남겼나)는 신원과 별개 축이라 그대로 유지됩니다.</p>
     </div>
   </div>
-  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 것은 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 15종 중 11종</b>이 노출됩니다 — 기억 <code>recall·record·search·task_move</code> 넷과 첨부 7종 전부. 빠지는 넷은 플러그인 전용입니다: <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단하고, 쪽지 떼기·책갈피 둘은 그 PC의 파일을 다루는 도구입니다.</p>
+  <div class="note warn"><span class="ic">⚑</span><p><strong>웹의 한계:</strong> 원격으로 여는 것은 <em>메모리 코어(레이어 C)뿐</em>입니다. 자동 세션 브리핑·<code>/namu-task</code>·서브에이전트(레이어 B)는 Claude Code·agy·Grok 전용 글루라 웹에서 동작하지 않습니다. <b>도구는 15종 중 11종</b>이 노출됩니다 — 기억 <code>recall·record·search·task_move</code> 넷과 첨부 7종 전부. 빠지는 넷은 플러그인 전용입니다: <code>namu_sync_setup</code>은 서버의 저장소 배선을 바꾸는 도구라 원격에 열면 remote 탈취로 이어지므로 원천 차단하고, 쪽지 떼기·책갈피 둘은 그 PC의 파일을 다루는 도구입니다.</p>
   <p style="margin-top:.6em"><strong>작업일지는 웹에서도 됩니다.</strong> 기억 도구가 4종이라는 것과 담을 수 있는 그릇이 무엇인지는 별개입니다 — <code>record</code>·<code>recall</code>로 작업일지를 <b>쓰고 읽을 수 있습니다</b>. 다만 기록할 때는 <b>어느 프로젝트인지 반드시 적어야</b> 합니다. 터미널은 현재 폴더가 곧 프로젝트지만 웹에는 그 개념이 없기 때문입니다(조회는 생략 시 전체를 합칩니다).</p></div>
 </div></section>
 

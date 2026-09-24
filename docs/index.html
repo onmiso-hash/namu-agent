@@ -221,7 +221,7 @@
     <span class="lab">A</span>
     <div class="txt">
       <h4>실행 엔진</h4>
-      <p>AI를 부르고, 파일을 고치고, 명령을 돌리는 부분. (Claude Code, agy 같은 것)</p>
+      <p>AI를 부르고, 파일을 고치고, 명령을 돌리는 부분. (Claude Code, agy, Grok 같은 것)</p>
     </div>
     <span class="tag">빌려 씁니다</span>
   </div>
@@ -262,7 +262,7 @@
   <div class="pipe">
     <div class="pnode">
       <span class="ico">🤖</span><b>여러 AI</b>
-      <small>Claude Code · agy · 웹 브라우저의 claude.ai</small>
+      <small>Claude Code · agy · Grok · 웹 브라우저의 claude.ai</small>
     </div>
     <span class="parr"><span class="a">→</span><span class="l">꽂는다</span></span>
     <div class="pnode core">
@@ -641,7 +641,7 @@
 </thead>
 <tbody>
 <tr><td><strong>어떤 AI에 되나</strong></td>
-    <td>터미널 AI만<br><small class="muted">Claude Code · agy</small></td>
+    <td>터미널 AI만<br><small class="muted">Claude Code · agy · Grok</small></td>
     <td><strong>아무 AI나</strong><br><small class="muted">웹 브라우저 AI, 터미널 AI 둘 다</small></td></tr>
 <tr><td><strong>① 기억 담고 꺼내기</strong><br><small class="muted">다섯 그릇 전부</small></td><td>됩니다</td><td>됩니다</td></tr>
 <tr><td>└ 기억 다루는 도구</td><td><strong>8가지</strong></td><td><strong>4가지</strong><br><small class="muted">꺼내기·찾기·남기기·작업 옮기기</small></td></tr>
@@ -662,11 +662,12 @@
 </div>
 
 <p class="btn-note">표의 "됩니다 / 안 됩니다"는 짐작이 아니라, 같은 폴더에서 두 상태를
-실제로 띄워 놓고 비교한 결과입니다.</p>
+실제로 띄워 놓고 비교한 결과입니다. 한 자리만 다릅니다 — Grok에서는 대화를 열 때
+브리핑이 저절로 뜨지 않습니다. 대화창에 <code>/namu</code>라고 치면 같은 내용이 나옵니다.</p>
 
 <h3 id="지원현황">지금 어떤 AI에서 쓸 수 있나</h3>
 
-<p>아래 <strong>세 곳</strong>이 지금 나무를 쓸 수 있는 자리입니다.</p>
+<p>아래 <strong>네 곳</strong>이 지금 나무를 쓸 수 있는 자리입니다.</p>
 
 <div class="cmp">
 <table>
@@ -686,6 +687,13 @@
   <td>플러그인</td>
   <td><strong>전부</strong></td>
   <td>거의 전부<br><small class="muted">실수 막기 2가지만 빠집니다</small></td>
+  <td><span class="pill">지원</span></td>
+</tr>
+<tr>
+  <td><strong>Grok</strong><br><small class="muted">터미널</small></td>
+  <td>플러그인</td>
+  <td><strong>전부</strong></td>
+  <td>거의 전부<br><small class="muted">브리핑은 <code>/namu</code>로 부릅니다</small></td>
   <td><span class="pill">지원</span></td>
 </tr>
 <tr>
@@ -709,12 +717,13 @@
 <div class="tip">
 <p><strong>"아직"은 그 AI가 못 한다는 뜻이 아닙니다.</strong> <strong>나무 쪽이 아직 그 AI를
 지원하지 않았다</strong>는 뜻입니다. 기억은 주소만 받아 주면 어디에든 붙고, 절차는 그 AI에
-맞는 꾸러미를 따로 만들어야 하는데 지금 만들어져 있는 것이 Claude Code와 agy 둘뿐입니다.
+맞는 꾸러미를 따로 만들어야 하는데 지금 만들어져 있는 것이 Claude Code·agy·Grok 셋입니다.
 앞으로 늘어날 수 있습니다.</p>
 </div>
 
 <p class="btn-note">Claude Code 줄은 이번에 직접 확인한 것이고, agy 줄은 플러그인에 무엇이
-들어 있는지로 확인한 것입니다. claude.ai는 실제로 붙여 쓰고 있는 자리입니다.</p>
+들어 있는지로 확인한 것입니다. Grok 줄은 실제로 설치해 화면 아래 한 줄까지 띄워 보고
+확인했습니다. claude.ai는 실제로 붙여 쓰고 있는 자리입니다.</p>
 
 <h3>① 플러그인을 설치합니다 — 터미널을 쓰신다면 이쪽을 권합니다</h3>
 

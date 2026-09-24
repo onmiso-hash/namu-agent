@@ -132,7 +132,7 @@ flowchart LR
     p4["화면 아래 한 줄"]
   end
   MEM -->|"주소만 붙이면 감"| WEB["브라우저 AI<br/>· 주소만 붙인 터미널 AI"]
-  PROC -->|"설치해야 감"| CLI["플러그인을 깐 터미널 AI<br/>Claude Code · agy"]
+  PROC -->|"설치해야 감"| CLI["플러그인을 깐 터미널 AI<br/>Claude Code · agy · Grok"]
   MEM --> CLI
   style MEM fill:#E7F1EA,stroke:#2E6E4E
   style PROC fill:#F1EEE7,stroke:#8A7F6A
@@ -157,7 +157,8 @@ flowchart LR
     <td>스킬 <code>skills/namu-task/</code></td></tr>
 <tr><td>👷 <strong>일꾼 · 검수자</strong></td>
     <td>만드는 AI와 따지는 AI를 따로 부른다</td>
-    <td><code>cc-agents/</code>(Claude Code) · <code>agents/</code>(agy)</td></tr>
+    <td><code>cc-agents/</code>(Claude Code) · <code>agents/</code>(agy) ·
+        Grok은 프롬프트에 역할을 적어 부른다</td></tr>
 <tr><td>📊 <strong>화면 아래 한 줄</strong></td>
     <td>버전·모델·폴더·진행 작업·남은 사용량을 늘 띄운다</td>
     <td><code>scripts/namu_statusline.py</code></td></tr>
