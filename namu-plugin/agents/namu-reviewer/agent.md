@@ -11,7 +11,7 @@ tools:
     - search_web
     - schedule
     - run_command
-    - command_status
+    - manage_task
 hidden: true
 ---
 
