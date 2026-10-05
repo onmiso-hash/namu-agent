@@ -14,15 +14,20 @@ OpenCode(터미널)에서도 NAMU 기억·작업 절차를 쓴다. Claude Code·
   `/namu-update`(업데이트) · `namu-coder`/`namu-reviewer` 워커 ·
   세션 첫 호출 브리핑+검사 묶음(저장소 뒤처짐·판 드리프트·주간 점검) ·
   매 호출 상시 주의 재알림 · 고치기 전 저장소 뒤처짐 묻기 ·
-  마무리 `[다음]` 누락 권고. 전부 플러그인이 자동으로 건다.
-- 호스트 한계로 못 하는 것 (Claude Code와 다른 점):
-  - 마무리 검사는 **막지 않고 권고만** 한다. OpenCode에 세션 종료 훅이
-    없어서, `[다음]` 줄이 없으면 프롬프트에 검사문을 덧붙여 모델이
-    사용자에게 확인하게 한다.
+  마무리 검사. 전부 플러그인이 자동으로 건다.
+- 마무리 검사는 Claude Code처럼 **막는다**. 대답이 끝났을 때 마지막 사람 말이
+  마무리 신호인데 이번 세션에 `[다음]`/`[완료]`/`[중단]` 줄이 없으면, 안내문을
+  대화에 끼워 넣고 모델을 다시 돌린다. 같은 마무리 말에는 한 번만 막는다.
+- 워커 2명(`namu-coder`·`namu-reviewer`)은 플러그인이 OpenCode 전역 도우미
+  폴더(`~/.config/opencode/agents/`)에 알아서 복사한다. 어느 폴더에서 열어도 보인다.
+- 상태줄: Claude Code와 같은 한 줄
+  `[Namu 판] [모델] 폴더 | 📌 작업 (또는 진행 task 없음) | 대화 사용률%`을
+  대화 화면에서는 입력창 바로 위에, 첫 화면에서는 맨 아래 줄에 띄운다.
+  대화 사용률은 첫 대답 전에는 `?`로 나온다.
+- 아직 없는 것 (Claude Code와 다른 점):
   - 세션 측정은 안 한다. 측정기는 클로드 대화 기록 형식만 읽어서,
     OpenCode 세션은 잴 수 없다 (Grok도 같은 한계가 있다).
-  - statusLine은 없다. OpenCode TUI에 하단 한 줄을 넣는 건 별도
-    TUI 플러그인 작업으로 남겨 두었다.
+  - 상태줄의 5시간·7일 사용량은 없다. OpenCode가 그 값을 플러그인에 주지 않는다.
   - `statusline-setup` 스킬은 Claude Code 전용이라 OpenCode에서 쓰지 않는다.
 
 ## 설치
@@ -36,9 +41,9 @@ git clone https://github.com/onmiso-hash/namu-agent.git
 
 아래에서 `/abs/path/namu-agent`는 그 위치로 바꿔 읽는다.
 
-1. 쓰는 프로젝트 설정에 플러그인 한 줄을 넣는다.
-   프로젝트 설정(`<프로젝트>/.opencode/opencode.jsonc`) 또는
-   전역 설정(`~/.config/opencode/opencode.jsonc`):
+1. 설정에 플러그인 한 줄을 넣는다. 어느 폴더에서나 쓰려면
+   전역 설정(`~/.config/opencode/opencode.jsonc`)에, 한 프로젝트에서만 쓰려면
+   프로젝트 설정(`<프로젝트>/.opencode/opencode.jsonc`)에 넣는다:
 
    ```jsonc
    {
@@ -57,32 +62,21 @@ git clone https://github.com/onmiso-hash/namu-agent.git
    `mcp`·`skills` 항목을 손으로 쓸 필요가 없다. 버전이 있는 npm 패키지로는
    아직 배포하지 않는다.
 
-2. 워커 2명을 프로젝트에 복사한다 (OpenCode 플러그인 API로 에이전트를
-   직접 등록할 수 없어 파일로 둔다).
-
-   ```
-   mkdir -p .opencode/agents
-   cp /abs/path/namu-agent/.opencode/agents/namu-coder.md .opencode/agents/
-   cp /abs/path/namu-agent/.opencode/agents/namu-reviewer.md .opencode/agents/
-   ```
-
-   본문은 Claude Code용(`.claude/agents/`)과 같은 내용이고, 앞부분만
-   OpenCode 형식(`description` + `mode: subagent`, 검수자는 쓰기 금지)이다.
-
-3. 플러그인 의존성을 한 번 받는다 (배포 산출물이 아니라 빌드 확인용).
+2. 플러그인 의존성을 한 번 받는다 (배포 산출물이 아니라 빌드 확인용).
 
    ```
    cd /abs/path/namu-agent/.opencode/plugins/namu && npm install
    ```
 
-4. 연결 확인.
+3. 연결 확인.
 
    ```
    opencode mcp list
    ```
 
    `namu-memory connected`가 뜨면 된다. 첫 기동은 uv가 의존성을 준비하느라
-   1~2분 걸릴 수 있다.
+   1~2분 걸릴 수 있다. OpenCode를 열면 맨 아래 줄에 `[Namu 판]`으로 시작하는
+   상태줄이 보이고, 입력창에 `@namu`를 치면 `namu-coder`·`namu-reviewer`가 뜬다.
 
 ## 첫 작업
 
@@ -92,15 +86,16 @@ git clone https://github.com/onmiso-hash/namu-agent.git
 3. 검수가 fail이면 자동으로 다시 돌리지 않는다. ① 재실행(횟수 입력) /
    ② 통과 처리 / ③ 중단 중 하나를 고른다.
 4. "마무리해"라고 하면 작업일지에 `[다음]` 줄이 있는지 검사한다. 없으면
-   막는 대신 모델이 확인을 구한다 — 남길 것이 없으면 없다고 답하면 된다.
+   검사가 막고 모델이 다시 움직여 `[다음]` 줄을 남기거나, 남길 것이 없으면
+   그렇다고 말한 뒤 확인을 구한다.
 
 ## 업데이트·삭제
 
 - 업데이트: `/namu-update`를 부르거나, 저장소에서 직접 당긴다.
   (`git -C /abs/path/namu-agent pull`). 기억(`~/.namu`)은 저장소와
   분리되어 있어 업데이트해도 쌓인 교훈이 지워지지 않는다.
-- 삭제: 설정에서 `plugins` 항목을 지우고,
-  복사했던 `.opencode/agents/namu-*.md`를 지운다.
+- 삭제: 설정에서 `plugins` 항목을 지우고, 플러그인이 복사해 둔
+  `~/.config/opencode/agents/namu-*.md`를 지운다.
   `~/.namu`는 손대지 않는 한 그대로 남는다.
 
 ## 문제 해결
@@ -118,4 +113,10 @@ git clone https://github.com/onmiso-hash/namu-agent.git
   개인 설정(`settings.local.json`류)은 넣지 않는다.
 - 플러그인 코드를 고쳤으면 타입 검사를 돌린다:
   `cd .opencode/plugins/namu && ./node_modules/.bin/tsc --noEmit`.
-  `index.ts` 저장은 OpenCode가 감지해 자동 리로드한다.
+  `index.ts` 저장은 OpenCode가 감지해 자동 리로드하지만, 뒤에서 도는
+  백엔드 서비스(`opencode serve --service`)에 옛 판이 남아 함께 돌 수 있다
+  (2026-10-05 실측: 옛 판이 마무리 안내문을 5개 더 넣었다). 고친 뒤 시험할 때는
+  OpenCode 화면을 닫고 그 서비스 프로세스까지 끈 다음 다시 연다.
+- 마무리 안내문이 여러 개 겹쳐 들어오면 위처럼 옛 판이 남은 것이다.
+  OpenCode는 한 프로세스 안에서 플러그인을 여러 벌 읽는데, 지금 판은
+  벌끼리 함께 쓰는 자리로 한 번만 막는다.

@@ -1,6 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, readFileSync, statSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -9,6 +9,18 @@ const SERVER_NAME = "namu-memory"
 const SKILL_IDS = ["namu", "namu-task", "namu-update"]
 const BRIEFED_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const FIRST_SESSION_BUNDLE_CAP = 8000
+const AGENT_FILES = ["namu-coder.md", "namu-reviewer.md"]
+
+// OpenCode는 한 프로세스 안에서 이 플러그인을 여러 벌(실측 5벌) 읽고, 각 벌이 같은
+// 사건을 받는다. 모듈 변수는 벌마다 따로라 마무리 검사가 동시에 여러 번 막았다
+// (2026-10-05 실측: 안내문 9개가 한꺼번에 들어갔다). 그래서 프로세스 전체가 함께 쓰는
+// 자리에 "처리한 사건", "검사 중인 대화", "막은 마무리 말"을 둔다.
+const guardShared: { seenEvents: Set<string>; busy: Set<string>; blocked: Map<string, string> } =
+  ((globalThis as any).__namuClosingGuard ??= {
+    seenEvents: new Set<string>(),
+    busy: new Set<string>(),
+    blocked: new Map<string, string>(),
+  })
 
 // closing_guard.py와 같은 마무리 신호 판정 (정규식·40자 상한·물음표 제외).
 const CLOSING_RE =
@@ -132,10 +144,17 @@ function parseSkillFile(dir: string): { name: string; description: string; body:
 
 function userTexts(info: any): { text: string; at: number | null }[] {
   const out: { text: string; at: number | null }[] = []
-  const role = info?.info?.role ?? info?.role
-  if (role !== "user") return out
-  const atRaw = info?.info?.time?.created ?? info?.time?.created ?? null
+  // OpenCode 2.x의 session.context는 {type:"user", text, time:{created}}를 준다.
+  // 끼워넣은 말(type:"synthetic")은 사람 말이 아니므로 세지 않는다.
+  const kind = info?.type ?? info?.info?.role ?? info?.role
+  if (kind !== "user") return out
+  const atRaw = info?.time?.created ?? info?.info?.time?.created ?? null
   const at = typeof atRaw === "number" ? atRaw : null
+  if (typeof info?.text === "string") {
+    if (info.text.trim()) out.push({ text: info.text.trim(), at })
+    return out
+  }
+  // 옛 형식(role/parts) 대비.
   const parts = info?.parts ?? info?.info?.parts ?? []
   const texts: string[] = []
   if (Array.isArray(parts)) {
@@ -151,6 +170,26 @@ function userTexts(info: any): { text: string; at: number | null }[] {
   // 도구 결과만 든 항목은 사람 발화로 세지 않는다 (closing_guard와 같은 기준).
   if (text) out.push({ text, at })
   return out
+}
+
+/** 저장소의 도우미 정의를 OpenCode 전역 도우미 폴더로 옮긴다 — 어느 폴더에서 열어도 보이게.
+ *  바뀐 파일이 있으면 true. */
+function syncGlobalAgents(repoRoot: string): boolean {
+  const src = join(repoRoot, ".opencode", "agents")
+  const base = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+  const dest = join(base, "opencode", "agents")
+  let changed = false
+  for (const name of AGENT_FILES) {
+    const from = join(src, name)
+    if (!existsSync(from)) continue
+    const to = join(dest, name)
+    const body = readFileSync(from, "utf-8")
+    if (existsSync(to) && readFileSync(to, "utf-8") === body) continue
+    mkdirSync(dest, { recursive: true })
+    copyFileSync(from, to)
+    changed = true
+  }
+  return changed
 }
 
 export default Plugin.define({
@@ -246,6 +285,14 @@ export default Plugin.define({
       })
     })
 
+    // 3-1. 도우미(namu-coder·namu-reviewer)를 전역 폴더로 — 클로드 코드 플러그인의
+    //      agents/처럼 어느 폴더에서 열어도 쓸 수 있게 한다.
+    try {
+      if (syncGlobalAgents(repoRoot)) await ctx.agent.reload()
+    } catch (error) {
+      console.error("[namu] agent sync failed:", error)
+    }
+
     const sessionDir = async (sessionID: string): Promise<string> => {
       try {
         const session = await ctx.session.get({ sessionID })
@@ -307,53 +354,98 @@ export default Plugin.define({
       }
     })
 
-    // 6. 마무리 검사 (Stop 훅에 대응 — OpenCode에 세션 종료 훅이 없어 권고로만 동작).
-    await ctx.session.hook("prompt", async (event) => {
+    // 6. 마무리 검사 (Stop 훅에 대응). 대답이 끝난 뒤(session.execution.succeeded)
+    //    마지막 사람 말이 마무리 신호인데 이번 세션에 [다음]/[완료]/[중단] 줄이 없으면
+    //    안내문을 끼워넣고 모델을 다시 돌린다 — 클로드 코드의 block과 같다.
+    //    같은 마무리 말에는 한 번만 막는다(closing_guard와 같은 무한 반복 방지).
+    const closingGuard = async (sessionID: string) => {
+      if (guardShared.busy.has(sessionID)) return
+      guardShared.busy.add(sessionID)
       try {
-        const text = event.prompt.text ?? ""
-        if (!isClosingSignal(text)) return
-        const dir = await sessionDir(event.sessionID)
-        const history = await ctx.session.context({ sessionID: event.sessionID }).catch(() => [])
-        const said: { text: string; at: number | null }[] = []
-        for (const item of history ?? []) {
-          said.push(...userTexts(item))
-        }
-        said.push({ text: text.trim(), at: Date.now() })
-        let sinceMs = 0
-        try {
-          const session = await ctx.session.get({ sessionID: event.sessionID })
-          sinceMs = toMs((session as any)?.time?.created)
-        } catch {
-          sinceMs = 0
-        }
-        const resumedAt = previousClosingResumeMs(said)
-        if (resumedAt !== null) sinceMs = Math.max(sinceMs, resumedAt)
-        if (!sinceMs) {
-          // 세션 시작 시각을 모르면 가장 이른 사람 발화, 그것도 없으면 지금부터 본다.
-          // 모른다고 epoch(1970)부터 보면 옛 [다음] 줄이 근거가 되어 항상 통과해 버린다.
-          const first = said.find((s) => s.at !== null)
-          sinceMs = first?.at ?? Date.now()
-        }
-        const out = await runHookScript({
-          script: closingCheck,
-          stdinJson: { since_epoch_ms: sinceMs },
-          cwd: dir,
-          repoRoot,
-          timeoutMs: 30000,
-        })
-        const parsed = tryParseJson(out) ?? { touched: [], satisfied: [] }
-        const satisfied: string[] = Array.isArray(parsed.satisfied) ? parsed.satisfied : []
-        if (satisfied.length > 0) return
-        const touched: string[] = Array.isArray(parsed.touched) ? parsed.touched : []
-        const note =
-          `[나무 마무리 검사] 이번 세션의 작업일지에 [다음]/[완료]/[중단] 줄이 없습니다` +
-          (touched.length > 0 ? `(기록이 들어간 task: ${touched.join(", ")})` : "(이번 세션에 남긴 줄이 아예 없습니다)") +
-          `. 마무리의 본체는 [다음] 줄 갱신이므로, namu_record(bowl='tasks', status='다음', summary='<다음 세션이 어디서 시작하면 되는지>', reason='<왜>', body='<요약>')로 남기거나 남길 일이 없으면 그렇게 답한 뒤, 사용자에게 확인받고 마치세요.`
-        event.prompt.text = `${text}\n\n${note}`
-      } catch (error) {
-        console.error("[namu] prompt hook failed:", error)
+        await closingGuardOnce(sessionID)
+      } finally {
+        guardShared.busy.delete(sessionID)
       }
-    })
+    }
+    const closingGuardOnce = async (sessionID: string) => {
+      const session = await ctx.session.get({ sessionID }).catch(() => null)
+      // 도우미가 돌린 하위 세션은 사람이 말한 세션이 아니다.
+      if ((session as any)?.parentID) return
+      const history = await ctx.session.context({ sessionID }).catch(() => [])
+      const said: { text: string; at: number | null }[] = []
+      for (const item of history ?? []) said.push(...userTexts(item))
+      const last = said[said.length - 1]
+      if (!last || !isClosingSignal(last.text)) return
+      const blockedKey = `namu:closing-blocked:${sessionID}`
+      const marker = `${last.at ?? ""}/${last.text}`
+      if (guardShared.blocked.get(sessionID) === marker) return
+      try {
+        const prev = (await ctx.storage.get(blockedKey)) as { marker?: string } | undefined
+        if (prev?.marker === marker) return
+      } catch {
+        // 저장소를 못 읽으면 막는 쪽으로 간다 — 다시 막혀도 한 번 더일 뿐이다.
+      }
+      let sinceMs = toMs((session as any)?.time?.created)
+      const resumedAt = previousClosingResumeMs(said)
+      if (resumedAt !== null) sinceMs = Math.max(sinceMs, resumedAt)
+      if (!sinceMs) {
+        // 세션 시작 시각을 모르면 가장 이른 사람 발화, 그것도 없으면 지금부터 본다.
+        // 모른다고 epoch(1970)부터 보면 옛 [다음] 줄이 근거가 되어 항상 통과해 버린다.
+        const first = said.find((s) => s.at !== null)
+        sinceMs = first?.at ?? Date.now()
+      }
+      const dir = await sessionDir(sessionID)
+      const out = await runHookScript({
+        script: closingCheck,
+        stdinJson: { since_epoch_ms: sinceMs },
+        cwd: dir,
+        repoRoot,
+        timeoutMs: 30000,
+      })
+      const parsed = tryParseJson(out)
+      // 검사 자체가 실패하면 막지 않는다 — 고장 난 검사로 대화를 붙잡지 않는다.
+      if (!parsed) return
+      const satisfied: string[] = Array.isArray(parsed.satisfied) ? parsed.satisfied : []
+      if (satisfied.length > 0) return
+      const touched: string[] = Array.isArray(parsed.touched) ? parsed.touched : []
+      const note =
+        `[나무 마무리 검사] 이번 세션의 작업일지에 [다음]/[완료]/[중단] 줄이 없습니다` +
+        (touched.length > 0 ? `(기록이 들어간 task: ${touched.join(", ")})` : "(이번 세션에 남긴 줄이 아예 없습니다)") +
+        `. 마무리의 본체는 [다음] 줄 갱신이므로, namu_record(bowl='tasks', status='다음', summary='<다음 세션이 어디서 시작하면 되는지>', reason='<왜>', body='<요약>')로 남기거나 남길 일이 없으면 그렇게 답한 뒤, 사용자에게 확인받고 마치세요.`
+      guardShared.blocked.set(sessionID, marker)
+      try {
+        await ctx.storage.set(blockedKey, { marker })
+      } catch {
+        // 못 적으면 다음 대답 뒤 한 번 더 막힐 수 있다 — 무한 반복은 아니다(그때는 [다음] 줄이 생긴다).
+      }
+      await ctx.session.synthetic({ sessionID, text: note, resume: true })
+    }
+
+    // 플러그인을 다시 읽을 때 옛 구독이 남아 두 번 막지 않도록 끊을 수 있게 둔다.
+    const stop = new AbortController()
+    void (async () => {
+      while (!stop.signal.aborted) {
+        try {
+          for await (const ev of ctx.event.subscribe({ signal: stop.signal } as any)) {
+            if ((ev as any)?.type !== "session.execution.succeeded") continue
+            const sessionID = (ev as any)?.data?.sessionID
+            if (typeof sessionID !== "string") continue
+            // 같은 신호를 여러 벌이 받으므로 처음 받은 한 벌만 처리한다.
+            const eventID = String((ev as any)?.id ?? "")
+            if (eventID) {
+              if (guardShared.seenEvents.has(eventID)) continue
+              guardShared.seenEvents.add(eventID)
+              if (guardShared.seenEvents.size > 500) guardShared.seenEvents.clear()
+            }
+            closingGuard(sessionID).catch((error) => console.error("[namu] closing guard failed:", error))
+          }
+        } catch (error) {
+          console.error("[namu] event stream dropped:", error)
+        }
+        // 구독이 끊기면 잠깐 쉬고 다시 붙는다.
+        if (!stop.signal.aborted) await new Promise((r) => setTimeout(r, 2000))
+      }
+    })()
 
     // 7. 고치기 전 저장소 뒤처짐 검사 (PreToolUse 훅에 대응 — 뒤처져 있으면 묻는다).
     await ctx.permission.hook("evaluate", async (event) => {
@@ -382,6 +474,8 @@ export default Plugin.define({
         console.error("[namu] permission hook failed:", error)
       }
     })
+
+    return () => stop.abort()
   },
 })
 

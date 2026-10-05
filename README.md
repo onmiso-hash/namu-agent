@@ -55,7 +55,7 @@ procedure needs a **host-specific plugin envelope** built for it.
 | **Claude Code** (terminal) | plugin | full (14 tools) | full | ✅ supported |
 | **agy** (terminal, Antigravity CLI) | plugin | full (14 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
 | **Grok** (terminal) | plugin | full (same MCP server as the plugin) | nearly full — session-start text and standing reminders are not injected; call `/namu` | ✅ supported |
-| **OpenCode** (terminal) | plugin (one entry) + agents copy | full (same memory server as the plugin) | nearly full — closing guard advises instead of blocking; no session-end measurement / statusLine | ✅ supported |
+| **OpenCode** (terminal) | plugin (one entry) | full (same memory server as the plugin) | nearly full — only session measurement and the 5h/7d usage in the status line are missing | ✅ supported |
 | **claude.ai** (web) | MCP address | full (5 bowls + journals + attachments, 10 tools) | not yet | ✅ supported |
 | ChatGPT · Gemini (web) · Copilot · Cursor, etc. | — | not yet | not yet | ⏳ not wired up |
 
