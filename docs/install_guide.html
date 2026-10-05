@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🔧 나무 설치하기 — 터미널 AI에 기억 붙이기</title>
-<meta name="description" content="Claude Code·agy에 나무를 설치하고, 잘 됐는지 확인하고, 첫 작업을 돌리고, 업데이트·삭제하는 법까지 한 문서에 담았습니다.">
+<meta name="description" content="Claude Code·agy·Grok에 나무를 설치하고, 잘 됐는지 확인하고, 첫 작업을 돌리고, 업데이트·삭제하는 법까지 한 문서에 담았습니다. OpenCode는 별도 안내서로 이어집니다.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
 <script src="assets/namu-theme.js"></script>
 <link rel="stylesheet" href="assets/namu-docs.css">
@@ -30,8 +30,9 @@
 
 <span class="eyebrow">🔧 설치</span>
 <h1>터미널 AI에 나무 붙이기</h1>
-<p class="lead">Claude Code나 agy를 쓰신다면 이 문서 하나면 됩니다. 설치부터 첫 작업,
-업데이트와 삭제까지 순서대로 담았습니다.</p>
+<p class="lead">Claude Code·agy·Grok을 쓰신다면 이 문서 하나면 됩니다. 설치부터 첫 작업,
+업데이트와 삭제까지 순서대로 담았습니다. <strong>OpenCode</strong>는 등록 방식이 달라
+별도 안내서로 이어집니다(아래 4-1장).</p>
 
 <div class="tip">
 <p><strong>브라우저에서 AI를 쓰신다면 이 문서가 아닙니다.</strong> 설치가 아니라 주소를
@@ -48,6 +49,7 @@
     <li><a href="#claude">Claude Code에 설치하기</a></li>
     <li><a href="#agy">agy에 설치하기</a></li>
     <li><a href="#grok">Grok에 설치하기</a></li>
+    <li><a href="#opencode">OpenCode에 설치하기</a></li>
     <li><a href="#개발형">개발형 — 나무 자체를 고칠 때</a></li>
     <li><a href="#확인">잘 설치됐는지 확인하기</a></li>
     <li><a href="#첫하루">첫 하루 — 실제로 써 보기</a></li>
@@ -61,7 +63,7 @@
 <h2 id="준비물">1. 준비물</h2>
 
 <ul>
-  <li><strong>Claude Code, agy, 또는 Grok</strong> — 셋 중 하나가 이미 설치돼 있어야 합니다.
+  <li><strong>Claude Code, agy, Grok, 또는 OpenCode</strong> — 넷 중 하나가 이미 설치돼 있어야 합니다.
   여러 곳에 설치해도 됩니다(기억은 하나로 합쳐집니다).</li>
   <li><strong>Python 3.12 이상</strong></li>
   <li><strong>인터넷 연결</strong> — 설치할 때 나무를 내려받습니다.</li>
@@ -131,6 +133,19 @@ grok plugin install namu --trust</code></pre>
 넣어 주던 상시 메모는 Grok이 그 훅의 출력문을 모델에게 넘기지 않습니다. 브리핑은
 대화창에서 <code>/namu</code>로 부릅니다. 기억을 읽고 쓰는 도구와, 마무리 때
 <code>[다음]</code> 줄이 빠졌는지 막는 검사는 동작합니다.</p>
+</div>
+
+<h2 id="opencode">4-1. OpenCode에 설치하기</h2>
+
+<p>OpenCode는 플러그인 설치 명령이 아니라 <strong>설정 파일에 경로 한 줄</strong>을
+넣는 방식입니다. 등록 형식만 다를 뿐 기억 서버·작업 절차·마무리 검사는 위 셋과 같은
+내용을 그대로 씁니다.</p>
+
+<div class="tip">
+<p>설치 1부~문제 해결까지는 분량이 달라 이 문서에 합치지 않았습니다 →
+<a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/opencode_guide.md">OpenCode 전용 안내서</a>로
+바로 가십시오. 상태줄의 5시간·7일 사용량, <code>statusline-setup</code> 스킬처럼 OpenCode에서
+아직 없는 기능도 그 문서 "지원 범위" 절에 정리돼 있습니다.</p>
 </div>
 
 <h2 id="개발형">5. 개발형 — 나무 자체를 고칠 때</h2>
@@ -296,9 +311,11 @@ claude plugin install namu@namu-marketplace</code></pre>
 
 <pre><code>/namu:update</code></pre>
 
-<p>나무가 설치된 곳(Claude Code·agy)을 알아서 찾아 각각 맞는 방식으로 갱신하고,
+<p>나무가 설치된 곳(Claude Code·agy·Grok)을 알아서 찾아 각각 맞는 방식으로 갱신하고,
 화면 아래 한 줄도 새 경로로 다시 이어 줍니다. 설치 안 된 쪽은 건너뜁니다.
-<strong>끝나면 해당 프로그램을 다시 시작해야 반영됩니다.</strong></p>
+<strong>끝나면 해당 프로그램을 다시 시작해야 반영됩니다.</strong> OpenCode는 이 명령 대상이
+아니라 <code>/namu-update</code>(OpenCode 자체 명령) 또는 저장소 <code>git pull</code>로
+갱신합니다 — OpenCode 안내서 "업데이트·삭제" 절을 보십시오.</p>
 
 <h3>이 명령을 못 쓸 때</h3>
 
@@ -388,6 +405,7 @@ agy라면 재설치 직후 첫 대화에서 안 보일 수 있으니, 대화를 
 <p class="docfoot">
 더 볼 것 —
 <a href="index.html">나무 안내서</a> ·
+<a href="https://github.com/onmiso-hash/namu-agent/blob/main/docs/opencode_guide.md">OpenCode 안내서</a> ·
 <a href="remote_mcp_guide.html">웹에서 직접 서버 운영하기</a> ·
 <a href="memory_architecture.html">기억 설계도</a> ·
 <a href="workflow_architecture.html">절차 설계도</a> ·
