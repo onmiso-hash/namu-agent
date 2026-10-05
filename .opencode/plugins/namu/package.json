@@ -1,0 +1,16 @@
+{
+  "name": "namu-opencode-plugin",
+  "version": "0.1.0",
+  "description": "NAMU memory + procedure envelope for OpenCode (same memory core as the Claude Code / agy / Grok plugin)",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

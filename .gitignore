@@ -221,6 +221,7 @@ __marimo__/
 db/
 *.bak
 *:Zone.Identifier
+node_modules/
 .claude/settings.local.json
 .agents/hooks/
 .agents/hooks.json

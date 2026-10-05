@@ -18,6 +18,7 @@ English: [README.md](README.md)
 | [⚙️ 절차 설계도](https://onmiso-hash.github.io/namu-agent/docs/workflow_architecture.html) | 나머지 절반 — 일의 순서를 어떻게 잡고 어디서 멈춰 물어보는지 |
 | [📎 파일 주고받기](docs/attach_files.md) | 내 저장소에 파일을 올리고 받는 법, 절대 어기면 안 되는 격리 규칙 |
 | [🔎 검색 통일](docs/search_index_unify.md) | 다섯 그릇이 어떻게 SQLite 색인 하나 뒤로 모였는지 |
+| [🖥️ OpenCode](docs/opencode_guide.md) | OpenCode에 붙이기 — 플러그인 설치·첫 작업·업데이트, 호스트 한계 |
 
 ## NAMU가 뭐 하는 물건인가
 
@@ -43,12 +44,14 @@ NAMU는 두 부분이다 — **기억**(그릇 5개·작업일지·파일 첨부
 | **Claude Code** (터미널) | 플러그인 | 전부 (도구 14개) | 전부 | ✅ 지원 |
 | **agy** (터미널, Antigravity CLI) | 플러그인 | 전부 (도구 14개) | 거의 전부 — 실수 방지 훅 2개만 빠짐 | ✅ 지원 |
 | **Grok** (터미널) | 플러그인 | 전부 (플러그인과 같은 기억 서버) | 거의 전부 — 세션 시작 글과 상시 재알림은 안 들어가고, 브리핑은 `/namu` | ✅ 지원 |
+| **OpenCode** (터미널) | 플러그인 (한 줄) + 에이전트 복사 | 전부 (플러그인과 같은 기억 서버) | 거의 전부 — 마무리 검사는 막지 않고 권고, 세션 종료 측정·statusLine 없음 | ✅ 지원 |
 | **claude.ai** (웹) | MCP 주소 | 전부 (다섯 그릇 + 작업일지 + 파일 첨부, 도구 10개) | 아직 | ✅ 지원 |
 | ChatGPT · Gemini(웹) · Copilot · Cursor 등 | — | 아직 | 아직 | ⏳ 준비 안 됨 |
 
 - **"아직"은 그 AI가 못 한다는 뜻이 아니라, NAMU 쪽이 아직 그 자리를 잡지 않았다는 뜻이다.**
   기억은 원격 MCP를 붙일 수 있는 클라이언트면 원리상 동작하고(확인한 것은 claude.ai),
-  절차는 호스트별 봉투가 필요한데 지금 만들어진 것은 Claude Code·agy·Grok이다.
+  절차는 호스트별 봉투가 필요한데 Claude Code·agy·Grok에 이어 OpenCode용
+  TS 플러그인 봉투도 만들었다(자세한 것은 OpenCode 안내).
 - **Grok은 같은 플러그인 폴더를 읽는다** (`.claude-plugin/marketplace.json`, `.mcp.json`,
   `hooks/hooks.json`). `CLAUDE_PLUGIN_ROOT`는 `GROK_PLUGIN_ROOT`의 별명으로 채워진다.
   모델에 닿지 않는 훅 출력이 둘이다. 세션 시작 훅의 출력(자동 브리핑)과, 통과시킨
