@@ -1,0 +1,46 @@
+name: tag-release
+
+# main에 들어온 판 번호(namu-plugin/plugin.json)로 꼬리표를 붙인다.
+#
+# 왜 있나(2026-10-08): 클라우드 세션은 꼬리표를 직접 올릴 수 없고(git push가 403으로
+# 막힌다), 사용자가 쓰는 PC는 방화벽으로 GitHub 화면이 막혀 있다. 그래서 v0.1.95
+# 꼬리표를 아무도 붙이지 못했다. 판 번호는 이미 namu_bump.py로 커밋에 박히므로,
+# 그 번호를 GitHub가 읽어 꼬리표를 붙이면 사람 손이 필요 없다.
+#
+# - 꼬리표는 판 번호를 마지막으로 바꾼 커밋에 붙인다(그 뒤 문서만 고친 커밋이 아니라).
+# - 이미 있으면 아무것도 하지 않는다 — 몇 번을 돌려도 같다.
+# - 가벼운 꼬리표다(v0.1.91~v0.1.94와 같은 모양).
+# - 두 판 이상을 한꺼번에 건너뛰면 마지막 번호만 붙는다(옛 번호를 되살려 붙이지 않는다).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 판 번호로 꼬리표 붙이기
+        run: |
+          set -eu
+          version=$(python3 -c "import json; print(json.load(open('namu-plugin/plugin.json'))['version'])")
+          other=$(python3 -c "import json; print(json.load(open('namu-plugin/.claude-plugin/plugin.json'))['version'])")
+          if [ "$version" != "$other" ]; then
+            echo "두 manifest 판 번호가 다르다: $version / $other — 꼬리표를 붙이지 않는다" >&2
+            exit 1
+          fi
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag 이미 있음 — 할 일 없음"
+            exit 0
+          fi
+          sha=$(git log -1 --format=%H -- namu-plugin/plugin.json)
+          echo "$tag → $sha"
+          git tag "$tag" "$sha"
+          git push origin "refs/tags/$tag"
