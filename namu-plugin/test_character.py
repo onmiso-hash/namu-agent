@@ -1,4 +1,4 @@
-"""캐릭터 그릇(나무 캐릭터 v0.1 1·2단계) — 스키마·카드 검사·저장·목록·불러오기·일기·핵심 기억."""
+"""캐릭터 그릇(나무 캐릭터 v0.1 1~3단계) — 스키마·카드 검사·저장·목록·불러오기·일기·핵심 기억·원문 보관·잊기."""
 import json
 import re
 import sys
@@ -244,7 +244,7 @@ def test_diary_is_written_and_moves_the_relationship(paths):
     doc = character.yaml.safe_load(files[0].read_text(encoding="utf-8"))
     assert doc["summary"] == "허니가 회사 일로 지쳐 보였다."
     assert doc["delta_reason"] == "힘든 얘기를 먼저 털어놔줌"
-    assert doc["topics"] == ["회사", "산책"] and doc["archived"] is False
+    assert doc["topics"] == ["회사", "산책"] and "archived" not in doc
     assert "affection_delta_requested" not in doc
     loaded = character.load("하린", paths)
     assert loaded["relationship"]["affection"] == 13
@@ -421,10 +421,13 @@ def test_load_with_diaries_and_memories_stays_small(paths):
     assert len(out["recent_diary"]) == character.LOAD_RECENT_DIARY
     assert len(out["core_memories"]) == character.LOAD_CORE_LIMIT
     assert len(out["pending_memories"]) == 9
-    # 모든 칸을 상한까지 채운 최악의 경우 — 2026-10-08 실측 13,272자(일기 5×500,
-    # 핵심 기억 20×200, 대기 후보 9×200이 대부분). 설계서 8장 목표("3천 토큰")보다 크지만
-    # 상한 값은 초안이라 사람이 정한다. 이 검사는 상한이 말없이 커지는 것을 막는다.
-    assert len(json.dumps(out, ensure_ascii=False)) < 14000
+    # 모든 칸을 상한까지 채운 최악의 경우 — 2026-10-08 1차 실측 13,272자(일기 5×500,
+    # 핵심 기억 20×200, 대기 후보 9×200)가 설계서 8장 목표("3천 토큰")보다 커서 허니와
+    # 상한을 다시 정했다(일기 5→3개, 핵심 기억 20→10개). 재측정 9,590자. 이 검사는 상한이
+    # 말없이 다시 커지는 것을 막는다.
+    # 같은 날 화면용 글(display)과 읽는 시각(when)을 더해 11,346자가 됐다(display 958자 —
+    # 일기 요약·핵심 기억을 줄여 싣는다). 원래 기록 칸을 줄이지 않고 상한을 올렸다.
+    assert len(json.dumps(out, ensure_ascii=False)) < 12000
 
 
 def test_guidance_names_only_tools_that_exist():
@@ -433,3 +436,276 @@ def test_guidance_names_only_tools_that_exist():
     text = " ".join(character.GUIDANCE)
     for tool_name in set(re.findall(r"namu_[a-z_]+", text)):
         assert hasattr(mcp_server, tool_name), tool_name
+
+
+# ── 3단계: 원문 보관 ─────────────────────────────────────────────────────────
+def _char_dir(paths, name="하린"):
+    return paths.character_dir / character.find(name, paths)["character_id"]
+
+
+def test_archive_is_kept_as_given_and_linked(paths):
+    character.save(_card(), paths=paths)
+    text = "허니: 안녕\n하린:  반가워\n\n(끝)"
+    out = character.write_diary("하린", "인사를 나눴다.", archive=text, paths=paths)
+    assert out["archived"] is True
+    assert out["archive"]["part"] == 1 and out["archive"]["chars"] == len(text)
+    d = _char_dir(paths)
+    [archive] = character._read_entries(d / "archive")
+    assert archive["text"] == text  # 줄바꿈·띄어쓰기를 다듬지 않는다
+    assert archive["diary_id"] == out["id"] and archive["part"] == 1 and archive["at"]
+    # 원문이 있는지는 일기에 적지 않고 원문 폴더에서 센다.
+    [diary] = character._read_entries(d / "diary")
+    assert "archived" not in diary and "archive_id" not in diary
+    assert character.load("하린", paths)["recent_diary"][0]["archive_parts"] == 1
+
+
+def test_no_archive_unless_sent(paths):
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "인사를 나눴다.", archive="   ", paths=paths)
+    assert out["archived"] is False
+    assert not (_char_dir(paths) / "archive").exists()
+
+
+def test_oversize_archive_still_saves_the_diary(paths):
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "길었다.", 2, "오래 얘기함",
+                                archive="가" * (character.ARCHIVE_TEXT_MAX + 1), paths=paths)
+    # 대화가 있었다는 기록은 원문 크기 때문에 사라지지 않는다. 원문만 돌려보낸다.
+    assert out["archived"] is False and out["archive"] is None
+    assert "append_to" in out["archive_rejected"]
+    assert out["relationship"]["affection"] == 12
+    d = _char_dir(paths)
+    assert len(character._read_entries(d / "diary")) == 1
+    assert not (d / "archive").exists()
+    # 거절된 원문은 그 일기에 첫 조각부터 이어 붙일 수 있다.
+    piece = character.write_diary("하린", archive="가" * 10, append_to=out["id"], paths=paths)
+    assert piece["archive"]["part"] == 1 and piece["archive_parts"] == 1
+
+
+def test_archive_pieces_are_numbered_and_count_affection_once(paths):
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "긴 대화를 했다.", 3, "속 얘기", archive="첫 조각",
+                                paths=paths)
+    two = character.write_diary("하린", archive="둘째 조각", append_to=out["id"], paths=paths)
+    three = character.write_diary("하린", archive="셋째 조각", append_to=out["id"], paths=paths)
+    assert two["appended"] is True and two["id"] == out["id"]
+    assert (two["archive"]["part"], three["archive"]["part"]) == (2, 3)
+    assert three["archive_parts"] == 3
+    assert three["archive_chars"] == len("첫 조각") + len("둘째 조각") + len("셋째 조각")
+    d = _char_dir(paths)
+    parts = character._archive_parts(d)[out["id"]]
+    assert [p["text"] for p in parts] == ["첫 조각", "둘째 조각", "셋째 조각"]
+    assert all(p["at"] for p in parts)  # 조각마다 받은 시각이 붙는다
+    # 일기는 한 편 그대로 — 호감도는 한 번만 센다.
+    assert len(character._read_entries(d / "diary")) == 1
+    loaded = character.load("하린", paths)
+    assert loaded["relationship"]["affection"] == 13
+    assert loaded["recent_diary"][0]["archive_parts"] == 3
+
+
+def test_append_takes_only_the_archive(paths):
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "인사를 나눴다.", paths=paths)
+    with pytest.raises(ValueError, match="summary"):
+        character.write_diary("하린", "또 요약", archive="조각", append_to=out["id"], paths=paths)
+    with pytest.raises(ValueError, match="affection_delta"):
+        character.write_diary("하린", affection_delta=2, archive="조각", append_to=out["id"],
+                              paths=paths)
+    with pytest.raises(ValueError, match="archive"):
+        character.write_diary("하린", append_to=out["id"], paths=paths)
+    with pytest.raises(ValueError, match="일기가 없습니다"):
+        character.write_diary("하린", archive="조각", append_to="01" + "A" * 24, paths=paths)
+    with pytest.raises(ValueError, match="저장하지 않았습니다"):
+        character.write_diary("하린", archive="가" * (character.ARCHIVE_TEXT_MAX + 1),
+                              append_to=out["id"], paths=paths)
+    assert not (_char_dir(paths) / "archive").exists()
+
+
+def test_archive_pieces_have_a_limit(paths, monkeypatch):
+    monkeypatch.setattr(character, "ARCHIVE_PARTS_MAX", 2)
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "인사", archive="1", paths=paths)
+    character.write_diary("하린", archive="2", append_to=out["id"], paths=paths)
+    with pytest.raises(ValueError, match="2개까지"):
+        character.write_diary("하린", archive="3", append_to=out["id"], paths=paths)
+
+
+# ── 3단계: 잊기 ─────────────────────────────────────────────────────────────
+def _two_diaries(paths):
+    character.save(_card(), paths=paths)
+    a = character.write_diary("하린", "산책 얘기를 했다.", 5, "산책 약속", archive="원문 A",
+                              core_candidates=["첫 산책 약속", "좋아하는 노래"], paths=paths)
+    character.core("하린", "confirm", [a["pending_added"][0]["id"]], paths=paths)
+    b = character.write_diary("하린", "영화 얘기를 했다.", 2, "영화 추천", paths=paths)
+    return a, b
+
+
+def test_forget_lists_choices_without_deleting(paths):
+    a, b = _two_diaries(paths)
+    out = character.forget("하린", "diary", paths=paths)
+    assert out["step"] == "choose"
+    assert [e["id"] for e in out["entries"]] == [b["id"], a["id"]]  # 최근 순
+    assert out["entries"][1]["archive_parts"] == 1
+    assert out["entries"][1]["when"].endswith("오늘")
+    found = character.forget("하린", "diary", query="산책", paths=paths)
+    assert [e["id"] for e in found["entries"]] == [a["id"]]
+    assert len(character._read_entries(_char_dir(paths) / "diary")) == 2
+
+
+def test_forget_diary_takes_what_came_from_it(paths):
+    a, b = _two_diaries(paths)
+    d = _char_dir(paths)
+    preview = character.forget("하린", "diary", [a["id"]], paths=paths)
+    assert preview["step"] == "preview"
+    will = preview["will_delete"]
+    assert [x["id"] for x in will["diary"]] == [a["id"]]
+    assert len(will["archive"]) == 1 and len(will["core"]) == 1 and len(will["pending"]) == 1
+    assert preview["notice"] == character.HISTORY_NOTICE
+    # 미리 보기만으로는 아무것도 지우지 않는다. 지운 뒤의 관계를 미리 보여 준다.
+    assert len(character._read_entries(d / "diary")) == 2
+    assert preview["relationship_after"]["affection"] == 10 + 2
+
+    done = character.forget("하린", "diary", [a["id"]], confirm=preview["confirm"], paths=paths)
+    assert done["step"] == "done"
+    assert done["deleted"] == {"diary": 1, "archive": 1, "pending": 1, "core": 1}
+    assert done["relationship"]["affection"] == 12
+    for sub in ("archive", "pending", "core"):
+        assert character._read_entries(d / sub) == []
+    [left] = character._read_entries(d / "diary")
+    assert left["id"] == b["id"]
+    loaded = character.load("하린", paths)
+    assert loaded["relationship"]["affection"] == 12
+    assert [x["id"] for x in loaded["recent_diary"]] == [b["id"]]
+    assert loaded["core_memories"] == [] and loaded["pending_memories"] == []
+
+
+def test_forget_core_only(paths):
+    a, _ = _two_diaries(paths)
+    d = _char_dir(paths)
+    [mem] = character._read_entries(d / "core")
+    preview = character.forget("하린", "core", [mem["id"]], paths=paths)
+    assert set(preview["will_delete"]) == {"core"}
+    character.forget("하린", "core", [mem["id"]], confirm=preview["confirm"], paths=paths)
+    assert character._read_entries(d / "core") == []
+    assert len(character._read_entries(d / "diary")) == 2
+    assert len(character._read_entries(d / "archive")) == 1
+
+
+def test_forget_archive_keeps_the_diary(paths):
+    a, _ = _two_diaries(paths)
+    d = _char_dir(paths)
+    [arc] = character._read_entries(d / "archive")
+    preview = character.forget("하린", "archive", [arc["id"]], paths=paths)
+    character.forget("하린", "archive", [arc["id"]], confirm=preview["confirm"], paths=paths)
+    assert character._read_entries(d / "archive") == []
+    diary = next(x for x in character._read_entries(d / "diary") if x["id"] == a["id"])
+    assert diary["summary"] == "산책 얘기를 했다."
+    loaded = character.load("하린", paths)
+    assert [x["archive_parts"] for x in loaded["recent_diary"]] == [0, 0]
+
+
+def test_forget_one_piece_keeps_the_others_and_diary_takes_all(paths):
+    a, _ = _two_diaries(paths)
+    d = _char_dir(paths)
+    character.write_diary("하린", archive="원문 B", append_to=a["id"], paths=paths)
+    first, second = character._archive_parts(d)[a["id"]]
+    rows = character.forget("하린", "archive", paths=paths)["entries"]
+    assert [r["part"] for r in rows] == [2, 1]
+    preview = character.forget("하린", "archive", [first["id"]], paths=paths)
+    character.forget("하린", "archive", [first["id"]], confirm=preview["confirm"], paths=paths)
+    assert [p["id"] for p in character._archive_parts(d)[a["id"]]] == [second["id"]]
+    # 남은 조각까지 일기를 잊으면 함께 지워진다.
+    character.write_diary("하린", archive="원문 C", append_to=a["id"], paths=paths)
+    preview = character.forget("하린", "diary", [a["id"]], paths=paths)
+    assert len(preview["will_delete"]["archive"]) == 2
+    character.forget("하린", "diary", [a["id"]], confirm=preview["confirm"], paths=paths)
+    assert character._read_entries(d / "archive") == []
+
+
+# ── 사람이 읽는 시각·화면용 글 ─────────────────────────────────────────────────
+@pytest.mark.parametrize("at,label", [
+    ("2026-10-08T19:57:57+09:00", "10월 8일(목) 저녁 7시 57분 · 오늘"),
+    ("2026-10-07T00:30:00+09:00", "10월 7일(수) 새벽 12시 30분 · 어제"),
+    ("2026-10-05T07:00:00+09:00", "10월 5일(월) 아침 7시 · 3일 전"),
+    ("2026-10-05T12:05:00+09:00", "10월 5일(월) 낮 12시 5분 · 3일 전"),
+    ("2026-10-05T15:00:00+09:00", "10월 5일(월) 오후 3시 · 3일 전"),
+    ("2026-10-08T10:57:57+00:00", "10월 8일(목) 저녁 7시 57분 · 오늘"),  # 세계표준시로 받아도
+    ("2025-12-31T23:00:00+09:00", "2025년 12월 31일(수) 밤 11시 · 281일 전"),
+])
+def test_when_reads_like_a_person(at, label):
+    now = character.datetime.fromisoformat("2026-10-08T21:00:00+09:00")
+    assert character._when(at, now) == label
+    assert character._when(None, now) is None and character._when("엉터리", now) is None
+
+
+def test_display_is_a_quote_box_with_dates(paths):
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "산책 얘기를 했다.\n# 줄바꿈", 3, "산책 약속",
+                                mood="설렘", core_candidates=["첫 산책은 한강"], paths=paths)
+    character.core("하린", "confirm", [out["pending_added"][0]["id"]], paths=paths)
+    loaded = character.load("하린", paths)
+    shown = loaded["display"]
+    assert all(line.startswith(">") for line in shown.splitlines())
+    assert "**🌸 하린**" in shown and "호감도 13/100" in shown
+    assert f"**{out['when']}** (설렘)" in shown
+    assert "산책 얘기를 했다. # 줄바꿈" in shown and "첫 산책은 한강" in shown
+    assert loaded["relationship"]["last_talk_when"] == out["when"]
+    assert any("display" in g for g in loaded["guidance"])
+    assert character.list_all(paths)[0]["last_talk_when"] == out["when"]
+
+
+def test_display_shortens_what_the_data_keeps_whole(paths):
+    character.save(_card(), paths=paths)
+    for i in range(7):
+        out = character.write_diary("하린", "일" * 300, core_candidates=[f"{i}" + "억" * 100],
+                                    paths=paths)
+        character.core("하린", "confirm", [out["pending_added"][0]["id"]], paths=paths)
+    loaded = character.load("하린", paths)
+    shown = loaded["display"]
+    assert "일" * 120 + "…" in shown and "일" * 121 not in shown
+    assert "> - 외 2개" in shown and "> - 6" in shown and "> - 1" not in shown
+    assert loaded["recent_diary"][0]["summary"] == "일" * 300
+
+
+def test_forget_needs_the_matching_confirm(paths):
+    a, b = _two_diaries(paths)
+    d = _char_dir(paths)
+    preview = character.forget("하린", "diary", [a["id"]], paths=paths)
+    with pytest.raises(ValueError, match="확인표"):
+        character.forget("하린", "diary", [b["id"]], confirm=preview["confirm"], paths=paths)
+    # 미리 보기 뒤 그 일기에서 나온 것이 바뀌면 옛 확인표로는 지우지 못한다.
+    pend = character._read_entries(d / "pending")[0]
+    character.core("하린", "confirm", [pend["id"]], paths=paths)
+    with pytest.raises(ValueError, match="확인표"):
+        character.forget("하린", "diary", [a["id"]], confirm=preview["confirm"], paths=paths)
+    assert len(character._read_entries(d / "diary")) == 2
+
+
+def test_forget_rejects_unknown_ids_and_targets(paths):
+    _two_diaries(paths)
+    with pytest.raises(ValueError, match="아무것도 지우지"):
+        character.forget("하린", "diary", ["01M4DDG0AD7DV5V37Y8DQFCEEG"], paths=paths)
+    with pytest.raises(ValueError, match="target"):
+        character.forget("하린", "pending", paths=paths)
+    with pytest.raises(ValueError, match="id 모양"):
+        character.forget("하린", "diary", ["산책"], paths=paths)
+    with pytest.raises(ValueError, match="ids"):
+        character.forget("하린", "diary", confirm="abc", paths=paths)
+
+
+def test_forget_whole_character(paths):
+    _two_diaries(paths)
+    character.save(_card(name="다른 아이", aliases=[]), paths=paths)
+    d = _char_dir(paths)
+    with pytest.raises(ValueError, match="ids"):
+        character.forget("하린", "character", ["01M4DDG0AD7DV5V37Y8DQFCEEG"], paths=paths)
+    preview = character.forget("린아", "character", paths=paths)
+    assert preview["will_delete"]["character"] == "하린"
+    assert preview["will_delete"]["diary"] == 2 and preview["will_delete"]["archive"] == 1
+    assert d.exists()
+    done = character.forget("린아", "character", confirm=preview["confirm"], paths=paths)
+    assert done["step"] == "done" and done["deleted"]["card_versions"] == 1
+    assert not d.exists()
+    assert [c["name"] for c in character.list_all(paths)] == ["다른 아이"]
+    # 이름과 별명이 다시 비어 새 캐릭터가 쓸 수 있다.
+    character.save(_card(), paths=paths)

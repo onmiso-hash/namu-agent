@@ -322,6 +322,7 @@ def test_http_exposed_tools_excludes_sync_setup():
             "namu_character_list", "namu_character_schema",
             "namu_character_save", "namu_character_load",
             "namu_character_diary", "namu_character_core",
+            "namu_character_forget",
         }
     )
     assert "namu_sync_setup" not in http_server.HTTP_EXPOSED_TOOLS
@@ -354,10 +355,11 @@ def test_http_and_cloud_expose_the_same_tools():
         # 클로드 코드에서는 부를 필요가 없다.
         {"namu_record_session"}
     ) | frozenset(
-        # 캐릭터 6종(나무 캐릭터 1·2단계) — 목록·스키마·저장·불러오기·일기·핵심 기억.
+        # 캐릭터 7종(나무 캐릭터 1~3단계) — 목록·스키마·저장·불러오기·일기·핵심 기억·잊기.
         {"namu_character_list", "namu_character_schema",
          "namu_character_save", "namu_character_load",
-         "namu_character_diary", "namu_character_core"}
+         "namu_character_diary", "namu_character_core",
+         "namu_character_forget"}
     )
 
 

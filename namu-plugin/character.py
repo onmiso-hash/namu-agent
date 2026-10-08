@@ -9,6 +9,7 @@
     memory/character/<캐릭터 id>/diary/<id>.yaml       일기(2단계)
     memory/character/<캐릭터 id>/core/<id>.yaml        확정된 핵심 기억(2단계)
     memory/character/<캐릭터 id>/pending/<id>.yaml     확인 대기 후보(2단계)
+    memory/character/<캐릭터 id>/archive/<id>.yaml     대화 원문(3단계, 사용자가 요청한 것만)
 
 이유는 잊기(forget, 3단계) 때문이다. 캐릭터 일기는 사용자가 "잊어줘"라고 하면 실제로
 지워야 한다. 줄 단위 병합(union)을 거는 파일에서 줄을 지우면 다른 PC와 병합할 때
@@ -30,9 +31,11 @@
 받아 쓴다(설계서 5.1 — 붕어빵 틀은 하나).
 """
 import contextlib
+import hashlib
 import json
 import os
 import re
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -149,9 +152,11 @@ CARD_KEYS = ("schema_version", "id") + tuple(q["key"] for q in QUESTIONS) + (
     "expression_level", "promises",
 )
 
-# 불러오기 결과의 크기 상한(설계서 8장 — 가볍게).
-LOAD_RECENT_DIARY = 5
-LOAD_CORE_LIMIT = 20
+# 불러오기 결과의 크기 상한(설계서 0·8장 — 가볍게). 2026-10-08: 모든 칸을 채운 최악값이
+# 13,272자로 목표(약 3천 토큰)를 넘어 실측 후 다시 정했다(5→3, 20→10). 대기 후보는 서버가
+# 이미 합계 10개(PENDING_MAX)로 막고 있어 따로 줄이지 않았다.
+LOAD_RECENT_DIARY = 3
+LOAD_CORE_LIMIT = 10
 
 # 일기 한 편의 상한(설계서 5.3·6장 초안 값). 점수 변화 폭은 compute_state도 같은 값으로 자른다.
 DELTA_LIMIT = 5
@@ -167,6 +172,20 @@ CORE_TEXT_MAX = 200
 CORE_CANDIDATES_PER_DIARY = 3
 PENDING_MAX = 10
 CORE_ACTIONS = ("list", "confirm", "reject")
+# 화면용 글(display)에 싣는 양. 원래 기록 칸은 따로 다 실리므로, 화면용 글은 줄여 실어
+# 불러오기 크기가 두 배로 늘지 않게 한다.
+DISPLAY_SUMMARY_CHARS = 120
+DISPLAY_CORE_ITEMS = 5
+DISPLAY_CORE_CHARS = 60
+# 원문 보관(설계서 5.5) — 대화 한 번의 원문은 길 수 있지만 끝이 없으면 저장소가 무거워진다.
+# 상한은 조각 하나의 크기다. 긴 대화는 일기 하나에 조각을 이어 붙여(append_to) 남긴다.
+ARCHIVE_TEXT_MAX = 50000
+ARCHIVE_PARTS_MAX = 20
+# 잊기(설계서 8·12장). pending은 core(action=reject)가 이미 지우므로 대상에 넣지 않는다 —
+# 일기를 잊을 때 딸린 후보로만 함께 지워진다.
+FORGET_TARGETS = ("diary", "core", "archive", "character")
+FORGET_LIST_MAX = 20
+FORGET_PREVIEW_CHARS = 80
 
 # 캐릭터 id·판 id는 ULID다. 경로에 그대로 쓰므로 모양을 확인한 뒤에만 쓴다.
 _ULID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
@@ -499,6 +518,49 @@ def _since(last_talk_at: "str | None", now: datetime) -> str:
     return f"{days}일 전"
 
 
+_WEEKDAYS = "월화수목금토일"
+
+
+def _clock(t: datetime) -> str:
+    h = t.hour
+    if h < 5:
+        part = "새벽"
+    elif h < 9:
+        part = "아침"
+    elif h < 12:
+        part = "오전"
+    elif h < 13:
+        part = "낮"
+    elif h < 18:
+        part = "오후"
+    elif h < 21:
+        part = "저녁"
+    else:
+        part = "밤"
+    text = f"{part} {h % 12 or 12}시"
+    return f"{text} {t.minute}분" if t.minute else text
+
+
+def _when(at: "str | None", now: datetime) -> "str | None":
+    """사람이 읽는 시각 — "10월 8일(수) 저녁 7시 57분 · 3일 전". 해가 다르면 연도를 붙인다.
+
+    AI가 ISO 시각을 저마다 다르게 풀어 쓰지 않도록 서버가 한 가지 모양으로 만들어 준다.
+    """
+    if not at:
+        return None
+    try:
+        then = datetime.fromisoformat(at)
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=now.tzinfo)
+    t = then.astimezone(now.tzinfo)
+    date = f"{t.month}월 {t.day}일({_WEEKDAYS[t.weekday()]})"
+    if t.year != now.year:
+        date = f"{t.year}년 {date}"
+    return f"{date} {_clock(t)} · {_since(at, now)}"
+
+
 # ---------------------------------------------------------------------------
 # 설정 글 틀(설계서 9장) — 어떤 클라이언트에서 불러도 같은 글이 나오게 서버 한 곳에 둔다
 # ---------------------------------------------------------------------------
@@ -543,6 +605,15 @@ GUIDANCE = (
     "pending_memories가 있으면 대화 흐름에 맞춰 자연스럽게 \"이거 오래 기억해도 될까?\" 하고 "
     "사용자에게 묻는다. 사용자가 좋다고 한 것만 namu_character_core(action=confirm)로 "
     "확정하고, 싫다고 한 것은 action=reject로 지운다. 묻지 않고 확정하지 않는다.",
+    "불러온 뒤 display를 고치거나 줄이지 말고 그대로 먼저 보여 준 다음, 설정 글대로 말을 건넨다. "
+    "날짜를 말할 때는 at이 아니라 when의 표현을 쓴다.",
+    "사용자가 \"이 대화 통째로 남겨줘\"처럼 원문 보관을 부탁했을 때만 일기에 archive(대화 원문)를 "
+    "함께 보낸다. 부탁받지 않은 원문은 보내지 않는다. 대화 한 번에 일기는 한 편이다 — 원문이 "
+    f"{ARCHIVE_TEXT_MAX}자를 넘으면 나눠서, 첫 조각은 일기와 함께 보내고 나머지는 "
+    "append_to=<그 일기 id>와 archive만 넣어 차례로 보낸다(일기를 새로 쓰지 않는다).",
+    "사용자가 \"잊어줘\"라고 하면 namu_character_forget으로 지운다 — 먼저 미리 보기를 받아 함께 "
+    "지워질 것과 notice(GitHub 이력에 남는 한계)를 보여 주고, 사용자가 좋다고 한 뒤에만 confirm을 "
+    "넣어 다시 부른다.",
 )
 
 
@@ -640,9 +711,57 @@ def list_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:
             "stage": state["stage"],
             "affection": state["affection"],
             "last_talk_at": state["last_talk_at"],
+            "last_talk_when": _when(state["last_talk_at"], cfg.now()),
             "version": rec["version"],
         })
     return out
+
+
+def _archive_parts(char_dir: Path) -> dict[str, list[dict]]:
+    """일기 id → 그 일기의 원문 조각(번호순). 원문이 있는지는 일기에 적지 않고 여기서 센다 —
+    조각을 나중에 이어 붙이거나 하나만 잊어도 일기 파일을 고쳐 쓸 일이 없게 하려고."""
+    parts: dict[str, list[dict]] = {}
+    for doc in _read_entries(char_dir / "archive"):
+        parts.setdefault(doc.get("diary_id"), []).append(doc)
+    for docs in parts.values():
+        docs.sort(key=lambda d: (d.get("part") or 1, d.get("id") or ""))
+    return parts
+
+
+def _quote_line(text) -> str:
+    """인용 상자 한 줄 — 줄바꿈과 마크다운 머리 기호가 상자를 깨지 않게 다듬는다."""
+    return " ".join(str(text or "").split()).lstrip("#>")
+
+
+def display_text(card: dict, state: dict, diaries: list[dict], core: list[dict],
+                 pending_count: int, now: datetime) -> str:
+    """화면에 그대로 보여 줄 마크다운 — 인용 상자(`>`) 한 덩어리.
+
+    claude.ai와 Claude Code가 모두 그려 주는 모양 가운데 한글 폭에 흔들리지 않는 것을
+    골랐다(선으로 그린 상자는 한글 폭 때문에 오른쪽 선이 어긋난다). AI가 데이터를 받아
+    저마다 꾸미면 매번 모양이 달라지므로 서버가 완성된 글을 만든다.
+    """
+    lines = [
+        f"> **🌸 {_quote_line(card['name'])}** · {stage_desc(state['stage'])} · "
+        f"호감도 {state['affection']}/{AFFECTION_MAX}",
+        f"> 마지막 대화: {_when(state['last_talk_at'], now) or '아직 대화한 적 없음'}",
+    ]
+    if diaries:
+        lines += [">", "> **📔 최근 일기**"]
+        for d in reversed(diaries):
+            mood = f" ({_quote_line(d.get('mood'))})" if d.get("mood") else ""
+            lines.append(f"> - **{_when(d.get('at'), now) or '때를 알 수 없음'}**{mood}  ")
+            lines.append(f">   {_quote_line(_short(d.get('summary'), DISPLAY_SUMMARY_CHARS))}")
+    if core:
+        lines += [">", "> **💝 간직한 기억**"]
+        shown = core[-DISPLAY_CORE_ITEMS:]
+        lines += [f"> - {_quote_line(_short(c.get('text'), DISPLAY_CORE_CHARS))}"
+                  for c in reversed(shown)]
+        if len(core) > len(shown):
+            lines.append(f"> - 외 {len(core) - len(shown)}개")
+    if pending_count:
+        lines += [">", f"> 💭 간직할지 묻기를 기다리는 기억 {pending_count}개"]
+    return "\n".join(lines)
 
 
 def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
@@ -655,6 +774,8 @@ def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
     now = cfg.now()
     core = _read_entries(char_dir / "core")[-LOAD_CORE_LIMIT:]
     pending = _read_entries(char_dir / "pending")
+    recent = diaries[-LOAD_RECENT_DIARY:]
+    parts = _archive_parts(char_dir)
     result = {
         "id": rec["character_id"],
         "version": rec["version"],
@@ -665,15 +786,19 @@ def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
             "affection": state["affection"],
             "call_user_now": state["call_user_now"],
             "last_talk_at": state["last_talk_at"],
+            "last_talk_when": _when(state["last_talk_at"], now),
             "since_last_talk": _since(state["last_talk_at"], now),
             "last_stage_change": state["last_stage_change"],
         },
         "recent_diary": [
-            {"at": d.get("at"), "summary": d.get("summary"), "mood": d.get("mood")}
-            for d in diaries[-LOAD_RECENT_DIARY:]
+            {"id": d.get("id"), "at": d.get("at"), "when": _when(d.get("at"), now),
+             "summary": d.get("summary"), "mood": d.get("mood"),
+             "archive_parts": len(parts.get(d.get("id"), []))}
+            for d in recent
         ],
         "core_memories": [{"id": c.get("id"), "text": c.get("text")} for c in core],
         "pending_memories": [{"id": p.get("id"), "text": p.get("text")} for p in pending],
+        "display": display_text(card, state, recent, core, len(pending), now),
         "guidance": list(GUIDANCE),
         "card": card,
     }
@@ -735,10 +860,80 @@ def _brief(state: dict) -> dict:
     }
 
 
-def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str | None" = None, *,
+def _archive_text(archive) -> "str | None":
+    if archive is not None and not isinstance(archive, str):
+        raise ValueError(f"archive는 대화 원문(글자)이어야 합니다: {type(archive).__name__}")
+    return archive if archive and archive.strip() else None
+
+
+def _archive_too_long(archive: str) -> str:
+    return (
+        f"archive(대화 원문) 조각은 {ARCHIVE_TEXT_MAX}자까지입니다(지금 {len(archive)}자) — "
+        f"{ARCHIVE_TEXT_MAX}자 이하로 나눠 append_to=<일기 id>와 archive만 넣어 차례로 보내세요."
+    )
+
+
+def _write_archive_part(char_dir: Path, char_id: str, diary_id: str, part: int, text: str,
+                        via: "str | None") -> dict:
+    archive_id = str(ULID())
+    at = cfg.now().isoformat()
+    _write_yaml(char_dir / "archive" / f"{archive_id}.yaml", {
+        "id": archive_id,
+        "character_id": char_id,
+        "diary_id": diary_id,
+        "part": part,
+        "at": at,
+        "machine": cfg.NAMU_MACHINE,
+        "via": via,
+        "text": text,
+    })
+    return {"id": archive_id, "part": part, "at": at, "chars": len(text)}
+
+
+def _append_archive(name: str, diary_id, archive, *, via: "str | None",
+                    paths: "cfg.DataPaths | None") -> dict:
+    """이미 쓴 일기에 원문 조각 하나를 이어 붙인다. 일기·호감도·후보는 건드리지 않는다."""
+    diary_id = str(diary_id).strip()
+    if not _ULID_RE.match(diary_id):
+        raise ValueError(f"append_to는 이어 붙일 일기의 id여야 합니다: {diary_id!r}")
+    archive = _archive_text(archive)
+    if not archive:
+        raise ValueError("append_to를 쓸 때는 이어 붙일 원문 조각을 archive에 넣어 보내세요.")
+    if len(archive) > ARCHIVE_TEXT_MAX:
+        raise ValueError(_archive_too_long(archive) + " 이번 조각은 저장하지 않았습니다.")
+    with _locked(paths):
+        rec = _require(name, paths)
+        card, char_id = rec["card"], rec["character_id"]
+        char_dir = _char_dir(char_id, paths)
+        if not (char_dir / "diary" / f"{diary_id}.yaml").is_file():
+            raise ValueError(
+                f'"{card["name"]}"에게 id {diary_id}인 일기가 없습니다 — 이어 붙일 일기는 '
+                "namu_character_diary가 돌려준 id입니다."
+            )
+        have = _archive_parts(char_dir).get(diary_id, [])
+        if len(have) >= ARCHIVE_PARTS_MAX:
+            raise ValueError(
+                f"일기 하나에 원문 조각은 {ARCHIVE_PARTS_MAX}개까지입니다 — 이번 조각은 저장하지 "
+                "않았습니다."
+            )
+        part = max((d.get("part") or 1 for d in have), default=0) + 1
+        saved = _write_archive_part(char_dir, char_id, diary_id, part, archive, via)
+    return {
+        "id": diary_id,
+        "character": card["name"],
+        "appended": True,
+        "archive": saved,
+        "archive_parts": len(have) + 1,
+        "archive_chars": sum(len(d.get("text") or "") for d in have) + saved["chars"],
+    }
+
+
+def write_diary(name: str, summary: "str | None" = None, affection_delta=0,
+                delta_reason: "str | None" = None, *,
                 mood: "str | None" = None, call_user_change: "str | None" = None,
-                topics=None, core_candidates=None, via: "str | None" = None,
-                paths: "cfg.DataPaths | None" = None) -> dict:
+                topics=None, core_candidates=None, archive: "str | None" = None,
+                append_to: "str | None" = None,
+                via: "str | None" = None, paths: "cfg.DataPaths | None" = None) -> dict:
     """일기 한 편을 남긴다 — 대화 한 번(또는 사용자가 마무리 신호를 준 때)마다 하나.
 
     - 호감도 변화는 ±5로 자른다. 잘랐으면 원래 값을 `affection_delta_requested`로 함께
@@ -747,7 +942,25 @@ def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str |
     - 핵심 기억 후보는 `pending`에만 쓴다. core로 가는 길은 `core(action="confirm")` 하나뿐이고,
       그것도 대기 후보의 id로만 확정한다 — AI가 core에 직접 쓰는 길을 만들지 않는다(5.4).
     - 관계 상태는 쓰지 않는다. 쓰기 전후를 계산해 단계가 바뀌었으면 돌려줄 뿐이다.
+    - `archive`는 사용자가 "이 대화 통째로 남겨줘"라고 했을 때만 AI가 넘기는 원문이다
+      (설계서 5.5). 받은 그대로 저장한다 — 요약과 달리 줄바꿈도 다듬지 않는다. 원문이
+      조각 상한을 넘어도 일기는 저장하고 원문만 돌려보낸다 — 대화가 있었다는 기록이 원문
+      크기 때문에 사라지면 안 된다. 나머지는 `append_to`(일기 id)로 이어 붙인다. 조각마다
+      번호(`part`)와 받은 시각이 붙고, 호감도는 일기 한 편으로만 센다.
     """
+    if append_to is not None and str(append_to).strip():
+        extra = [k for k, v in (("summary", summary), ("delta_reason", delta_reason),
+                                ("mood", mood), ("call_user_change", call_user_change),
+                                ("topics", topics), ("core_candidates", core_candidates)) if v]
+        if _delta(affection_delta):
+            extra.append("affection_delta")
+        if extra:
+            raise ValueError(
+                f"append_to(원문 이어 붙이기)에는 archive만 보냅니다 — {', '.join(extra)}는 이미 "
+                "쓴 일기에 들어 있으니 빼고 보내세요. 아무것도 저장하지 않았습니다."
+            )
+        return _append_archive(name, append_to, archive, via=via, paths=paths)
+
     summary = _text("summary", summary, DIARY_SUMMARY_MAX, required=True)
     requested = _delta(affection_delta)
     applied = max(-DELTA_LIMIT, min(DELTA_LIMIT, requested))
@@ -761,6 +974,11 @@ def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str |
                         _QUESTIONS_BY_KEY["call_user"]["max_length"]) or None
     topics = _texts("topics", topics, DIARY_TOPICS_MAX, DIARY_TOPIC_MAX)
     candidates = _texts("core_candidates", core_candidates, CORE_CANDIDATES_PER_DIARY, CORE_TEXT_MAX)
+    archive = _archive_text(archive)
+    archive_rejected = None
+    if archive and len(archive) > ARCHIVE_TEXT_MAX:
+        archive_rejected = "일기는 저장했고 원문은 저장하지 않았습니다. " + _archive_too_long(archive)
+        archive = None
 
     with _locked(paths):
         rec = _require(name, paths)
@@ -776,7 +994,8 @@ def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str |
                 "다시 보내거나 core_candidates 없이 보내세요."
             )
         before = compute_state(card, diaries)
-        at = cfg.now().isoformat()
+        now = cfg.now()
+        at = now.isoformat()
         diary_id = str(ULID())
         entry = {
             "id": diary_id,
@@ -790,11 +1009,12 @@ def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str |
             "delta_reason": reason or None,
             "call_user_change": call_change,
             "topics": topics,
-            "archived": False,
         }
         if applied != requested:
             entry["affection_delta_requested"] = requested
         _write_yaml(char_dir / "diary" / f"{diary_id}.yaml", entry)
+        saved = (_write_archive_part(char_dir, char_id, diary_id, 1, archive, via)
+                 if archive else None)
 
         added = []
         for text in candidates:
@@ -814,16 +1034,23 @@ def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str |
     stage_change = None
     if after["stage"] != before["stage"]:
         stage_change = {"from": before["stage"], "to": after["stage"]}
-    return {
+    result = {
         "id": diary_id,
         "character": card["name"],
+        "at": at,
+        "when": _when(at, now),
         "affection_delta": applied,
         "clipped_from": requested if applied != requested else None,
         "relationship": _brief(after),
         "stage_change": stage_change,
         "pending_added": added,
         "pending_count": len(pending) + len(added),
+        "archived": saved is not None,
+        "archive": saved,
     }
+    if archive_rejected:
+        result["archive_rejected"] = archive_rejected
+    return result
 
 
 def core(name: str, action: str = "list", ids=None, *, via: "str | None" = None,
@@ -892,4 +1119,174 @@ def core(name: str, action: str = "list", ids=None, *, via: "str | None" = None,
         out["confirmed"] = done
     elif action == "reject":
         out["rejected"] = done
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 3단계 — 잊기(설계서 8·12장)
+# ---------------------------------------------------------------------------
+# 잊어도 git 이력에는 지우기 전 판이 남는다(설계서 12장 조사 결과). 이력을 다시 쓰면 그 저장소를
+# 받아 둔 모든 PC와 클라우드 사본이 어긋나 기억 전체가 위험해지므로, 나무가 대신하지 않고
+# 사용자에게 한계를 알린다 — 미리 보기와 지운 뒤 두 번 다 돌려준다.
+HISTORY_NOTICE = (
+    "나무에서는 지워져 다시 불러와지지 않습니다. 다만 기억을 동기화하는 GitHub 저장소의 지난 "
+    "기록(커밋 이력)에는 지우기 전 내용이 남아 있어, 그 저장소에 들어갈 수 있는 사람은 옛 "
+    "기록을 열어 볼 수 있습니다. 이력까지 없애려면 저장소 이력을 다시 쓰거나 저장소를 새로 "
+    "만들어야 하며, 나무는 그 일을 대신하지 않습니다."
+)
+
+
+def _short(text, limit: int = FORGET_PREVIEW_CHARS) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _forget_row(target: str, doc: dict, now: datetime, parts: "dict | None" = None) -> dict:
+    row = {"id": doc.get("id"), "at": doc.get("at"), "when": _when(doc.get("at"), now)}
+    if target == "diary":
+        row.update(summary=_short(doc.get("summary")),
+                   archive_parts=len((parts or {}).get(doc.get("id"), [])))
+    elif target == "archive":
+        row.update(diary_id=doc.get("diary_id"), part=doc.get("part") or 1,
+                   chars=len(doc.get("text") or ""), head=_short(doc.get("text")))
+    else:
+        row["text"] = _short(doc.get("text"))
+    return row
+
+
+def _fingerprint(target: str, ids: list[str], files: list[Path], char_dir: Path) -> str:
+    """확인표 — 지울(또는 고칠) 파일의 내용에서 계산한다. 서버가 따로 기억할 것이 없고,
+    미리 보기와 확인 사이에 그 파일이 바뀌거나 딸린 항목이 늘면 값이 달라져 거절된다."""
+    h = hashlib.sha256(f"{target}\n{','.join(sorted(ids))}\n".encode())
+    for f in sorted(files):
+        h.update(str(f.relative_to(char_dir)).encode() + b"\n")
+        h.update(f.read_bytes() if f.is_file() else b"")
+    return h.hexdigest()[:16]
+
+
+def forget(name: str, target: str, ids=None, *, confirm: "str | None" = None,
+           query: "str | None" = None, paths: "cfg.DataPaths | None" = None) -> dict:
+    """잊기 — 일기·핵심 기억·원문을 골라 지우거나 캐릭터를 통째로 지운다. 세 번에 걸쳐 쓴다.
+
+    1. 고르기: `ids` 없이 부르면 지울 수 있는 항목 목록(최근 순, `query`로 거르기)만 돌려준다.
+       캐릭터 통째로(`target="character"`)는 이 차례가 없다.
+    2. 미리 보기: `ids`를 주고 `confirm` 없이 부르면 함께 지워질 것과 확인표(`confirm`)를
+       돌려준다. 아무것도 지우지 않는다.
+    3. 지우기: 같은 인자에 확인표를 더해 부르면 그때 지운다. 그 사이 내용이 바뀌었으면 거절한다.
+
+    일기를 잊으면 그 일기의 원문, 그 일기에서 나온 대기 후보와 확정된 핵심 기억도 함께
+    지운다(설계서 12장 — 관련된 것을 함께). 원문 조각만 잊으면 일기와 다른 조각은 남는다.
+    관계 상태는 저장하지 않으므로 일기를 지우는 것만으로 호감도와 단계가 다시 계산된다.
+    """
+    if target not in FORGET_TARGETS:
+        raise ValueError(f"target은 {'/'.join(FORGET_TARGETS)} 중 하나여야 합니다: {target!r}")
+    if ids is None:
+        ids = []
+    if isinstance(ids, str):
+        ids = [ids]
+    if not isinstance(ids, list):
+        raise ValueError(f"ids는 지울 항목의 id 목록이어야 합니다: {ids!r}")
+    ids = list(dict.fromkeys(str(i).strip() for i in ids))
+    for i in ids:
+        if not _ULID_RE.match(i):
+            raise ValueError(f"id 모양이 아닙니다: {i!r}")
+    if target == "character" and ids:
+        raise ValueError("캐릭터를 통째로 잊을 때는 ids를 비워 두세요 — name으로 고릅니다.")
+
+    with _locked(paths):
+        rec = _require(name, paths)
+        card, char_id = rec["card"], rec["character_id"]
+        char_dir = _char_dir(char_id, paths)
+        now = cfg.now()
+        parts = _archive_parts(char_dir)
+
+        if target != "character" and not ids:
+            if confirm:
+                raise ValueError("confirm을 쓰려면 미리 보기 때와 같은 ids를 함께 보내세요.")
+            rows = _read_entries(char_dir / target)
+            if query:
+                q = " ".join(str(query).split()).lower()
+                field = "summary" if target == "diary" else "text"
+                rows = [r for r in rows if q in " ".join(str(r.get(field) or "").split()).lower()]
+            return {
+                "character": card["name"],
+                "target": target,
+                "step": "choose",
+                "total": len(rows),
+                "entries": [_forget_row(target, r, now, parts)
+                            for r in reversed(rows[-FORGET_LIST_MAX:])],
+                "next": "사용자와 지울 항목을 고른 뒤 그 id를 ids에 넣어 다시 부르면 미리 보기가 "
+                        "나옵니다. 아직 아무것도 지우지 않았습니다.",
+            }
+
+        diaries = _read_entries(char_dir / "diary")
+        delete: list[Path] = []
+        will: dict = {}
+        remaining = diaries
+        if target == "character":
+            delete = [f for f in char_dir.rglob("*") if f.is_file()]
+            will = {
+                "character": card["name"],
+                "diary": len(diaries),
+                "core": len(_read_entries(char_dir / "core")),
+                "pending": len(_read_entries(char_dir / "pending")),
+                "archive": len(_read_entries(char_dir / "archive")),
+                "card_versions": len(list((char_dir / "card").glob("*.yaml"))),
+            }
+            remaining = []
+        else:
+            have = {d.get("id"): d for d in _read_entries(char_dir / target)}
+            missing = [i for i in ids if i not in have]
+            if missing:
+                raise ValueError(
+                    f"{target}에 없는 id입니다: {', '.join(missing)} — 아무것도 지우지 않았습니다. "
+                    "ids 없이 부르면 고를 수 있는 목록이 나옵니다."
+                )
+            will[target] = [_forget_row(target, have[i], now, parts) for i in ids]
+            delete += [char_dir / target / f"{i}.yaml" for i in ids]
+            if target == "diary":
+                chosen = set(ids)
+                for sub in ("archive", "pending", "core"):
+                    tied = [d for d in _read_entries(char_dir / sub) if d.get("diary_id") in chosen]
+                    will[sub] = [_forget_row(sub, d, now, parts) for d in tied]
+                    delete += [char_dir / sub / f"{d.get('id')}.yaml" for d in tied]
+                remaining = [d for d in diaries if d.get("id") not in chosen]
+
+        token = _fingerprint(target, ids, delete, char_dir)
+        if not confirm:
+            out = {
+                "character": card["name"],
+                "target": target,
+                "step": "preview",
+                "will_delete": will,
+                "confirm": token,
+                "notice": HISTORY_NOTICE,
+                "next": "이 목록과 notice를 사용자에게 보여 주고 지워도 되는지 묻는다. 좋다고 하면 "
+                        "같은 name·target·ids에 confirm을 더해 다시 부른다. 아직 아무것도 지우지 "
+                        "않았습니다.",
+            }
+            if target != "character":
+                out["relationship_after"] = _brief(compute_state(card, remaining))
+            return out
+        if confirm != token:
+            raise ValueError(
+                "확인표가 맞지 않습니다 — 미리 보기 뒤에 내용이 바뀌었거나 다른 항목의 확인표입니다. "
+                "아무것도 지우지 않았습니다. confirm 없이 다시 불러 새 미리 보기를 받으세요."
+            )
+        if target == "character":
+            shutil.rmtree(char_dir)
+        else:
+            for f in delete:
+                f.unlink(missing_ok=True)
+
+    out = {
+        "character": card["name"],
+        "target": target,
+        "step": "done",
+        "deleted": {k: (v if isinstance(v, int) else len(v)) for k, v in will.items()
+                    if k != "character"},
+        "notice": HISTORY_NOTICE,
+    }
+    if target != "character":
+        out["relationship"] = _brief(compute_state(card, remaining))
     return out

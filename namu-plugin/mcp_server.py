@@ -1902,8 +1902,9 @@ def namu_character_load(name: str, ctx: Context | None = None) -> dict:
     """Load one character by name, alias or id. Returns {"id", "version",
     "persona" (the character setting text built by the server from the card),
     "relationship" (stage, affection, how the character calls the user now,
-    time since the last talk), "recent_diary", "core_memories",
-    "pending_memories", "guidance", "card"}.
+    time since the last talk), "recent_diary" (each with a readable `when`),
+    "core_memories", "pending_memories", "display" (a ready-made markdown
+    quote box to show the user as is), "guidance", "card"}.
     """
     _resolve_via(ctx)
     return character.load(name)
@@ -1912,13 +1913,15 @@ def namu_character_load(name: str, ctx: Context | None = None) -> dict:
 @tool()
 def namu_character_diary(
     name: str,
-    summary: str,
+    summary: str | None = None,
     affection_delta: int = 0,
     delta_reason: str | None = None,
     mood: str | None = None,
     call_user_change: str | None = None,
     topics: list[str] | None = None,
     core_candidates: list[str] | None = None,
+    archive: str | None = None,
+    append_to: str | None = None,
     ctx: Context | None = None,
 ) -> dict:
     """Write one diary entry for a character (by name, alias or id), usually
@@ -1929,14 +1932,23 @@ def namu_character_diary(
     character calls the user. `core_candidates` (max 3, 200 characters each)
     are stored as pending long-term memories; they become core memories only
     through namu_character_core. Relationship state is recomputed from all
-    diary entries. Returns {"id", "affection_delta", "clipped_from",
-    "relationship", "stage_change", "pending_added", "pending_count"}.
+    diary entries. `archive` is the conversation text, sent only when the
+    user asked to keep the whole conversation (stored as given, max 50,000
+    characters per piece). One conversation gets one diary entry: if the text
+    is longer, send the first piece with the entry and each next piece with
+    only `append_to` (the entry id) and `archive`; pieces are numbered and
+    timestamped. An oversize piece sent with a new entry does not block the
+    entry — it is saved and `archive_rejected` says why the text was not.
+    Returns {"id", "at", "when", "affection_delta", "clipped_from",
+    "relationship", "stage_change", "pending_added", "pending_count",
+    "archived", "archive"}; with `append_to`, {"id", "appended", "archive",
+    "archive_parts", "archive_chars"}.
     """
     via = _resolve_via(ctx)
     result = character.write_diary(
         name, summary, affection_delta, delta_reason, mood=mood,
         call_user_change=call_user_change, topics=topics,
-        core_candidates=core_candidates, via=via,
+        core_candidates=core_candidates, archive=archive, append_to=append_to, via=via,
     )
     memory_sync.sync_push(f"character diary: {result['character']} ({cfg.NAMU_MACHINE})")
     return result
@@ -1960,6 +1972,33 @@ def namu_character_core(
     result = character.core(name, action, ids, via=via)
     if action != "list":
         memory_sync.sync_push(f"character core: {result['character']} ({cfg.NAMU_MACHINE})")
+    return result
+
+
+@tool()
+def namu_character_forget(
+    name: str,
+    target: str,
+    ids: list[str] | None = None,
+    confirm: str | None = None,
+    query: str | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Forget (really delete) parts of a character, or the whole character.
+    `target`: "diary", "core", "archive" or "character". Three steps:
+    without `ids` it lists entries to choose from (latest first, filtered
+    by `query`); with `ids` and no `confirm` it previews what will be deleted
+    and returns a `confirm` code and a `notice`; called again with the same
+    arguments plus that `confirm` it deletes. Show the preview and notice to
+    the user and delete only after the user agrees. Forgetting a diary also
+    deletes its archive and the pending and core memories that came from it.
+    "character" needs no `ids` and deletes everything of that character.
+    """
+    _resolve_via(ctx)
+    result = character.forget(name, target, ids, confirm=confirm, query=query)
+    if result.get("step") == "done":
+        # 커밋 메시지에 캐릭터 이름을 적지 않는다 — 잊은 것의 흔적을 이력에 하나 더 남기지 않게.
+        memory_sync.sync_push(f"character forget ({cfg.NAMU_MACHINE})")
     return result
 
 
