@@ -319,6 +319,8 @@ def test_http_exposed_tools_excludes_sync_setup():
             "namu_check_ticket",
             "namu_task_move",
             "namu_record_session",
+            "namu_character_list", "namu_character_schema",
+            "namu_character_save", "namu_character_load",
         }
     )
     assert "namu_sync_setup" not in http_server.HTTP_EXPOSED_TOOLS
@@ -350,6 +352,10 @@ def test_http_and_cloud_expose_the_same_tools():
         # AI가 이 도구로 발화를 넘겨야 그 대화가 측정에 들어온다. 훅이 있는
         # 클로드 코드에서는 부를 필요가 없다.
         {"namu_record_session"}
+    ) | frozenset(
+        # 캐릭터 4종(나무 캐릭터 1단계) — 목록·스키마·저장·불러오기.
+        {"namu_character_list", "namu_character_schema",
+         "namu_character_save", "namu_character_load"}
     )
 
 

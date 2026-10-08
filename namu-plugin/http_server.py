@@ -76,6 +76,11 @@ HTTP_EXPOSED_TOOLS = frozenset({
     # 이 도구로 발화를 넘겨야 그 대화가 측정에 들어온다. 판정은 서버가 하므로
     # AI가 숫자를 지어낼 자리가 없다.
     "namu_record_session",
+    # 캐릭터 4종(나무 캐릭터 1단계) — 클라우드와 같은 도구를 내준다(두 주소는 기능이
+    # 같아야 한다, 2026-08-07 사용자 원칙). 클라우드는 회원 저장소가 공개면 저장을
+    # 거절하지만, 여기는 운영자 자신의 ~/.namu라 그 확인을 두지 않는다.
+    "namu_character_list", "namu_character_schema",
+    "namu_character_save", "namu_character_load",
 })
 
 # 디바운스 pull 상태 — 모듈 전역 1개(단일 프로세스 전제, 경로 B 셀프호스팅 스코프와 합치).
