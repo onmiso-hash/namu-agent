@@ -1909,5 +1909,59 @@ def namu_character_load(name: str, ctx: Context | None = None) -> dict:
     return character.load(name)
 
 
+@tool()
+def namu_character_diary(
+    name: str,
+    summary: str,
+    affection_delta: int = 0,
+    delta_reason: str | None = None,
+    mood: str | None = None,
+    call_user_change: str | None = None,
+    topics: list[str] | None = None,
+    core_candidates: list[str] | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Write one diary entry for a character (by name, alias or id), usually
+    once per conversation. `summary` is a short text from the character's
+    point of view (max 500 characters). `affection_delta` is clipped to
+    -5..+5 (the requested value is kept in the entry) and `delta_reason` is
+    required when it is not 0. `call_user_change` records a new way the
+    character calls the user. `core_candidates` (max 3, 200 characters each)
+    are stored as pending long-term memories; they become core memories only
+    through namu_character_core. Relationship state is recomputed from all
+    diary entries. Returns {"id", "affection_delta", "clipped_from",
+    "relationship", "stage_change", "pending_added", "pending_count"}.
+    """
+    via = _resolve_via(ctx)
+    result = character.write_diary(
+        name, summary, affection_delta, delta_reason, mood=mood,
+        call_user_change=call_user_change, topics=topics,
+        core_candidates=core_candidates, via=via,
+    )
+    memory_sync.sync_push(f"character diary: {result['character']} ({cfg.NAMU_MACHINE})")
+    return result
+
+
+@tool()
+def namu_character_core(
+    name: str,
+    action: str = "list",
+    ids: list[str] | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """List, confirm or reject a character's pending long-term memories.
+    `action`: "list" (default), "confirm" (move the pending entries in `ids`
+    to core memories) or "reject" (delete the pending entries in `ids`).
+    Only pending entries can be confirmed; if any id is not pending, nothing
+    is changed. Returns {"character", "action", "pending", "core"} plus
+    "confirmed" or "rejected".
+    """
+    via = _resolve_via(ctx)
+    result = character.core(name, action, ids, via=via)
+    if action != "list":
+        memory_sync.sync_push(f"character core: {result['character']} ({cfg.NAMU_MACHINE})")
+    return result
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

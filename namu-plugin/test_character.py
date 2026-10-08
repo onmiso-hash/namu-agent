@@ -1,5 +1,6 @@
-"""캐릭터 그릇(나무 캐릭터 v0.1 1단계) — 스키마·카드 검사·저장·목록·불러오기."""
+"""캐릭터 그릇(나무 캐릭터 v0.1 1·2단계) — 스키마·카드 검사·저장·목록·불러오기·일기·핵심 기억."""
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -223,3 +224,212 @@ def test_call_user_change_and_last_talk():
     ])
     assert state["call_user_now"] == "자기"
     assert state["last_talk_at"] == "2026-10-01T10:00:00+09:00"
+
+
+# ── 2단계: 일기 ──────────────────────────────────────────────────────────────
+def _diary_files(paths, char_id, folder="diary"):
+    return sorted((paths.character_dir / char_id / folder).glob("*.yaml"))
+
+
+def test_diary_is_written_and_moves_the_relationship(paths):
+    saved = character.save(_card(), paths=paths)
+    out = character.write_diary(
+        "린아", "허니가 회사 일로 지쳐 보였다.", 3, "힘든 얘기를 먼저 털어놔줌",
+        mood="차분함", topics=["회사", "산책"], via="claude", paths=paths,
+    )
+    assert out["affection_delta"] == 3 and out["clipped_from"] is None
+    assert out["relationship"]["affection"] == 13
+    files = _diary_files(paths, saved["id"])
+    assert [f.stem for f in files] == [out["id"]]
+    doc = character.yaml.safe_load(files[0].read_text(encoding="utf-8"))
+    assert doc["summary"] == "허니가 회사 일로 지쳐 보였다."
+    assert doc["delta_reason"] == "힘든 얘기를 먼저 털어놔줌"
+    assert doc["topics"] == ["회사", "산책"] and doc["archived"] is False
+    assert "affection_delta_requested" not in doc
+    loaded = character.load("하린", paths)
+    assert loaded["relationship"]["affection"] == 13
+    assert loaded["recent_diary"][-1]["mood"] == "차분함"
+
+
+def test_diary_delta_is_clipped_and_the_request_is_kept(paths):
+    saved = character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "엄청 신났다.", 50, "선물을 받음", paths=paths)
+    assert out["affection_delta"] == 5 and out["clipped_from"] == 50
+    doc = character.yaml.safe_load(_diary_files(paths, saved["id"])[0].read_text(encoding="utf-8"))
+    assert doc["affection_delta"] == 5 and doc["affection_delta_requested"] == 50
+    out = character.write_diary("하린", "서운했다.", -9, "약속을 잊음", paths=paths)
+    assert out["affection_delta"] == -5 and out["relationship"]["affection"] == 10
+
+
+@pytest.mark.parametrize("delta", [1, -1])
+def test_diary_reason_is_required_when_the_score_moves(paths, delta):
+    character.save(_card(), paths=paths)
+    with pytest.raises(ValueError, match="delta_reason"):
+        character.write_diary("하린", "그냥 수다.", delta, paths=paths)
+    # 변화가 0이면 이유 없이도 된다.
+    character.write_diary("하린", "그냥 수다.", 0, paths=paths)
+
+
+@pytest.mark.parametrize("bad", [True, 2.5, "많이", [3]])
+def test_diary_delta_must_be_an_integer(paths, bad):
+    character.save(_card(), paths=paths)
+    with pytest.raises(ValueError, match="affection_delta"):
+        character.write_diary("하린", "수다.", bad, "이유", paths=paths)
+
+
+def test_diary_accepts_integer_text(paths):
+    character.save(_card(), paths=paths)
+    assert character.write_diary("하린", "수다.", "+2", "즐거움", paths=paths)["affection_delta"] == 2
+
+
+def test_diary_limits(paths):
+    character.save(_card(), paths=paths)
+    with pytest.raises(ValueError, match="summary"):
+        character.write_diary("하린", "가" * 501, paths=paths)
+    with pytest.raises(ValueError, match="summary"):
+        character.write_diary("하린", "   ", paths=paths)
+    with pytest.raises(ValueError, match="topics"):
+        character.write_diary("하린", "수다.", topics=["a", "b", "c", "d", "e", "f"], paths=paths)
+    with pytest.raises(ValueError, match="core_candidates"):
+        character.write_diary("하린", "수다.", core_candidates=["a", "b", "c", "d"], paths=paths)
+    character.write_diary("하린", "가" * 500, paths=paths)
+
+
+def test_diary_for_unknown_character_is_rejected(paths):
+    with pytest.raises(ValueError, match="없습니다"):
+        character.write_diary("없는애", "수다.", paths=paths)
+
+
+def test_stage_change_is_reported_and_shown_on_load(paths):
+    character.save(_card(relationship_start="friend", relationship_ceiling="lover"), paths=paths)
+    # friend 45 → 55 (단계 그대로) → 60 (crush)
+    out = character.write_diary("하린", "산책.", 5, "즐거움", paths=paths)
+    out = character.write_diary("하린", "산책.", 5, "즐거움", paths=paths)
+    assert out["stage_change"] is None
+    out = character.write_diary("하린", "고백 비슷한 말.", 5, "설렘", paths=paths)
+    assert out["stage_change"] == {"from": "friend", "to": "crush"}
+    change = character.load("하린", paths)["relationship"]["last_stage_change"]
+    assert change["from"] == "friend" and change["to"] == "crush" and change["at"]
+
+
+def test_stage_stays_under_the_ceiling_even_through_diaries(paths):
+    character.save(_card(relationship_start="friend", relationship_ceiling="friend"), paths=paths)
+    for _ in range(15):
+        out = character.write_diary("하린", "수다.", 5, "즐거움", paths=paths)
+        assert out["stage_change"] is None
+    assert out["relationship"]["affection"] == 100
+    assert out["relationship"]["stage"] == "friend"
+
+
+def test_call_user_change_through_diary(paths):
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "호칭을 바꿨다.", 1, "가까워짐", call_user_change="자기",
+                                paths=paths)
+    assert out["relationship"]["call_user_now"] == "자기"
+    assert '"자기"라고 부른다' in character.load("하린", paths)["persona"]
+
+
+def test_diaries_from_two_places_add_up(paths):
+    """웹과 터미널이 따로 쓴 일기(파일 둘)가 덮어쓰지 않고 합산된다(설계서 13장)."""
+    character.save(_card(), paths=paths)
+    character.write_diary("하린", "웹에서.", 4, "즐거움", via="claude.ai", paths=paths)
+    character.write_diary("하린", "터미널에서.", 3, "고마움", via="claude-code", paths=paths)
+    assert character.load("하린", paths)["relationship"]["affection"] == 17
+    assert character.list_all(paths)[0]["affection"] == 17
+
+
+# ── 2단계: 핵심 기억 ─────────────────────────────────────────────────────────
+def test_candidates_wait_until_confirmed(paths):
+    saved = character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "처음 같이 영화를 봤다.", 2, "즐거움",
+                                core_candidates=["처음 같이 본 영화는 인터스텔라"], paths=paths)
+    assert out["pending_count"] == 1
+    pid = out["pending_added"][0]["id"]
+    loaded = character.load("하린", paths)
+    assert loaded["core_memories"] == []
+    assert loaded["pending_memories"] == [{"id": pid, "text": "처음 같이 본 영화는 인터스텔라"}]
+    assert _diary_files(paths, saved["id"], "core") == []
+
+    res = character.core("하린", "confirm", [pid], paths=paths)
+    assert res["confirmed"] == [{"id": pid, "text": "처음 같이 본 영화는 인터스텔라"}]
+    assert res["pending"] == [] and res["core"][0]["id"] == pid
+    loaded = character.load("하린", paths)
+    assert loaded["pending_memories"] == []
+    assert loaded["core_memories"] == [{"id": pid, "text": "처음 같이 본 영화는 인터스텔라"}]
+    doc = character.yaml.safe_load(_diary_files(paths, saved["id"], "core")[0].read_text(encoding="utf-8"))
+    assert doc["diary_id"] == out["id"] and doc["proposed_at"]
+
+
+def test_reject_deletes_the_candidate(paths):
+    saved = character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "수다.", core_candidates=["별로인 기억"], paths=paths)
+    pid = out["pending_added"][0]["id"]
+    res = character.core("하린", "reject", pid, paths=paths)
+    assert res["rejected"][0]["id"] == pid and res["core"] == [] and res["pending"] == []
+    assert _diary_files(paths, saved["id"], "pending") == []
+
+
+def test_core_cannot_take_new_text_or_unknown_ids(paths):
+    """core로 가는 길은 대기 후보의 id 하나뿐 — 글을 받는 길이 없고, 모르는 id가 섞이면
+    아무것도 바꾸지 않는다."""
+    character.save(_card(), paths=paths)
+    out = character.write_diary("하린", "수다.", core_candidates=["좋은 기억"], paths=paths)
+    pid = out["pending_added"][0]["id"]
+    with pytest.raises(ValueError, match="id 모양"):
+        character.core("하린", "confirm", ["우리가 처음 만난 날"], paths=paths)
+    unknown = "01" + "A" * 24
+    with pytest.raises(ValueError, match="아무것도 바꾸지"):
+        character.core("하린", "confirm", [pid, unknown], paths=paths)
+    assert character.core("하린", paths=paths)["pending"] == [{"id": pid, "text": "좋은 기억"}]
+    with pytest.raises(ValueError, match="ids"):
+        character.core("하린", "confirm", paths=paths)
+    with pytest.raises(ValueError, match="action"):
+        character.core("하린", "add", [pid], paths=paths)
+
+
+def test_pending_has_a_ceiling_and_the_diary_is_not_half_written(paths):
+    saved = character.save(_card(), paths=paths)
+    for i in range(3):
+        character.write_diary("하린", f"수다 {i}.", core_candidates=[f"기억 {i}-{j}" for j in range(3)],
+                              paths=paths)
+    assert len(_diary_files(paths, saved["id"], "pending")) == 9
+    with pytest.raises(ValueError, match="저장하지 않았습니다"):
+        character.write_diary("하린", "넘치는 날.", core_candidates=["a", "b"], paths=paths)
+    assert len(_diary_files(paths, saved["id"])) == 3
+    # 후보 없이 보내면 일기는 저장된다.
+    character.write_diary("하린", "넘치는 날.", paths=paths)
+    assert len(_diary_files(paths, saved["id"])) == 4
+
+
+def test_load_with_diaries_and_memories_stays_small(paths):
+    big = _card(
+        name="가" * 20, aliases=["나" * 20, "다" * 20, "라" * 20],
+        personality=["마" * 40, "바" * 40], speech="사" * 60, emoji="아" * 20,
+        call_user="자" * 20, likes=["차" * 20, "카" * 20, "타" * 20, "파" * 20, "하" * 20],
+        sample_lines=["거" * 100, "너" * 100, "더" * 100],
+    )
+    character.save(big, paths=paths)
+    name = "가" * 20
+    for i in range(30):
+        out = character.write_diary(name, "일" * 500, 1, "이" * 100, mood="기" * 20,
+                                    core_candidates=["억" * 200], paths=paths)
+        character.core(name, "confirm", [out["pending_added"][0]["id"]], paths=paths)
+    for _ in range(3):
+        character.write_diary(name, "일" * 500, core_candidates=["후" * 200] * 1 + ["보" * 200, "다" * 200],
+                              paths=paths)
+    out = character.load(name, paths)
+    assert len(out["recent_diary"]) == character.LOAD_RECENT_DIARY
+    assert len(out["core_memories"]) == character.LOAD_CORE_LIMIT
+    assert len(out["pending_memories"]) == 9
+    # 모든 칸을 상한까지 채운 최악의 경우 — 2026-10-08 실측 13,272자(일기 5×500,
+    # 핵심 기억 20×200, 대기 후보 9×200이 대부분). 설계서 8장 목표("3천 토큰")보다 크지만
+    # 상한 값은 초안이라 사람이 정한다. 이 검사는 상한이 말없이 커지는 것을 막는다.
+    assert len(json.dumps(out, ensure_ascii=False)) < 14000
+
+
+def test_guidance_names_only_tools_that_exist():
+    import mcp_server  # noqa: F401 — 도구 등록을 위해 불러온다
+
+    text = " ".join(character.GUIDANCE)
+    for tool_name in set(re.findall(r"namu_[a-z_]+", text)):
+        assert hasattr(mcp_server, tool_name), tool_name

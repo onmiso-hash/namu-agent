@@ -153,6 +153,21 @@ CARD_KEYS = ("schema_version", "id") + tuple(q["key"] for q in QUESTIONS) + (
 LOAD_RECENT_DIARY = 5
 LOAD_CORE_LIMIT = 20
 
+# 일기 한 편의 상한(설계서 5.3·6장 초안 값). 점수 변화 폭은 compute_state도 같은 값으로 자른다.
+DELTA_LIMIT = 5
+DIARY_SUMMARY_MAX = 500
+DIARY_MOOD_MAX = 20
+DIARY_REASON_MAX = 100
+DIARY_TOPICS_MAX = 5
+DIARY_TOPIC_MAX = 20
+
+# 핵심 기억 후보(설계서 5.4). 일기 한 편에 몇 개까지, 확인 대기로 몇 개까지 쌓이게 둘지.
+# 대기 후보는 불러올 때마다 전부 실리므로, 상한이 없으면 불러오기가 한없이 무거워진다.
+CORE_TEXT_MAX = 200
+CORE_CANDIDATES_PER_DIARY = 3
+PENDING_MAX = 10
+CORE_ACTIONS = ("list", "confirm", "reject")
+
 # 캐릭터 id·판 id는 ULID다. 경로에 그대로 쓰므로 모양을 확인한 뒤에만 쓴다.
 _ULID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 
@@ -431,28 +446,39 @@ def compute_state(card: dict, diaries: list[dict]) -> dict:
 
     합은 한 걸음마다 0~100으로 잘라 더한다 — 바닥에서 더 내려간 만큼이 나중에 오른
     점수를 먹어 버리지 않게 하기 위해서다. 일기의 점수 변화가 ±5를 넘는 경우는 쓰는
-    쪽(2단계)이 이미 잘라 저장하지만, 손으로 고친 파일에 대비해 여기서도 한 번 자른다.
+    쪽(`write_diary`)이 이미 잘라 저장하지만, 손으로 고친 파일에 대비해 여기서도 한 번 자른다.
+
+    마지막 단계 변화(`last_stage_change`)도 저장하지 않고 일기를 다시 훑어 찾는다 —
+    일기를 잊으면(3단계) 그 일기가 만든 단계 변화도 함께 사라져야 하기 때문이다.
     """
     start = {s["value"]: s["affection"] for s in STARTS}[card["relationship_start"]]
+    ceiling = card["relationship_ceiling"]
     affection = start
+    stage = stage_for(affection, ceiling)
     call_user_now = card["call_user"]
     last_talk_at = None
+    last_stage_change = None
     for d in diaries:
         try:
             delta = int(d.get("affection_delta") or 0)
         except (TypeError, ValueError):
             delta = 0
-        delta = max(-5, min(5, delta))
+        delta = max(-DELTA_LIMIT, min(DELTA_LIMIT, delta))
         affection = max(AFFECTION_MIN, min(AFFECTION_MAX, affection + delta))
+        new_stage = stage_for(affection, ceiling)
+        if new_stage != stage:
+            last_stage_change = {"from": stage, "to": new_stage, "at": d.get("at")}
+            stage = new_stage
         if d.get("call_user_change"):
             call_user_now = str(d["call_user_change"])
         if d.get("at"):
             last_talk_at = str(d["at"])
     return {
         "affection": affection,
-        "stage": stage_for(affection, card["relationship_ceiling"]),
+        "stage": stage,
         "call_user_now": call_user_now,
         "last_talk_at": last_talk_at,
+        "last_stage_change": last_stage_change,
     }
 
 
@@ -511,6 +537,12 @@ GUIDANCE = (
     "대화 중 알게 된 사용자 자신에 대한 사실은 이 캐릭터가 아니라 개인 사실(profile) 그릇에 "
     "남긴다. 캐릭터와의 추억인지 사용자에 대한 사실인지 애매하면 사용자에게 묻는다.",
     "캐릭터 카드를 고치려면 card를 고쳐 namu_character_save에 base_version=version과 함께 보낸다.",
+    "사용자가 대화를 마무리하는 신호를 주면 namu_character_diary로 일기를 한 편 남긴다 — "
+    "캐릭터 시점의 짧은 요약, 호감도 변화(-5~+5)와 그 이유. 오래 간직할 만한 순간은 "
+    "core_candidates로 함께 보낸다(후보일 뿐 바로 핵심 기억이 되지 않는다).",
+    "pending_memories가 있으면 대화 흐름에 맞춰 자연스럽게 \"이거 오래 기억해도 될까?\" 하고 "
+    "사용자에게 묻는다. 사용자가 좋다고 한 것만 namu_character_core(action=confirm)로 "
+    "확정하고, 싫다고 한 것은 action=reject로 지운다. 묻지 않고 확정하지 않는다.",
 )
 
 
@@ -583,6 +615,18 @@ def save(card, base_version: "str | None" = None, *, via: "str | None" = None,
     }
 
 
+def _require(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
+    """find와 같되, 없으면 있는 캐릭터 이름을 적어 거절한다."""
+    rec = find(name, paths)
+    if rec is None:
+        names = [c["name"] for c in list_all(paths)]
+        raise ValueError(
+            f'"{name}"이라는 이름이나 별명의 캐릭터가 없습니다 — 있는 캐릭터: '
+            + (", ".join(names) if names else "(아직 없음 — namu_character_schema로 만들 수 있습니다)")
+        )
+    return rec
+
+
 def list_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:
     """내 캐릭터 목록 — id·이름·별명·단계·마지막 대화일."""
     out = []
@@ -603,13 +647,7 @@ def list_all(paths: "cfg.DataPaths | None" = None) -> list[dict]:
 
 def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
     """변신 키트 — 이름·별명으로 불러 설정 글·지금 관계·최근 일기·핵심 기억을 한 번에."""
-    rec = find(name, paths)
-    if rec is None:
-        names = [c["name"] for c in list_all(paths)]
-        raise ValueError(
-            f'"{name}"이라는 이름이나 별명의 캐릭터가 없습니다 — 있는 캐릭터: '
-            + (", ".join(names) if names else "(아직 없음 — namu_character_schema로 만들 수 있습니다)")
-        )
+    rec = _require(name, paths)
     card = rec["card"]
     char_dir = _root(paths) / rec["character_id"]
     diaries = _read_entries(char_dir / "diary")
@@ -628,9 +666,10 @@ def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
             "call_user_now": state["call_user_now"],
             "last_talk_at": state["last_talk_at"],
             "since_last_talk": _since(state["last_talk_at"], now),
+            "last_stage_change": state["last_stage_change"],
         },
         "recent_diary": [
-            {"at": d.get("at"), "summary": d.get("summary")}
+            {"at": d.get("at"), "summary": d.get("summary"), "mood": d.get("mood")}
             for d in diaries[-LOAD_RECENT_DIARY:]
         ],
         "core_memories": [{"id": c.get("id"), "text": c.get("text")} for c in core],
@@ -639,3 +678,218 @@ def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
         "card": card,
     }
     return result
+
+
+# ---------------------------------------------------------------------------
+# 2단계 — 일기와 핵심 기억(설계서 5.3·5.4·6장)
+# ---------------------------------------------------------------------------
+def _text(field: str, value, limit: int, *, required: bool = False) -> str:
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field}는 글자여야 합니다: {value!r}")
+    value = " ".join(value.split())
+    if required and not value:
+        raise ValueError(f"{field}는 비워 둘 수 없습니다.")
+    if len(value) > limit:
+        raise ValueError(f"{field}는 {limit}자까지입니다(지금 {len(value)}자).")
+    return value
+
+
+def _texts(field: str, value, max_items: int, limit: int) -> list[str]:
+    if value is None:
+        value = []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        raise ValueError(f"{field}는 글자 목록이어야 합니다: {value!r}")
+    out: list[str] = []
+    for item in value:
+        text = _text(field, item, limit)
+        if text and text not in out:
+            out.append(text)
+    if len(out) > max_items:
+        raise ValueError(f"{field}는 {max_items}개까지입니다(지금 {len(out)}개).")
+    return out
+
+
+def _delta(value) -> int:
+    """호감도 변화는 정수만 받는다. 범위는 여기서 거절하지 않고 쓰는 쪽이 자른다."""
+    if isinstance(value, bool):
+        raise ValueError(f"affection_delta는 정수여야 합니다: {value!r}")
+    if value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"\s*[+-]?\d+\s*", value):
+        return int(value)
+    raise ValueError(f"affection_delta는 -{DELTA_LIMIT}~{DELTA_LIMIT} 사이의 정수여야 합니다: {value!r}")
+
+
+def _brief(state: dict) -> dict:
+    return {
+        "affection": state["affection"],
+        "stage": state["stage"],
+        "stage_desc": stage_desc(state["stage"]),
+        "call_user_now": state["call_user_now"],
+    }
+
+
+def write_diary(name: str, summary: str, affection_delta=0, delta_reason: "str | None" = None, *,
+                mood: "str | None" = None, call_user_change: "str | None" = None,
+                topics=None, core_candidates=None, via: "str | None" = None,
+                paths: "cfg.DataPaths | None" = None) -> dict:
+    """일기 한 편을 남긴다 — 대화 한 번(또는 사용자가 마무리 신호를 준 때)마다 하나.
+
+    - 호감도 변화는 ±5로 자른다. 잘랐으면 원래 값을 `affection_delta_requested`로 함께
+      남긴다(설계서 6장 — AI가 더 큰 값을 보낸 사실도 기록으로 남긴다).
+    - 변화가 0이 아니면 이유가 필수다(설계서 5.3 — 점수 변화에는 반드시 이유를 붙인다).
+    - 핵심 기억 후보는 `pending`에만 쓴다. core로 가는 길은 `core(action="confirm")` 하나뿐이고,
+      그것도 대기 후보의 id로만 확정한다 — AI가 core에 직접 쓰는 길을 만들지 않는다(5.4).
+    - 관계 상태는 쓰지 않는다. 쓰기 전후를 계산해 단계가 바뀌었으면 돌려줄 뿐이다.
+    """
+    summary = _text("summary", summary, DIARY_SUMMARY_MAX, required=True)
+    requested = _delta(affection_delta)
+    applied = max(-DELTA_LIMIT, min(DELTA_LIMIT, requested))
+    reason = _text("delta_reason", delta_reason, DIARY_REASON_MAX)
+    if requested != 0 and not reason:
+        raise ValueError(
+            f"affection_delta가 0이 아니면({requested}) delta_reason(점수가 바뀐 이유)이 필요합니다."
+        )
+    mood = _text("mood", mood, DIARY_MOOD_MAX) or None
+    call_change = _text("call_user_change", call_user_change,
+                        _QUESTIONS_BY_KEY["call_user"]["max_length"]) or None
+    topics = _texts("topics", topics, DIARY_TOPICS_MAX, DIARY_TOPIC_MAX)
+    candidates = _texts("core_candidates", core_candidates, CORE_CANDIDATES_PER_DIARY, CORE_TEXT_MAX)
+
+    with _locked(paths):
+        rec = _require(name, paths)
+        card, char_id = rec["card"], rec["character_id"]
+        char_dir = _char_dir(char_id, paths)
+        diaries = _read_entries(char_dir / "diary")
+        pending = _read_entries(char_dir / "pending")
+        if candidates and len(pending) + len(candidates) > PENDING_MAX:
+            raise ValueError(
+                f"확인을 기다리는 핵심 기억 후보가 이미 {len(pending)}개라 후보 "
+                f"{len(candidates)}개를 더하면 {PENDING_MAX}개를 넘습니다 — 일기는 저장하지 "
+                "않았습니다. 사용자에게 먼저 확인받아 namu_character_core로 확정하거나 지운 뒤, "
+                "다시 보내거나 core_candidates 없이 보내세요."
+            )
+        before = compute_state(card, diaries)
+        at = cfg.now().isoformat()
+        diary_id = str(ULID())
+        entry = {
+            "id": diary_id,
+            "character_id": char_id,
+            "at": at,
+            "machine": cfg.NAMU_MACHINE,
+            "via": via,
+            "summary": summary,
+            "mood": mood,
+            "affection_delta": applied,
+            "delta_reason": reason or None,
+            "call_user_change": call_change,
+            "topics": topics,
+            "archived": False,
+        }
+        if applied != requested:
+            entry["affection_delta_requested"] = requested
+        _write_yaml(char_dir / "diary" / f"{diary_id}.yaml", entry)
+
+        added = []
+        for text in candidates:
+            pending_id = str(ULID())
+            _write_yaml(char_dir / "pending" / f"{pending_id}.yaml", {
+                "id": pending_id,
+                "character_id": char_id,
+                "text": text,
+                "at": at,
+                "diary_id": diary_id,
+                "machine": cfg.NAMU_MACHINE,
+                "via": via,
+            })
+            added.append({"id": pending_id, "text": text})
+        after = compute_state(card, diaries + [entry])
+
+    stage_change = None
+    if after["stage"] != before["stage"]:
+        stage_change = {"from": before["stage"], "to": after["stage"]}
+    return {
+        "id": diary_id,
+        "character": card["name"],
+        "affection_delta": applied,
+        "clipped_from": requested if applied != requested else None,
+        "relationship": _brief(after),
+        "stage_change": stage_change,
+        "pending_added": added,
+        "pending_count": len(pending) + len(added),
+    }
+
+
+def core(name: str, action: str = "list", ids=None, *, via: "str | None" = None,
+         paths: "cfg.DataPaths | None" = None) -> dict:
+    """핵심 기억 — 확인 대기 후보를 보거나(list), 사용자가 좋다고 한 것을 확정하거나
+    (confirm), 싫다고 한 것을 지운다(reject).
+
+    확정은 대기 후보의 id로만 한다. 글을 새로 받아 core에 넣는 길은 없다(설계서 5.4).
+    여러 id 중 하나라도 대기 목록에 없으면 아무것도 바꾸지 않고 거절한다 — 반만 처리된
+    상태로 끝나면 무엇이 확정됐는지 사용자도 AI도 알 수 없다.
+    """
+    if action not in CORE_ACTIONS:
+        raise ValueError(f"action은 {'/'.join(CORE_ACTIONS)} 중 하나여야 합니다: {action!r}")
+    if ids is None:
+        ids = []
+    if isinstance(ids, str):
+        ids = [ids]
+    if not isinstance(ids, list):
+        raise ValueError(f"ids는 후보 id 목록이어야 합니다: {ids!r}")
+    ids = list(dict.fromkeys(str(i).strip() for i in ids))
+    if action != "list" and not ids:
+        raise ValueError(f"action={action}에는 ids(확인 대기 후보의 id)가 필요합니다.")
+    for i in ids:
+        if not _ULID_RE.match(i):
+            raise ValueError(f"후보 id 모양이 아닙니다: {i!r}")
+
+    done = []
+    with _locked(paths):
+        rec = _require(name, paths)
+        char_id = rec["character_id"]
+        char_dir = _char_dir(char_id, paths)
+        pending = {p.get("id"): p for p in _read_entries(char_dir / "pending")}
+        if action != "list":
+            missing = [i for i in ids if i not in pending]
+            if missing:
+                waiting = ", ".join(f"{k}({v.get('text')})" for k, v in pending.items()) or "(없음)"
+                raise ValueError(
+                    f"확인 대기 목록에 없는 id입니다: {', '.join(missing)} — 아무것도 바꾸지 "
+                    f"않았습니다. 지금 대기 중인 후보: {waiting}"
+                )
+            now = cfg.now().isoformat()
+            for i in ids:
+                p = pending.pop(i)
+                if action == "confirm":
+                    _write_yaml(char_dir / "core" / f"{i}.yaml", {
+                        "id": i,
+                        "character_id": char_id,
+                        "text": p.get("text"),
+                        "at": now,
+                        "proposed_at": p.get("at"),
+                        "diary_id": p.get("diary_id"),
+                        "machine": cfg.NAMU_MACHINE,
+                        "via": via,
+                    })
+                (char_dir / "pending" / f"{i}.yaml").unlink(missing_ok=True)
+                done.append({"id": i, "text": p.get("text")})
+        core_entries = _read_entries(char_dir / "core")
+
+    out = {
+        "character": rec["card"]["name"],
+        "action": action,
+        "pending": [{"id": k, "text": v.get("text")} for k, v in pending.items()],
+        "core": [{"id": c.get("id"), "text": c.get("text")} for c in core_entries],
+    }
+    if action == "confirm":
+        out["confirmed"] = done
+    elif action == "reject":
+        out["rejected"] = done
+    return out
