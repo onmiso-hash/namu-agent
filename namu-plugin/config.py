@@ -104,6 +104,12 @@ ATTACHMENTS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "attachments.yaml"
 # 하나만** 센다(sessions.latest_by_session).
 SESSIONS_YAML_PATH = NAMU_DATA_ROOT / "memory" / "sessions.yaml"
 
+# 캐릭터 그릇(나무 캐릭터 v0.1). 다른 그릇과 달리 파일 하나가 아니라 폴더다 — 항목 하나를
+# 파일 하나로 둬야 잊기(실제 삭제)가 다른 PC와의 병합에서 되살아나지 않는다. 자세한
+# 이유는 character.py 맨 위. memory/ 아래에 두는 이유: 개인 PC 동기화(sync_push)가
+# 올리는 범위가 memory/라서 따로 길을 내지 않아도 함께 올라간다.
+CHARACTER_DIR = NAMU_DATA_ROOT / "memory" / "character"
+
 
 @dataclass(frozen=True)
 class DataPaths:
@@ -132,6 +138,9 @@ class DataPaths:
     # 세션 측정 그릇. 위와 같은 규약이다(None이면 모듈 상수). 클라우드에서 이 값이
     # 빠지면 남의 세션 측정값에 섞여 들어간다.
     sessions_yaml: Path | None = None
+    # 캐릭터 그릇 폴더. 위와 같은 규약이다(None이면 모듈 상수). 클라우드에서 이 값이
+    # 빠지면 남의 캐릭터를 읽는다.
+    character_dir: Path | None = None
 
 
 def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
@@ -153,6 +162,7 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
             memo_yaml=MEMO_YAML_PATH,
             attachments_yaml=ATTACHMENTS_YAML_PATH,
             sessions_yaml=SESSIONS_YAML_PATH,
+            character_dir=CHARACTER_DIR,
         )
     root = Path(root)
     return DataPaths(
@@ -162,6 +172,7 @@ def data_paths_for(root: "Path | str | None" = None) -> DataPaths:
         memo_yaml=root / "memory" / "memo.yaml",
         attachments_yaml=root / "memory" / "attachments.yaml",
         sessions_yaml=root / "memory" / "sessions.yaml",
+        character_dir=root / "memory" / "character",
     )
 
 
@@ -284,6 +295,24 @@ BOWLS: tuple[Bowl, ...] = (
         cached=False,
         web_exposed=False,
         label="세션 측정",
+    ),
+    # character(나무 캐릭터 v0.1) — 캐릭터 카드·일기·핵심 기억. 폴더 하나에 항목마다
+    # 파일 하나를 둔다(character.py 맨 위).
+    #
+    # mutable=True·merge="file" — 잊기(3단계)가 파일을 실제로 지운다. 줄 단위 병합을
+    # 걸면 지운 줄이 되살아나는 것은 쪽지와 같고, 항목마다 파일이라 병합할 줄도 없다.
+    #
+    # web_exposed=False·cached=False — 칸막이(설계서 7장). namu_record로 쓸 수 없고 검색
+    # 색인·recall에 안 나온다. 업무용으로 나무를 쓸 때 캐릭터 일기가 섞여 나오지 않게
+    # 하기 위해서다. 읽고 쓰는 길은 캐릭터 도구뿐이다.
+    Bowl(
+        name="character",
+        git_patterns=("memory/character/**",),
+        mutable=True,
+        merge="file",
+        cached=False,
+        web_exposed=False,
+        label="캐릭터",
     ),
 )
 

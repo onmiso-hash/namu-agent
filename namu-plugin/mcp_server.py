@@ -14,6 +14,7 @@ from pathlib import Path
 import attach_local
 import attach_text
 import attachments
+import character
 import config as cfg
 import memo
 import memory_sync
@@ -1844,6 +1845,68 @@ def namu_check_ticket(ticket_id: str, ctx: Context | None = None) -> dict:
         out["path"] = result.get("path")
         out["bytes"] = result.get("bytes")
     return out
+
+
+# ---------------------------------------------------------------------------
+# 캐릭터(나무 캐릭터 v0.1) — 저장·읽기 로직은 전부 character.py에 있다. 클라우드
+# (namu-cloud-routing)도 같은 함수를 부르므로 여기는 얇은 껍데기만 둔다.
+# ---------------------------------------------------------------------------
+@tool()
+def namu_character_list(ctx: Context | None = None) -> dict:
+    """List this user's characters: id, name, aliases, relationship stage,
+    affection score, last talk time and the current card version.
+    Returns: {"characters": [...]}.
+    """
+    _resolve_via(ctx)
+    return {"characters": character.list_all()}
+
+
+@tool()
+def namu_character_schema(ctx: Context | None = None) -> dict:
+    """Return the character-making questions and the card shape (the single
+    definition shared by the web maker and by making a character in chat).
+    Each question has `key` (the card field), `title`, `hint`, `type`
+    (single/multi/choice), limits and suggested `options`; `rules` lists the
+    checks applied when saving, and `example` is a filled card.
+    """
+    _resolve_via(ctx)
+    return character.schema()
+
+
+@tool()
+def namu_character_save(
+    card: dict | str,
+    base_version: str | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Create or update one character card (JSON object, or the JSON text a
+    user pasted). The card is checked against namu_character_schema: required
+    fields, the relationship ceiling not below the start, and names/aliases
+    not used by another character. `promises` is always set by the server and
+    `expression_level` must be null.
+
+    With `id` null a new character is created and gets an id. With an
+    existing `id` the card is updated; `base_version` must then be the
+    `version` returned by namu_character_load or namu_character_list, and the
+    save is rejected if the card changed since. Earlier versions are kept.
+    Returns {"id", "version", "name", "created"}.
+    """
+    via = _resolve_via(ctx)
+    result = character.save(card, base_version, via=via)
+    memory_sync.sync_push(f"character: {result['name']} ({cfg.NAMU_MACHINE})")
+    return result
+
+
+@tool()
+def namu_character_load(name: str, ctx: Context | None = None) -> dict:
+    """Load one character by name, alias or id. Returns {"id", "version",
+    "persona" (the character setting text built by the server from the card),
+    "relationship" (stage, affection, how the character calls the user now,
+    time since the last talk), "recent_diary", "core_memories",
+    "pending_memories", "guidance", "card"}.
+    """
+    _resolve_via(ctx)
+    return character.load(name)
 
 
 if __name__ == "__main__":

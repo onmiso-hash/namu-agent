@@ -43,14 +43,14 @@ def _read_module_level_tuple_constant(module_path: Path, name: str) -> tuple:
 # BOWLS 레지스트리 자체 (① 스펙 확인)
 # ---------------------------------------------------------------------------
 
-def test_bowls_contains_exactly_six_bowls_in_declared_order():
+def test_bowls_contains_exactly_seven_bowls_in_declared_order():
     # 순서 보증: memory_sync._gitattributes_union_lines()가 기존 3줄(learnings+tasks)이
     # 앞서 나오게 의존하는 순서라 여기서도 못 박아 회귀를 잡는다. 새 그릇은 반드시
     # 끝에 붙는다 — 앞에 끼우면 기존 설치본의 .gitattributes가 통째로 재작성된다.
     # memo(namu-56) 다음이 attachments(namu-file-upload-download 4단계)이고,
-    # 그 다음이 sessions(namu-self-improvement-loop)다.
+    # 그 다음이 sessions(namu-self-improvement-loop), 그 다음이 character(나무 캐릭터)다.
     assert [bowl.name for bowl in cfg.BOWLS] == [
-        "learnings", "tasks", "profile", "memo", "attachments", "sessions",
+        "learnings", "tasks", "profile", "memo", "attachments", "sessions", "character",
     ]
 
 

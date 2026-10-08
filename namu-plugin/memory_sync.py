@@ -366,7 +366,9 @@ GITIGNORE_LINES = ["db/"]
 #   - db/ : 검색 캐시·로그(기기별, 다시 만들어진다)
 #   - memory/.memo.lock : memo.py가 쪽지 파일을 고치는 동안 잡는 잠금(2026-09 추가).
 #     `git add memory/`가 이것을 주워 커밋하면 다른 기기로 잠금 파일이 퍼진다.
-LOCAL_EXCLUDE_LINES = ["db/", "memory/.memo.lock"]
+#   - memory/character/.character.lock : character.py가 카드를 저장하는 동안 잡는 잠금
+#     (같은 이유).
+LOCAL_EXCLUDE_LINES = ["db/", "memory/.memo.lock", "memory/character/.character.lock"]
 
 
 def ensure_local_excludes(home: "Path | str") -> None:
