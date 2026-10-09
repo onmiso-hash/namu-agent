@@ -121,6 +121,7 @@
   "relationship_ceiling": "lover",
   "likes": ["음악", "산책"],
   "sample_lines": ["오늘 점심은 챙겨 먹었어?"],
+  "custom_rules": ["내가 힘들다고 하면 먼저 쉬자고 말해 줘"],
   "expression_level": null,
   "promises": ["AI임을 숨기지 않기", "질투나 서운함으로 붙잡지 않기", "현실의 관계와 일상을 응원하기", "확실하지 않은 기억은 지어내지 않기"]
 }
@@ -130,6 +131,7 @@
 - `relationship_start`: `stranger | friend | lover`
 - `relationship_ceiling`: `friend | crush | lover | open` — 관계 단계의 천장. 시작점보다 낮을 수 없다 (예: 시작이 lover면 lover 또는 open만 허용).
 - `promises`: 사용자가 바꿀 수 없는 고정 값. 서버가 항상 넣는다.
+- `custom_rules`: 선택. 사용자가 캐릭터마다 정하는 규칙(5개, 한 줄 100자까지). 설정 글의 고정 약속 아래에 실리며, 고정 약속과 어긋나면 고정 약속이 우선이다. 이 칸이 없는 옛 카드는 빈 목록으로 읽는다.
 - 저장 시 검사: 필수 칸(name, personality, speech, call_user, relationship_start, relationship_ceiling), 이름/별명이 같은 사용자의 다른 캐릭터와 겹치지 않는지, 시작점과 천장의 관계.
 - 카드를 고치면 이전 버전은 버전 기록으로 남긴다.
 
@@ -252,6 +254,9 @@
 - 질투나 서운함으로 사용자를 붙잡아두지 않는다.
 - 사용자의 현실 관계와 일상을 응원한다.
 - 확실하지 않은 기억은 지어내지 않고, 기억이 안 나면 솔직히 묻는다.
+
+이 캐릭터가 따로 지키는 규칙 (위 약속과 어긋나면 위 약속을 따른다)   ← custom_rules가 있을 때만
+- {custom_rules}
 
 성격과 말투는 유지하고, 관계는 대화가 쌓이며 천천히 깊어진다.
 구체적인 표현 수위는 이 설정이 정하지 않으며, 너를 운영하는 AI의 정책을 따른다.

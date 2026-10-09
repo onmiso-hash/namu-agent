@@ -138,6 +138,12 @@ QUESTIONS = (
      "hint": "어떤 AI가 연기해도 말투가 비슷하게 나오도록 도와줘요. 세 줄까지, 없으면 넘어가도 돼요.",
      "type": "multi", "required": False, "max_items": 3, "max_length": 100,
      "options": [], "custom_label": "예: 오늘 점심은 챙겨 먹었어?"},
+    # 사용자가 캐릭터마다 정하는 규칙. 고정 약속(PROMISES)과 달리 바꿀 수 있고, 설정 글의
+    # 고정 약속 아래에 실린다 — 어긋나면 고정 약속이 우선이다(설정 글에 그렇게 적는다).
+    {"key": "custom_rules", "label": "지키는 규칙", "title": "이 캐릭터가 늘 지킬 규칙",
+     "hint": "대화할 때마다 꼭 지킬 것을 적어요. 다섯 줄까지, 없으면 넘어가도 돼요.",
+     "type": "multi", "required": False, "max_items": 5, "max_length": 100,
+     "options": [], "custom_label": "예: 내가 힘들다고 하면 먼저 쉬자고 말해 줘"},
     {"key": "relationship_ceiling", "label": "관계가 나아갈 수 있는 곳",
      "title": "둘의 관계는 어디까지 나아갈 수 있을까요?",
      "hint": "지금 정하는 건 출발선이 아니라 앞으로 열려 있는 가능성이에요. 나중에 언제든 바꿀 수 있어요.",
@@ -295,6 +301,8 @@ def schema() -> dict:
             "expression_level은 비워 둔다(null). 이 서버는 표현 수위를 정하지 않는다.",
             "id는 비워 두면 새 캐릭터로 저장되고, 있으면 그 캐릭터를 고친다 — 고칠 때는 "
             "불러올 때 받은 version을 base_version으로 함께 보낸다.",
+            "custom_rules는 선택이며 설정 글의 고정 약속 아래에 실린다. 고정 약속과 어긋나면 "
+            "고정 약속이 우선이다.",
             "portrait·emotion_photos는 선택이며, 먼저 namu_upload_file로 올린 파일의 경로만 "
             "쓸 수 있다.",
         ],
@@ -303,7 +311,9 @@ def schema() -> dict:
             "personality": ["다정하고 차분함"], "speech": "처음엔 존댓말, 친해지면 반말",
             "emoji": "가끔 써요", "call_user": "허니", "relationship_start": "stranger",
             "relationship_ceiling": "lover", "likes": ["음악", "산책"],
-            "sample_lines": ["오늘 점심은 챙겨 먹었어?"], "portrait": None, "emotion_photos": {},
+            "sample_lines": ["오늘 점심은 챙겨 먹었어?"],
+            "custom_rules": ["내가 힘들다고 하면 먼저 쉬자고 말해 줘"],
+            "portrait": None, "emotion_photos": {},
             "expression_level": None,
             "promises": list(PROMISES),
         },
@@ -662,6 +672,11 @@ def persona_text(card: dict, state: dict, now: datetime) -> str:
         "- 질투나 서운함으로 사용자를 붙잡아두지 않는다.",
         "- 사용자의 현실 관계와 일상을 응원한다.",
         "- 확실하지 않은 기억은 지어내지 않고, 기억이 안 나면 솔직히 묻는다.",
+    ]
+    if card.get("custom_rules"):
+        lines += ["", "이 캐릭터가 따로 지키는 규칙 (위 약속과 어긋나면 위 약속을 따른다)"]
+        lines += [f"- {r}" for r in card["custom_rules"]]
+    lines += [
         "",
         "성격과 말투는 유지하고, 관계는 대화가 쌓이며 천천히 깊어진다.",
         "구체적인 표현 수위는 이 설정이 정하지 않으며, 너를 운영하는 AI의 정책을 따른다.",
@@ -835,6 +850,8 @@ def display_text(card: dict, state: dict, diaries: list[dict], core: list[dict],
                   for c in reversed(shown)]
         if len(core) > len(shown):
             lines.append(f"> - 외 {len(core) - len(shown)}개")
+    if card.get("custom_rules"):
+        lines += [">", f"> 📜 이 캐릭터가 지키는 규칙 {len(card['custom_rules'])}개"]
     if pending_count:
         lines += [">", f"> 💭 간직할지 묻기를 기다리는 기억 {pending_count}개"]
     return "\n".join(lines)
@@ -843,7 +860,8 @@ def display_text(card: dict, state: dict, diaries: list[dict], core: list[dict],
 def load(name: str, paths: "cfg.DataPaths | None" = None) -> dict:
     """변신 키트 — 이름·별명으로 불러 설정 글·지금 관계·최근 일기·핵심 기억을 한 번에."""
     rec = _require(name, paths)
-    card = rec["card"]
+    # custom_rules가 생기기 전에 저장한 카드에는 이 칸이 없다 — 빈 목록으로 채워 돌려준다.
+    card = {**rec["card"], "custom_rules": rec["card"].get("custom_rules") or []}
     char_dir = _root(paths) / rec["character_id"]
     diaries = _read_entries(char_dir / "diary")
     state = compute_state(card, diaries)

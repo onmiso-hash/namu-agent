@@ -55,7 +55,8 @@ def test_schema_questions_match_the_card_keys():
     s = character.schema()
     keys = [q["key"] for q in s["questions"]]
     assert keys == ["name", "aliases", "personality", "speech", "emoji", "call_user",
-                    "relationship_start", "likes", "sample_lines", "relationship_ceiling"]
+                    "relationship_start", "likes", "sample_lines", "custom_rules",
+                    "relationship_ceiling"]
     assert set(keys) <= set(s["card_keys"])
     assert s["promises"] == list(character.PROMISES)
     # 예시 카드는 그대로 저장할 수 있어야 한다.
@@ -258,11 +259,81 @@ def test_load_stays_small(paths):
         personality=["마" * 40, "바" * 40], speech="사" * 60, emoji="아" * 20,
         call_user="자" * 20, likes=["차" * 20] * 1 + ["카" * 20, "타" * 20, "파" * 20, "하" * 20],
         sample_lines=["거" * 100, "너" * 100, "더" * 100],
+        custom_rules=["규" * 100, "칙" * 100, "약" * 100, "속" * 100, "들" * 100],
     )
     character.save(big, paths=paths)
     out = character.load("가" * 20, paths)
     # 카드만 있을 때의 크기. 일기·핵심 기억이 붙는 2단계에서 다시 잰다.
-    assert len(json.dumps(out, ensure_ascii=False)) < 4000
+    # 2026-10-10 캐릭터별 규칙(5×100자)을 더해 4,777자가 됐다. 규칙은 설정 글과 카드 두 곳에
+    # 실린다. 허니가 규칙을 줄이지 않고 상한을 올리기로 했다(4,000→5,000).
+    assert len(json.dumps(out, ensure_ascii=False)) < 5000
+
+
+# ── 캐릭터별 규칙(custom_rules) ─────────────────────────────────────────────
+_RULES = ["내가 힘들다고 하면 먼저 쉬자고 말해 줘", "밤 12시가 넘으면 자라고 권해 줘"]
+
+
+def test_custom_rules_save_and_load(paths):
+    r = character.save(_card(custom_rules=_RULES), paths=paths)
+    loaded = character.load(r["id"], paths)
+    assert loaded["card"]["custom_rules"] == _RULES
+    assert "custom_rules" in character.CARD_KEYS
+
+
+def test_custom_rules_rejects_six():
+    with pytest.raises(ValueError, match="5개까지"):
+        character.normalize_card(_card(custom_rules=[f"규칙 {i}" for i in range(6)]))
+
+
+def test_custom_rules_rejects_101_chars():
+    character.normalize_card(_card(custom_rules=["가" * 100]))
+    with pytest.raises(ValueError, match="100자까지"):
+        character.normalize_card(_card(custom_rules=["가" * 101]))
+
+
+def test_custom_rules_follow_the_fixed_promises_in_persona(paths):
+    r = character.save(_card(custom_rules=_RULES), paths=paths)
+    persona = character.load(r["id"], paths)["persona"].splitlines()
+    head = "이 캐릭터가 따로 지키는 규칙 (위 약속과 어긋나면 위 약속을 따른다)"
+    last_promise = persona.index("- 확실하지 않은 기억은 지어내지 않고, 기억이 안 나면 솔직히 묻는다.")
+    assert persona[last_promise + 1:last_promise + 5] == ["", head] + [f"- {x}" for x in _RULES]
+    assert persona[last_promise + 5] == ""
+
+
+def test_no_custom_rules_no_heading_in_persona(paths):
+    r = character.save(_card(custom_rules=[]), paths=paths)
+    loaded = character.load(r["id"], paths)
+    assert "따로 지키는 규칙" not in loaded["persona"]
+    assert "지키는 규칙" not in loaded["display"]
+    assert loaded["card"]["custom_rules"] == []
+
+
+def test_custom_rules_show_as_a_count_in_display(paths):
+    r = character.save(_card(custom_rules=_RULES), paths=paths)
+    assert "> 📜 이 캐릭터가 지키는 규칙 2개" in character.load(r["id"], paths)["display"]
+
+
+def test_old_card_without_custom_rules_still_works(paths):
+    import yaml
+
+    old = _card()
+    old.pop("custom_rules", None)
+    r = character.save(old, paths=paths)
+    # 이 칸이 생기기 전에 저장된 판을 흉내 낸다 — 파일에서 칸을 지운다.
+    card_file = next((paths.character_dir / r["id"] / "card").glob("*.yaml"))
+    doc = yaml.safe_load(card_file.read_text(encoding="utf-8"))
+    doc["card"].pop("custom_rules")
+    card_file.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+
+    loaded = character.load("하린", paths)
+    assert loaded["card"]["custom_rules"] == []
+    assert "따로 지키는 규칙" not in loaded["persona"]
+    assert character.list_all(paths)[0]["name"] == "하린"
+    # 불러온 카드를 그대로(칸 없이) 다시 저장해도 된다.
+    stale = dict(loaded["card"])
+    stale.pop("custom_rules")
+    character.save(stale, base_version=loaded["version"], paths=paths)
+    assert character.load("하린", paths)["card"]["custom_rules"] == []
 
 
 # ── 관계 계산 ────────────────────────────────────────────────────────────────
@@ -476,6 +547,7 @@ def test_load_with_diaries_and_memories_stays_small(paths):
         personality=["마" * 40, "바" * 40], speech="사" * 60, emoji="아" * 20,
         call_user="자" * 20, likes=["차" * 20, "카" * 20, "타" * 20, "파" * 20, "하" * 20],
         sample_lines=["거" * 100, "너" * 100, "더" * 100],
+        custom_rules=["규" * 100, "칙" * 100, "약" * 100, "속" * 100, "들" * 100],
     )
     character.save(big, paths=paths)
     name = "가" * 20
@@ -496,7 +568,9 @@ def test_load_with_diaries_and_memories_stays_small(paths):
     # 말없이 다시 커지는 것을 막는다.
     # 같은 날 화면용 글(display)과 읽는 시각(when)을 더해 11,346자가 됐다(display 958자 —
     # 일기 요약·핵심 기억을 줄여 싣는다). 원래 기록 칸을 줄이지 않고 상한을 올렸다.
-    assert len(json.dumps(out, ensure_ascii=False)) < 12000
+    # 2026-10-10 캐릭터별 규칙(5×100자)을 더해 12,528자가 됐다. 허니가 규칙을 줄이지 않고
+    # 상한을 올리기로 했다(12,000→13,000).
+    assert len(json.dumps(out, ensure_ascii=False)) < 13000
 
 
 def test_guidance_names_only_tools_that_exist():
