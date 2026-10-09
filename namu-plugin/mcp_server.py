@@ -1867,7 +1867,10 @@ def namu_character_schema(ctx: Context | None = None) -> dict:
     definition shared by the web maker and by making a character in chat).
     Each question has `key` (the card field), `title`, `hint`, `type`
     (single/multi/choice), limits and suggested `options`; `rules` lists the
-    checks applied when saving, and `example` is a filled card.
+    checks applied when saving, and `example` is a filled card. The card
+    shape (`card_keys`) also has two optional photo fields not asked as
+    chat questions: `portrait` (one path) and `emotion_photos` (emotion
+    label -> path) — both take only a file path from namu_upload_file.
     """
     _resolve_via(ctx)
     return character.schema()
@@ -1889,6 +1892,13 @@ def namu_character_save(
     existing `id` the card is updated; `base_version` must then be the
     `version` returned by namu_character_load or namu_character_list, and the
     save is rejected if the card changed since. Earlier versions are kept.
+
+    `portrait` (one path) and `emotion_photos` (dict of free-form emotion
+    label -> path) are optional and hold only a stored file path from
+    namu_upload_file, never the photo bytes. To register a photo: 1) upload
+    it with namu_upload_file to get its path, 2) namu_character_load to get
+    the current card and version, 3) fill portrait/emotion_photos on that
+    card and call this tool with base_version.
     Returns {"id", "version", "name", "created"}.
     """
     via = _resolve_via(ctx)

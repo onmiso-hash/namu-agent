@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import attachments  # noqa: E402
 import character  # noqa: E402
 import config as cfg  # noqa: E402
 import memory_sync  # noqa: E402
@@ -108,6 +109,74 @@ def test_list_limits():
         character.normalize_card(_card(personality=["가", "나", "다"]))
     with pytest.raises(ValueError, match="20자까지"):
         character.normalize_card(_card(name="가" * 21))
+
+
+# ── 대표사진·감정별 사진 ──────────────────────────────────────────────────────
+def _attach(paths, path="attach_file/portrait.png"):
+    attachments.record_attachment(path, 100, attachments.STATUS_UPLOADED, "사진", "등록", "생략",
+                                   paths=paths)
+    return path
+
+
+def test_portrait_and_emotion_photos_default_to_empty(paths):
+    clean = character.normalize_card(_card(), paths)
+    assert clean["portrait"] is None
+    assert clean["emotion_photos"] == {}
+
+
+def test_portrait_with_existing_attachment_round_trips(paths):
+    path = _attach(paths)
+    r = character.save(_card(portrait=path), paths=paths)
+    out = character.load("하린", paths)
+    assert out["card"]["portrait"] == path
+
+
+def test_portrait_with_unknown_path_is_rejected(paths):
+    with pytest.raises(ValueError, match="그런 첨부 파일이 없습니다"):
+        character.normalize_card(_card(portrait="attach_file/nope.png"), paths)
+
+
+def test_emotion_photos_with_existing_attachments_round_trip(paths):
+    happy = _attach(paths, "attach_file/happy.png")
+    sad = _attach(paths, "attach_file/sad.png")
+    character.save(_card(emotion_photos={"기쁨": happy, "슬픔": sad}), paths=paths)
+    out = character.load("하린", paths)
+    assert out["card"]["emotion_photos"] == {"기쁨": happy, "슬픔": sad}
+
+
+def test_emotion_photos_with_one_unknown_path_is_rejected(paths):
+    happy = _attach(paths, "attach_file/happy.png")
+    with pytest.raises(ValueError, match="그런 첨부 파일이 없습니다"):
+        character.normalize_card(
+            _card(emotion_photos={"기쁨": happy, "슬픔": "attach_file/nope.png"}), paths
+        )
+
+
+def test_emotion_photos_over_the_item_limit_is_rejected(paths):
+    photos = {}
+    for i in range(character.PHOTO_EMOTION_MAX + 1):
+        p = _attach(paths, f"attach_file/e{i}.png")
+        photos[f"감정{i}"] = p
+    with pytest.raises(ValueError, match=f"{character.PHOTO_EMOTION_MAX}개까지"):
+        character.normalize_card(_card(emotion_photos=photos), paths)
+
+
+def test_emotion_photos_label_over_the_length_limit_is_rejected(paths):
+    path = _attach(paths)
+    label = "감" * (character.PHOTO_EMOTION_LABEL_MAX + 1)
+    with pytest.raises(ValueError, match=f"{character.PHOTO_EMOTION_LABEL_MAX}자까지"):
+        character.normalize_card(_card(emotion_photos={label: path}), paths)
+
+
+def test_emotion_photos_duplicate_label_after_whitespace_is_rejected(paths):
+    x = _attach(paths, "attach_file/x.png")
+    y = _attach(paths, "attach_file/y.png")
+    # 공백만 다른 이름 — 정리하면 같은 이름이라 뒤엣것이 앞엣것을 말없이 덮으면 안 된다.
+    with pytest.raises(ValueError, match="겹칩니다"):
+        character.normalize_card(_card(emotion_photos={"기  쁨": x, "기 쁨": y}), paths)
+    # 대소문자만 다른 이름도 같은 이름이다.
+    with pytest.raises(ValueError, match="겹칩니다"):
+        character.normalize_card(_card(emotion_photos={"Happy": x, "happy": y}), paths)
 
 
 # ── 저장·목록 ────────────────────────────────────────────────────────────────

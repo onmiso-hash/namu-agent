@@ -43,6 +43,7 @@ from pathlib import Path
 import yaml
 from ulid import ULID
 
+import attachments
 import config as cfg
 
 SCHEMA_VERSION = 1
@@ -149,7 +150,7 @@ _QUESTIONS_BY_KEY = {q["key"]: q for q in QUESTIONS}
 # 카드에 올 수 있는 칸. 질문 칸 + 서버가 관리하는 칸.
 _SERVER_KEYS = ("schema_version", "id", "expression_level", "promises")
 CARD_KEYS = ("schema_version", "id") + tuple(q["key"] for q in QUESTIONS) + (
-    "expression_level", "promises",
+    "portrait", "emotion_photos", "expression_level", "promises",
 )
 
 # 불러오기 결과의 크기 상한(설계서 0·8장 — 가볍게). 2026-10-08: 모든 칸을 채운 최악값이
@@ -181,6 +182,11 @@ DISPLAY_CORE_CHARS = 60
 # 상한은 조각 하나의 크기다. 긴 대화는 일기 하나에 조각을 이어 붙여(append_to) 남긴다.
 ARCHIVE_TEXT_MAX = 50000
 ARCHIVE_PARTS_MAX = 20
+# 대표사진·감정별 사진(설계서 확장). 카드에는 사진 몸통이 아니라 첨부 그릇에 올린 파일의
+# 저장소 안 경로(문자열)만 참조로 담는다 — attachments.current_files()가 돌려주는 'path'다.
+PHOTO_PATH_MAX = 300
+PHOTO_EMOTION_LABEL_MAX = 20
+PHOTO_EMOTION_MAX = 12
 # 잊기(설계서 8·12장). pending은 core(action=reject)가 이미 지우므로 대상에 넣지 않는다 —
 # 일기를 잊을 때 딸린 후보로만 함께 지워진다.
 FORGET_TARGETS = ("diary", "core", "archive", "character")
@@ -289,13 +295,16 @@ def schema() -> dict:
             "expression_level은 비워 둔다(null). 이 서버는 표현 수위를 정하지 않는다.",
             "id는 비워 두면 새 캐릭터로 저장되고, 있으면 그 캐릭터를 고친다 — 고칠 때는 "
             "불러올 때 받은 version을 base_version으로 함께 보낸다.",
+            "portrait·emotion_photos는 선택이며, 먼저 namu_upload_file로 올린 파일의 경로만 "
+            "쓸 수 있다.",
         ],
         "example": {
             "schema_version": SCHEMA_VERSION, "id": None, "name": "하린", "aliases": ["린아"],
             "personality": ["다정하고 차분함"], "speech": "처음엔 존댓말, 친해지면 반말",
             "emoji": "가끔 써요", "call_user": "허니", "relationship_start": "stranger",
             "relationship_ceiling": "lover", "likes": ["음악", "산책"],
-            "sample_lines": ["오늘 점심은 챙겨 먹었어?"], "expression_level": None,
+            "sample_lines": ["오늘 점심은 챙겨 먹었어?"], "portrait": None, "emotion_photos": {},
+            "expression_level": None,
             "promises": list(PROMISES),
         },
     }
@@ -340,7 +349,30 @@ def _clean_list(key: str, value, *, required: bool) -> list[str]:
     return out
 
 
-def normalize_card(card) -> dict:
+def _check_photo_path(field: str, path) -> str:
+    """portrait·emotion_photos의 값(경로) 하나를 모양만 검사한다 — 첨부 그릇에 실제로
+    있는지는 호출하는 쪽이 `_live_attachment_paths`로 한 번에 확인한다."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError(f"{field}는 비워 두거나(null) 첨부 파일 경로여야 합니다: {path!r}")
+    path = path.strip()
+    if len(path) > PHOTO_PATH_MAX:
+        raise ValueError(f"{field}는 {PHOTO_PATH_MAX}자까지입니다(지금 {len(path)}자).")
+    return path
+
+
+def _live_attachment_paths(paths: "cfg.DataPaths | None") -> set[str]:
+    return {e.get("path") for e in attachments.current_files(paths) if e.get("path")}
+
+
+def _check_photo_exists(field: str, path: str, live: set[str]) -> None:
+    if path not in live:
+        raise ValueError(
+            f"{field}: 그런 첨부 파일이 없습니다: {path!r} — 먼저 namu_upload_file로 올리고 "
+            "그 경로를 쓰세요."
+        )
+
+
+def normalize_card(card, paths: "cfg.DataPaths | None" = None) -> dict:
     """카드를 검사하고 정리된 사본을 돌려준다. 문제가 있으면 ValueError(고칠 곳을 적는다).
 
     문자열(JSON)로 와도 받는다 — 생성기가 내보낸 JSON을 대화창에 붙여 넣는 길이 있다.
@@ -399,6 +431,50 @@ def normalize_card(card) -> dict:
     out["aliases"] = [a for a in out["aliases"] if _key(a) != _key(out["name"])]
     out["expression_level"] = None
     out["promises"] = list(PROMISES)
+
+    # 대표사진·감정별 사진 — 카드에는 첨부 그릇에 올린 파일의 경로(문자열)만 참조로 담는다.
+    portrait = card.get("portrait")
+    emotion_photos = card.get("emotion_photos")
+    needed: set[str] = set()
+    if portrait is not None:
+        portrait = _check_photo_path("portrait", portrait)
+        needed.add(portrait)
+    cleaned_emotions: dict[str, str] = {}
+    if emotion_photos is not None:
+        if not isinstance(emotion_photos, dict):
+            raise ValueError(f"emotion_photos는 객체(감정 이름→경로)여야 합니다: {emotion_photos!r}")
+        if len(emotion_photos) > PHOTO_EMOTION_MAX:
+            raise ValueError(
+                f"emotion_photos는 {PHOTO_EMOTION_MAX}개까지입니다(지금 {len(emotion_photos)}개)."
+            )
+        seen_labels: set[str] = set()
+        for raw_label, raw_path in emotion_photos.items():
+            label = " ".join(str(raw_label or "").split())
+            if not label:
+                raise ValueError(f"emotion_photos의 감정 이름이 비어 있습니다: {raw_label!r}")
+            # 공백·대소문자만 다른 이름은 같은 감정이다 — 덮어써 말없이 버리지 않고 거절한다.
+            if _key(label) in seen_labels:
+                raise ValueError(
+                    f"emotion_photos의 감정 이름 '{label}'이 겹칩니다(공백·대소문자를 정리하면 "
+                    "같은 이름) — 하나만 쓰세요."
+                )
+            seen_labels.add(_key(label))
+            if len(label) > PHOTO_EMOTION_LABEL_MAX:
+                raise ValueError(
+                    f"emotion_photos의 감정 이름({label})은 {PHOTO_EMOTION_LABEL_MAX}자까지입니다"
+                    f"(지금 {len(label)}자)."
+                )
+            path = _check_photo_path(f"emotion_photos[{label}]", raw_path)
+            cleaned_emotions[label] = path
+            needed.add(path)
+    if needed:
+        live = _live_attachment_paths(paths)
+        if portrait is not None:
+            _check_photo_exists("portrait", portrait, live)
+        for label, path in cleaned_emotions.items():
+            _check_photo_exists(f"emotion_photos[{label}]", path, live)
+    out["portrait"] = portrait
+    out["emotion_photos"] = cleaned_emotions
     return out
 
 
@@ -627,7 +703,7 @@ def save(card, base_version: "str | None" = None, *, via: "str | None" = None,
     고칠 때는 `base_version`(불러올 때 받은 version)이 지금 판과 같아야 한다 — 웹과
     터미널에서 같은 카드를 동시에 고쳐 한쪽이 다른 쪽을 덮는 것을 막는다(설계서 13장).
     """
-    clean = normalize_card(card)
+    clean = normalize_card(card, paths)
     with _locked(paths):
         char_id = clean["id"]
         previous = None
