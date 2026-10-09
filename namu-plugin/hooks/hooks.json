@@ -11,7 +11,7 @@
         ]
       },
       {
-        "matcher": "startup|resume|clear",
+        "matcher": "startup|resume|clear|new|load",
         "hooks": [
           {
             "type": "command",

@@ -187,4 +187,8 @@ def test_hooks_json_checks_run_only_outside_compact():
     commands = " ".join(h["command"] for g in checks for h in g["hooks"])
     for name in ("repo_sync_check.py", "version_drift_check.py", "weekly_review_check.py"):
         assert name in commands
-    assert all(g.get("matcher") == "startup|resume|clear" for g in checks)
+    # Grok은 새 세션을 "new", 이어 열기를 "load"로 보낸다(2026-10-09 실측) — 빠뜨리면
+    # Grok에서는 검사가 시작할 때도 안 돈다. "compact"만은 들어가면 안 된다.
+    for g in checks:
+        names = set(g.get("matcher", "").split("|"))
+        assert names == {"startup", "resume", "clear", "new", "load"}
