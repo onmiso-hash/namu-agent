@@ -21,7 +21,7 @@ NAMU 메모리 서버 + 오케스트레이션 스킬 + 세션 훅을 Claude Code
 | `memory_sync.py` | `~/.namu`의 선택적 git 자동 동기화(record 직후 auto push, 세션 시작 시 auto pull). `namu_sync_setup`으로 명시 활성화해야 동작. `.gitattributes` union 라인은 `config.BOWLS`에서 파생된다 |
 | `task_resolve.py` | stdlib-only 활성 task 탐색(`log.md` 타임스탬프 기준 단일 출처). statusLine과 `session_context.py`가 공용으로 import |
 | `record_input.py` | `namu_record`의 입력 정규화·검증과 도구 설명문 생성(`tool_description()`) |
-| `session_context.py` | 세션 브리핑 마크다운 빌더(쪽지 + 열린 작업 + 최근 교훈). SessionStart/PreInvocation 훅이 재사용 |
+| `session_context.py` | 세션 브리핑 마크다운 빌더. 훅은 짧은 판(`build_brief_markdown` — 쪽지 + 이어받을 작업)과 압축 뒤 판(`build_compact_markdown`)을 쓰고, 긴 판(`build_context_markdown`)은 기존 시험이 지킨다 |
 | `hooks/session_recall.py` | Claude Code SessionStart 훅 — 세션 브리핑 주입. Grok도 이 훅을 돌리지만 표준출력을 모델에 넣지 않아 브리핑이 뜨지 않는다 |
 | `hooks/closing_guard.py` | Stop 훅 — "마무리해"인데 이번 세션에 `[다음]` 줄이 없으면 한 번 막는다(namu-62) |
 | `hooks/prompt_reminder.py` | UserPromptSubmit 훅 — `상시` 태그가 붙은 개인 사실을 매 입력에 재주입 |

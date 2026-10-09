@@ -121,7 +121,7 @@ def main() -> None:
 
         import config as cfg
         import memory_sync
-        from session_context import build_context_markdown
+        from session_context import build_brief_markdown
 
         # 활성화(marker)돼 있으면 다른 PC에서 쌓인 교훈을 먼저 당겨온다 — pull로
         # yaml이 갱신되면 아래 _ensure_db의 cache_is_stale 판정이 db를 재생성한다.
@@ -130,7 +130,7 @@ def main() -> None:
         _ensure_db(cfg)
 
         with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-            md = build_context_markdown(conn, cfg.NAMU_MACHINE, project_dir)
+            md = build_brief_markdown(conn, cfg.NAMU_MACHINE, project_dir)
 
         if md:
             # 표지를 **찍기 전에** 남긴다. 예전에는 찍은 뒤에 남겼는데, 남기다 실패하면

@@ -5,7 +5,9 @@
 # ///
 """SessionStart 훅 — 세션 컨텍스트(작업 상태 + 교훈) 자동 주입.
 
-세션 시작 시 실행돼 build_context_markdown() 결과를 Claude Code 컨텍스트에 주입한다.
+세션을 켤 때는 build_brief_markdown()(줄인 브리핑), 대화를 압축한 직후에는
+build_compact_markdown()(맨 위 작업의 `다음:` 블록만)을 Claude Code 컨텍스트에 주입한다.
+전체 브리핑은 `/namu`로 본다.
 어떤 에러가 나도 exit 0 (훅이 세션 시작을 막으면 안 됨).
 """
 import json
@@ -17,21 +19,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def _project_dir_from_stdin() -> str:
-    """SessionStart 훅 stdin JSON에서 현재 프로젝트 경로(cwd)를 얻는다.
+def _read_stdin() -> dict:
+    """SessionStart 훅 stdin JSON을 읽는다. 비었거나 깨졌으면 빈 dict.
 
     Claude Code 훅 input JSON은 공통 필드로 session_id/transcript_path/cwd/
     hook_event_name을 담아 보낸다(SessionStart는 추가로 source도 포함).
     tasks는 프로젝트 로컬 저장소라, 브리핑도 statusLine과 동일하게 "지금 이
-    프로젝트"의 tasks/를 봐야 한다(namu-26 이원화 통일).
-    stdin이 비었거나 JSON 파싱 실패, cwd 필드 부재 시 os.getcwd()로 폴백한다.
+    프로젝트"의 tasks/를 봐야 한다(namu-26 이원화 통일) — cwd가 없으면
+    os.getcwd()로 폴백한다(main 참고).
     """
     try:
         raw = sys.stdin.read()
-        data = json.loads(raw) if raw.strip() else {}
+        return json.loads(raw) if raw.strip() else {}
     except Exception:
-        data = {}
-    return data.get("cwd") or os.getcwd()
+        return {}
 
 
 def _ensure_db(cfg) -> None:
@@ -53,11 +54,21 @@ def main() -> None:
         # 무음 삼켜짐(#16 statusLine, session_inject.py와 동일 패턴)
         sys.stdout.reconfigure(encoding="utf-8")
 
-        project_dir = _project_dir_from_stdin()
+        data = _read_stdin()
+        project_dir = data.get("cwd") or os.getcwd()
 
         import config as cfg
         import memory_sync
-        from session_context import build_context_markdown
+        from session_context import build_brief_markdown, build_compact_markdown
+
+        # 압축 직후에도 SessionStart가 다시 불린다(source="compact"). 한 세션에서 수십 번
+        # 일어나므로 받아오기·색인 맞추기 없이 이어받을 `다음:` 블록만 낸다(2026-10-09).
+        if data.get("source") == "compact":
+            md = build_compact_markdown(project_dir)
+            if md is None:
+                sys.exit(0)
+            _emit(md)
+            return
 
         # 활성화(marker)돼 있으면 다른 PC에서 쌓인 교훈을 먼저 당겨온다 — pull로
         # yaml이 갱신되면 아래 _ensure_db의 cache_is_stale 판정이 db를 재생성한다.
@@ -66,32 +77,35 @@ def main() -> None:
         _ensure_db(cfg)
 
         with sqlite3.connect(cfg.NAMU_DB_PATH) as conn:
-            md = build_context_markdown(conn, cfg.NAMU_MACHINE, project_dir)
+            md = build_brief_markdown(conn, cfg.NAMU_MACHINE, project_dir)
 
         if md is None:
             sys.exit(0)
-
-        # 같은 브리핑을 두 통로로 내보낸다(namu-64 결함B, 사용자 결정 2026-07-31).
-        #   additionalContext → AI 컨텍스트에만 들어간다(화면에 안 뜬다)
-        #   systemMessage     → 사용자 터미널에 표시된다
-        # 예전에는 additionalContext 하나뿐이라, "사람이 읽기 좋게" 다듬은 브리핑을
-        # 정작 사람이 한 번도 보지 못했다(사용자 지적: "브리핑 내역이 안떴어").
-        # AI가 매 세션 옮겨 적는 규약으로 때우지 않은 이유는 그게 지켜진다는 보장이
-        # 없기 때문이다 — 훅이 직접 내보내면 AI의 협조와 무관하게 항상 뜬다.
-        print(
-            json.dumps(
-                {
-                    "systemMessage": md,
-                    "hookSpecificOutput": {
-                        "hookEventName": "SessionStart",
-                        "additionalContext": md,
-                    },
-                },
-                ensure_ascii=False,
-            )
-        )
+        _emit(md)
     except Exception:
         sys.exit(0)
+
+
+def _emit(md: str) -> None:
+    # 같은 브리핑을 두 통로로 내보낸다(namu-64 결함B, 사용자 결정 2026-07-31).
+    #   additionalContext → AI 컨텍스트에만 들어간다(화면에 안 뜬다)
+    #   systemMessage     → 사용자 터미널에 표시된다
+    # 예전에는 additionalContext 하나뿐이라, "사람이 읽기 좋게" 다듬은 브리핑을
+    # 정작 사람이 한 번도 보지 못했다(사용자 지적: "브리핑 내역이 안떴어").
+    # AI가 매 세션 옮겨 적는 규약으로 때우지 않은 이유는 그게 지켜진다는 보장이
+    # 없기 때문이다 — 훅이 직접 내보내면 AI의 협조와 무관하게 항상 뜬다.
+    print(
+        json.dumps(
+            {
+                "systemMessage": md,
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": md,
+                },
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":

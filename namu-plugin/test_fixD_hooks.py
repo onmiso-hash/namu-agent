@@ -180,7 +180,7 @@ def _session_inject(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "config", 가짜_cfg)
     monkeypatch.setitem(sys.modules, "memory_sync", types.SimpleNamespace(sync_pull=lambda: None))
     monkeypatch.setitem(sys.modules, "session_context", types.SimpleNamespace(
-        build_context_markdown=lambda conn, machine, project_dir: "🌳 브리핑"))
+        build_brief_markdown=lambda conn, machine, project_dir: "🌳 브리핑"))
     monkeypatch.setattr(mod.tempfile, "gettempdir", lambda: str(tmp_path))
     return mod
 

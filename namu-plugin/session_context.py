@@ -312,7 +312,9 @@ def _build_other_room_lines(other_rows: list[dict[str, str | None]]) -> list[str
 
 
 def _build_this_room_lines(
-    open_tasks: list[Path], pins: dict[str, dict[str, str]] | None = None
+    open_tasks: list[Path],
+    pins: dict[str, dict[str, str]] | None = None,
+    rest_next: bool = True,
 ) -> tuple[list[str], int]:
     """"이 방" 열린 task 목록 줄들 + "다음" 기록이 없는 task 개수 반환.
 
@@ -331,6 +333,9 @@ def _build_this_room_lines(
     단계는 반드시 구역 제목(`### 📂 열린 task …`)보다 **한 단계 아래**(`####`)
     여야 한다 — 같은 `###`를 쓰면 크기·색이 구역 제목과 동일해져 ▸가 "이어갈
     작업"이 아니라 새 구역처럼 보인다(검수 지적, namu-64 재검토).
+
+    `rest_next=False`(짧은 브리핑)면 ▸ 아래 항목은 이름 줄만 싣는다 — 이어받는
+    지점은 맨 위 하나이고, 나머지의 `다음:`은 그 작업을 고를 때 검색으로 읽는다.
     """
     pins = pins or {}
     lines: list[str] = []
@@ -361,9 +366,11 @@ def _build_this_room_lines(
             )
             head = "📌" if pin else "▸"
             lines.append(f"\n#### {head} {title}\n{next_block}")
-        else:
+        elif rest_next:
             next_text = _one_line(note) if note else "(기록 없음)"
             lines.append(f"- {title}\n  - 다음: {next_text}")
+        else:
+            lines.append(f"- {title}")
     if len(open_tasks) > _OPEN_TASK_LINES:
         lines.append(f"- … ({len(open_tasks) - _OPEN_TASK_LINES}개 더)")
     return lines, missing_next
@@ -521,7 +528,7 @@ _WELCOME_MARKDOWN = (
 )
 
 
-def _build_memo_section() -> list[str]:
+def _build_memo_section(brief: bool = False) -> list[str]:
     """붙어 있는 스틱노트 섹션(namu-56). 한 장도 없으면 빈 목록(섹션 자체 없음).
 
     task/교훈보다 **앞에** 놓는다 — 메모는 사용자가 "이거 좀 갖고 있어"라고 맡긴
@@ -531,6 +538,9 @@ def _build_memo_section() -> list[str]:
     id는 앞부분만 보여준다(26자를 그대로 실으면 본문이 묻힌다). 자르는 길이는
     memo.short_ids가 목록을 보고 정한다 — 고정 8자로 자르면 같은 밀리초에 붙인
     메모끼리 앞자리가 겹쳐, 화면의 값을 복사해도 떼기가 거절되는 일이 생긴다.
+
+    짧은 브리핑(`brief=True`)은 요약과 id만 싣는다 — 붙인 시각·기기는 떼기 판단에
+    쓰이지 않고, id는 `namu_memo_remove`에 그대로 넣어야 하므로 남긴다.
     """
     import memo
 
@@ -547,36 +557,20 @@ def _build_memo_section() -> list[str]:
         # namu_recall에 그대로 남는다. 3층 이전 메모는 옛 text가 요약 자리를 대신하므로
         # 화면이 종전과 같다.
         summary, _reason, _body = memo.layers(m)
-        lines.append(f"- {summary}  ({stamp} {m.get('machine', '')} · id `{short_id}`)")
+        if brief:
+            lines.append(f"- {summary}  (id `{short_id}`)")
+        else:
+            lines.append(f"- {summary}  ({stamp} {m.get('machine', '')} · id `{short_id}`)")
     lines.append("※ 다 쓴 메모는 `namu_memo_remove`로 떼세요(떼면 파일에서 사라집니다).\n")
     return lines
 
 
-def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str | None:
-    """세션 컨텍스트 마크다운 조립.
+def _collect_warnings(project_dir: str | Path, machine: str, tasks_dir: Path) -> str | None:
+    """브리핑 맨 앞에 붙는 경고 덩어리(없으면 None). 긴 판과 짧은 판이 함께 쓴다.
 
-    project_dir(현재 프로젝트 폴더) 기준 개인 풀 tasks 루트(`cfg.tasks_dir_for`,
-    `~/.namu/tasks/<basename>/`, namu-34)에서 진행 중 task를 찾는다 — tasks는
-    저장 위치가 메모리(conn, cfg.NAMU_DATA_ROOT 기준)와 분리돼 있다.
-
-    진행 중 task도 교훈도 0건이면 완전한 침묵(None) 대신 짧은 환영 안내를 반환한다
-    (신규 설치 사용자가 무응답을 "설치 실패"로 오인하는 문제 방지, namu-25/26).
-
-    원격 저장소가 behind 상태면(fetch로 감지) 브리핑 맨 앞에 경고 섹션을 붙인다 —
-    사용자가 CC를 켜기 전 git pull을 잊으면 이 브리핑 자체가 낡은 상태로 만들어지는
-    문제(namu-27) 방지. 감지 불가/실패는 무음 스킵(check_git_behind가 보장).
-    tasks·개인전역지식이 실제로 놓이는 `~/.namu`(개인 풀, namu-34) 저장소도 같은
-    방식으로 behind 여부를 확인해 경고를 덧붙인다 — project_dir 저장소와 `~/.namu`는
-    별개 git 저장소라 하나만 pull해선 다른 쪽 낡은 상태를 못 잡기 때문이다.
-
-    프로젝트 키 충돌(다른 경로의 동명 프로젝트가 같은 machine에서 같은 키를 쓰는
-    경우, namu-34 ②)과 구 위치(`project_dir/tasks/`) 잔존(namu-34 ⑤)도 여기서
-    감지해 경고 1줄씩 붙인다 — 둘 다 감지·보고 전용이며 자동 조치는 하지 않는다.
+    각 경고가 왜 있는지는 `build_context_markdown` 설명에 적었다.
     """
-    import db
     import config as cfg
-
-    tasks_dir = cfg.tasks_dir_for(project_dir)
 
     warnings: list[str] = []
 
@@ -625,7 +619,131 @@ def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str |
             f"⚠ 구 위치 task 발견 — `~/.namu/tasks/{tasks_dir.name}/`로 이관 필요.\n"
         )
 
-    warning = "\n".join(warnings) if warnings else None
+    return "\n".join(warnings) if warnings else None
+
+
+# 짧은 브리핑과 압축 직후 브리핑(2026-10-09 사용자 결정). 긴 브리핑은 실측 3,184자였고
+# 그 세션에서 실제로 쓰인 것은 이어받을 작업의 `다음:` 한 줄이었다 — 최근 활동은 열린
+# 작업의 `다음:`과 겹치고, 관련 교훈은 사용자가 할 일을 말하기 전에 골라 빗나가기
+# 쉽고, 다른 방 목록은 그 방에 들어가야 의미가 있다. 그래서 세션 시작에는 이어받기와
+# 쪽지만 싣고, 나머지는 `/namu`(namu_recall)로 부를 때 본다.
+_FULL_BRIEFING_HINT = (
+    "※ 최근 활동·다른 방 목록·관련 교훈을 담은 전체 브리핑은 `/namu`로 봅니다."
+)
+
+_BRIEF_RESUME_NOTE = (
+    "사용자가 대상을 지목하지 않고 \"이어서 하자\"고만 하면 **되묻지 말고 맨 위 작업의 "
+    "`다음:`부터 착수하세요**. 다음엔 이것부터라고 정해 두면 `namu_task_pin`으로 "
+    "책갈피를 꽂습니다."
+)
+
+
+def _other_room_count_line(other_rows: list[dict[str, str | None]]) -> str | None:
+    """다른 방은 개수 한 줄만 — 목록은 그 방에 들어가거나 `/namu`로 볼 때 의미가 있다."""
+    if not other_rows:
+        return None
+    pinned = sum(1 for r in other_rows if r.get("pin_machine"))
+    pin_note = f"(책갈피 {pinned}개)" if pinned else ""
+    return f"다른 방에 열린 작업 {len(other_rows)}개{pin_note}"
+
+
+def build_brief_markdown(conn, machine: str, project_dir: str | Path) -> str | None:
+    """세션을 처음 열 때의 짧은 브리핑 — 경고·쪽지·이 방 작업(맨 위만 `다음:`)·다른 방 개수.
+
+    교훈과 최근 활동은 싣지 않는다(위 주석). 이 방에 열린 작업이 없으면 닫힌 작업의
+    이월 후보를 싣는다 — 그것도 이어받기라서다. 보일 것이 하나도 없고 교훈도 0건이면
+    신규 설치로 보고 환영 안내를 낸다(긴 판과 같은 이유, namu-25/26).
+    """
+    import db
+    import config as cfg
+
+    tasks_dir = cfg.tasks_dir_for(project_dir)
+    warning = _collect_warnings(project_dir, machine, tasks_dir)
+
+    parts: list[str] = ["## 🌳 NAMU — 이어받기\n"]
+    memo_section = _build_memo_section(brief=True)
+    parts.extend(memo_section)
+
+    open_tasks = find_open_tasks(tasks_dir)
+    other_rows = [r for r in open_tasks_briefing() if r["project"] != tasks_dir.name]
+    other_line = _other_room_count_line(other_rows)
+
+    if open_tasks:
+        pins = pins_by_slug(tasks_dir)
+        room_lines, missing_next = _build_this_room_lines(open_tasks, pins, rest_next=False)
+        parts.append(f"### 📂 이 방 열린 작업 {len(open_tasks)}개")
+        parts.extend(room_lines)
+        parts.append("")
+        parts.append(_BRIEF_RESUME_NOTE)
+        parts.append(_RESUME_READ_FIRST_NOTE)
+        if missing_next:
+            parts.append(f"⚠ \"다음\" 기록이 없는 작업 {missing_next}개")
+    else:
+        closed_task = _find_latest_closed_task(tasks_dir)
+        carryover = _extract_carryover(closed_task / "log.md") if closed_task else None
+        if carryover:
+            parts.append(f"### ⏭ 다음 작업 후보 (마감 task 이월: {closed_task.name})")
+            parts.append(f"- {carryover}")
+        elif not memo_section and not other_line and not db.recall(conn, limit=1):
+            return (warning + "\n" if warning else "") + _WELCOME_MARKDOWN
+        else:
+            parts.append(f"이 방({tasks_dir.name})에는 열린 작업이 없습니다.")
+
+    if other_line:
+        parts.append("")
+        parts.append(other_line)
+    parts.append(f"\n---\n{_FULL_BRIEFING_HINT}")
+    result = "\n".join(parts)
+    if warning:
+        result = warning + "\n" + result
+    return result
+
+
+def build_compact_markdown(project_dir: str | Path) -> str | None:
+    """대화를 압축한 직후의 한 덩어리 — 이어받을 작업의 `다음:` 블록만.
+
+    압축 요약에 대화 흐름이 이미 담기므로 쪽지·경고·다른 방은 다시 싣지 않는다(쪽지와
+    경고는 세션을 열 때 한 번 보였다). 이 방에 열린 작업이 없으면 낼 것이 없어 None.
+    git을 묻거나 색인을 다시 만들지 않는다 — 압축은 한 세션에서 수십 번 일어난다.
+    """
+    import config as cfg
+
+    tasks_dir = cfg.tasks_dir_for(project_dir)
+    open_tasks = find_open_tasks(tasks_dir)
+    if not open_tasks:
+        return None
+    room_lines, _ = _build_this_room_lines(open_tasks[:1], pins_by_slug(tasks_dir))
+    return "\n".join(
+        ["## 🌳 NAMU — 압축 뒤 이어받기", *room_lines, "", _FULL_BRIEFING_HINT]
+    )
+
+
+def build_context_markdown(conn, machine: str, project_dir: str | Path) -> str | None:
+    """세션 컨텍스트 마크다운 조립.
+
+    project_dir(현재 프로젝트 폴더) 기준 개인 풀 tasks 루트(`cfg.tasks_dir_for`,
+    `~/.namu/tasks/<basename>/`, namu-34)에서 진행 중 task를 찾는다 — tasks는
+    저장 위치가 메모리(conn, cfg.NAMU_DATA_ROOT 기준)와 분리돼 있다.
+
+    진행 중 task도 교훈도 0건이면 완전한 침묵(None) 대신 짧은 환영 안내를 반환한다
+    (신규 설치 사용자가 무응답을 "설치 실패"로 오인하는 문제 방지, namu-25/26).
+
+    원격 저장소가 behind 상태면(fetch로 감지) 브리핑 맨 앞에 경고 섹션을 붙인다 —
+    사용자가 CC를 켜기 전 git pull을 잊으면 이 브리핑 자체가 낡은 상태로 만들어지는
+    문제(namu-27) 방지. 감지 불가/실패는 무음 스킵(check_git_behind가 보장).
+    tasks·개인전역지식이 실제로 놓이는 `~/.namu`(개인 풀, namu-34) 저장소도 같은
+    방식으로 behind 여부를 확인해 경고를 덧붙인다 — project_dir 저장소와 `~/.namu`는
+    별개 git 저장소라 하나만 pull해선 다른 쪽 낡은 상태를 못 잡기 때문이다.
+
+    프로젝트 키 충돌(다른 경로의 동명 프로젝트가 같은 machine에서 같은 키를 쓰는
+    경우, namu-34 ②)과 구 위치(`project_dir/tasks/`) 잔존(namu-34 ⑤)도 여기서
+    감지해 경고 1줄씩 붙인다 — 둘 다 감지·보고 전용이며 자동 조치는 하지 않는다.
+    """
+    import db
+    import config as cfg
+
+    tasks_dir = cfg.tasks_dir_for(project_dir)
+    warning = _collect_warnings(project_dir, machine, tasks_dir)
 
     task_section, top_title = _build_task_section(project_dir, tasks_dir)
     parts: list[str] = ["## 🌳 NAMU — 세션 컨텍스트 자동 로딩\n"]
