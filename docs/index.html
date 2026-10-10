@@ -310,14 +310,21 @@
   </div>
 </div>
 
-<p>AI는 이 그릇들을 다루는 도구 열다섯 개를 갖습니다. 기억 쪽 여덟 개는 꺼내기·찾기·남기기,
-쪽지 떼기, 책갈피 꽂기·빼기, 다른 PC와 맞추기, 작업 옮기기이고, 파일 쪽 일곱 개는
-올리기·목록·받기·지우기와 주고받는 링크 세 가지입니다. 여러분이 도구 이름을 외울
+<p class="muted">나무 캐릭터의 기록(캐릭터 카드·일기·핵심 기억)은 이 다섯 그릇과 <strong>따로</strong>
+둡니다. 같은 저장소의 <code>memory/character/</code> 아래에 쌓이지만, 기억을 찾거나 꺼낼 때는
+나오지 않습니다 — 업무 기억과 캐릭터와의 대화를 섞지 않기 위해서입니다.</p>
+
+<p>AI는 도구 스물세 개를 갖습니다. 기억 쪽 아홉 개는 꺼내기·찾기·남기기,
+쪽지 떼기, 책갈피 꽂기·빼기, 다른 PC와 맞추기, 작업 옮기기, 대화 재기이고, 파일 쪽 일곱 개는
+올리기·목록·받기·지우기와 주고받는 링크 세 가지입니다. 나머지 일곱 개는 캐릭터를 만들고
+불러오고 일기를 남기는 캐릭터 도구입니다. 여러분이 도구 이름을 외울
 필요는 없습니다. "지난번에 정한 거 뭐였지?"라고 물으면 AI가 알아서 꺼냅니다.</p>
 
-<p class="muted">열다섯 개가 다 켜지는 것은 플러그인을 설치했을 때입니다. 주소만 붙여 쓰면
-열한 개가 켜집니다 — 기억 쪽에서 쪽지 떼기·책갈피 두 개·PC 맞추기만 빠지고,
-작업 옮기기와 파일 쪽 일곱 개는 그대로 옵니다. 자세한 것은 <a href="#붙이는법">7장</a>에 있습니다.</p>
+<p class="muted">스물세 개가 다 켜지는 것은 플러그인을 설치했을 때입니다. 나무 클라우드 주소를 붙이면
+열여덟 개가 켜집니다 — 기억 쪽에서 쪽지 떼기·책갈피 두 개·PC 맞추기·대화 재기가 빠지고,
+작업 옮기기와 파일 쪽 일곱 개, 캐릭터 쪽 일곱 개는 그대로 옵니다. 직접 띄운 서버의 주소는
+대화 재기까지 열아홉 개입니다. 캐릭터는 플러그인에서도 쓸 수 있지만 기록이 그 PC에만 쌓이므로,
+웹 대화창과 같은 캐릭터를 쓰려면 나무 클라우드 주소를 씁니다. 자세한 것은 <a href="#붙이는법">7장</a>에 있습니다.</p>
 
 <h3>기억이 오가는 순서</h3>
 
@@ -644,13 +651,14 @@
     <td>터미널 AI만<br><small class="muted">Claude Code · agy · Grok · OpenCode</small></td>
     <td><strong>아무 AI나</strong><br><small class="muted">웹 브라우저 AI, 터미널 AI 둘 다</small></td></tr>
 <tr><td><strong>① 기억 담고 꺼내기</strong><br><small class="muted">다섯 그릇 전부</small></td><td>됩니다</td><td>됩니다</td></tr>
-<tr><td>└ 기억 다루는 도구</td><td><strong>8가지</strong></td><td><strong>4가지</strong><br><small class="muted">꺼내기·찾기·남기기·작업 옮기기</small></td></tr>
+<tr><td>└ 기억 다루는 도구</td><td><strong>9가지</strong></td><td><strong>4가지</strong><br><small class="muted">꺼내기·찾기·남기기·작업 옮기기<br>직접 띄운 서버는 대화 재기까지 5가지</small></td></tr>
 <tr><td>└ 쪽지 떼기</td><td>됩니다</td><td class="no">안 됩니다</td></tr>
 <tr><td><strong>② 작업일지 쓰기</strong></td><td>됩니다</td><td>됩니다</td></tr>
 <tr><td>└ 책갈피 꽂기·빼기</td><td>됩니다</td><td class="no">안 됩니다</td></tr>
 <tr><td>└ 다른 방으로 옮기기</td><td>됩니다</td><td>됩니다</td></tr>
 <tr><td><strong>⑦ 파일 주고받기</strong></td><td>됩니다</td><td>됩니다</td></tr>
 <tr><td>└ 파일 다루는 도구</td><td><strong>7가지</strong></td><td><strong>7가지</strong><br><small class="muted">그대로 다 옵니다</small></td></tr>
+<tr><td><strong>캐릭터</strong><br><small class="muted">도구 7가지</small></td><td>됩니다<br><small class="muted">기록은 그 PC에만 쌓입니다</small></td><td>됩니다</td></tr>
 <tr><td><strong>③ 대화 열면 상황 정리해 보여주기</strong><br><small class="muted">브리핑</small></td><td>됩니다</td><td class="no">안 됩니다<br><small class="muted">"이어서 하자"고 말해야 꺼내 줍니다</small></td></tr>
 <tr><td><strong>④ 여러 단계 작업 몰아주기</strong></td><td>됩니다</td><td class="no">안 됩니다</td></tr>
 <tr><td><strong>⑤ 일꾼 AI 부르기</strong><br><small class="muted">일꾼 · 검수자</small></td><td>됩니다</td><td class="no">안 됩니다</td></tr>
@@ -699,7 +707,7 @@
 <tr>
   <td><strong>claude.ai</strong><br><small class="muted">웹 브라우저</small></td>
   <td>MCP 주소</td>
-  <td><strong>전부</strong><br><small class="muted">다섯 그릇 + 작업일지 + 파일</small></td>
+  <td><strong>전부</strong><br><small class="muted">다섯 그릇 + 작업일지 + 파일 + 캐릭터</small></td>
   <td class="no">아직</td>
   <td><span class="pill">지원</span></td>
 </tr>

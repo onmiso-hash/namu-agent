@@ -17,6 +17,7 @@ English: [README.md](README.md)
 | [📐 기억 설계도](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) | 기억이 어디에 어떤 모양으로 쌓이는지 |
 | [⚙️ 절차 설계도](https://onmiso-hash.github.io/namu-agent/docs/workflow_architecture.html) | 나머지 절반 — 일의 순서를 어떻게 잡고 어디서 멈춰 물어보는지 |
 | [📎 파일 주고받기](docs/attach_files.md) | 내 저장소에 파일을 올리고 받는 법, 절대 어기면 안 되는 격리 규칙 |
+| [🎭 나무 캐릭터](docs/character_design.md) | 성격과 기억을 가진 캐릭터 — 카드·일기·핵심 기억·잊기, 업무 기억과 떼어 둔 칸막이 |
 | [🔎 검색 통일](docs/search_index_unify.md) | 다섯 그릇이 어떻게 SQLite 색인 하나 뒤로 모였는지 |
 | [🖥️ OpenCode](docs/opencode_guide.md) | OpenCode에 붙이기 — 플러그인 설치·첫 작업·업데이트, 호스트 한계 |
 
@@ -36,16 +37,16 @@ flowchart LR
 
 ## 지원 현황 — 지금 어디서 쓸 수 있나
 
-NAMU는 두 부분이다 — **기억**(그릇 5개·작업일지·파일 첨부)과 **작업 절차**(세션 브리핑·`/namu-task`·워커·statusLine·실수 방지 훅).
+NAMU는 두 부분이다 — **기억**(그릇 5개·작업일지·파일 첨부, 그리고 따로 떼어 둔 캐릭터 기록)과 **작업 절차**(세션 브리핑·`/namu-task`·워커·statusLine·실수 방지 훅).
 기억은 MCP 주소만 받아 주면 어디든 붙고, 절차는 **그 호스트용 플러그인 봉투를 따로 만들어야** 붙는다.
 
 | AI | 붙이는 법 | 🧠 기억 | ⚙️ 작업 절차 | |
 |---|---|---|---|---|
-| **Claude Code** (터미널) | 플러그인 | 전부 (도구 14개) | 전부 | ✅ 지원 |
-| **agy** (터미널, Antigravity CLI) | 플러그인 | 전부 (도구 14개) | 거의 전부 — 실수 방지 훅 2개만 빠짐 | ✅ 지원 |
+| **Claude Code** (터미널) | 플러그인 | 전부 (도구 23개) | 전부 | ✅ 지원 |
+| **agy** (터미널, Antigravity CLI) | 플러그인 | 전부 (도구 23개) | 거의 전부 — 실수 방지 훅 2개만 빠짐 | ✅ 지원 |
 | **Grok** (터미널) | 플러그인 | 전부 (플러그인과 같은 기억 서버) | 거의 전부 — 세션 시작 글과 상시 재알림은 안 들어가고, 브리핑은 `/namu` | ✅ 지원 |
 | **OpenCode** (터미널) | 플러그인 (한 줄) | 전부 (플러그인과 같은 기억 서버) | 거의 전부 — 세션 측정과 상태줄의 5시간·7일 사용량만 빠짐 | ✅ 지원 |
-| **claude.ai** (웹) | MCP 주소 | 전부 (다섯 그릇 + 작업일지 + 파일 첨부, 도구 10개) | 아직 | ✅ 지원 |
+| **claude.ai** (웹) | MCP 주소 | 전부 (다섯 그릇 + 작업일지 + 파일 첨부 + 캐릭터, 도구 18개) | 아직 | ✅ 지원 |
 | ChatGPT · Gemini(웹) · Copilot · Cursor 등 | — | 아직 | 아직 | ⏳ 준비 안 됨 |
 
 - **"아직"은 그 AI가 못 한다는 뜻이 아니라, NAMU 쪽이 아직 그 자리를 잡지 않았다는 뜻이다.**
@@ -59,9 +60,10 @@ NAMU는 두 부분이다 — **기억**(그릇 5개·작업일지·파일 첨부
   그록 세션 파일에서 마지막 말을 읽는다. 세션 측정은 아직 클로드 대화 기록 형식만 읽는다.
 - **실수 방지 훅** = 마무리 시 `[다음]` 줄 누락 차단(Stop) + 상시 주의 재알림(UserPromptSubmit).
   agy에는 대응 이벤트가 없어 이 둘만 빠진다(namu-62). 세션 브리핑은 agy용 PreInvocation 훅이 따로 동봉돼 동작한다.
-- MCP 주소로 붙었을 때 노출되는 도구는 14개 중 10개다 — 기억 3종
-  (`namu_recall`/`namu_record`/`namu_search`)과 파일 첨부 7종.
-  쪽지 떼기·책갈피·동기화 설정은 플러그인 전용이며, 다섯 그릇과 작업일지 자체는 전부 읽고 쓸 수 있다.
+- 나무 클라우드 주소로 붙었을 때 노출되는 도구는 23개 중 18개다 — 기억 3종
+  (`namu_recall`/`namu_record`/`namu_search`)과 작업 옮기기(`namu_task_move`), 파일 첨부 7종, 캐릭터 7종.
+  쪽지 떼기·책갈피 2종·동기화 설정·세션 측정은 플러그인 전용이며, 다섯 그릇과 작업일지 자체는 전부 읽고 쓸 수 있다.
+  직접 운영하는 HTTP 서버는 여기에 세션 측정(`namu_record_session`)을 더해 19개다.
 - Claude Code 행은 실측값(같은 폴더에서 플러그인 on/off 비교), agy 행은 플러그인 동봉 구성 기준이다.
 
 ## ⚡ 30초 시작
@@ -93,7 +95,8 @@ NAMU의 차별점은 실행 엔진이 아니라 **메모리 레이어(MCP)**에 
 - **SQLite(FTS5) 검색 캐시 — 다섯 그릇 전부.** 교훈은 자기 표(`learnings` + `learnings_fts`)를 쓰고, 나머지 넷은 같은 모양의 표(`bowl_<이름>` + `bowl_<이름>_fts`, trigram)를 하나씩 갖는다. gitignore 대상이고 원본에서 언제든 다시 만들어진다. "낡았나" 판정은 그릇마다 **원본 파일의 크기·수정시각을 모은 서명 하나**로 하므로 바뀐 그릇만 다시 만든다(세션 시작·서버 부팅·pull 직후). 검색어는 **낱말별 AND**이며, 세 글자 미만 낱말이 섞이면 색인을 건너뛰고 LIKE로 전수 조회한다(trigram은 두 글자를 원리상 못 찾는다).
 - **작업 상태 2파일** — `task.md`(불변 목적) / `log.md`(append-only 원본, 권위 있는 기록). "다음 할 일"은 마지막 `[다음]` 줄로 남기고, 작업을 닫는 말은 `[완료]`·`[중단]` 둘뿐이다. 작업일지 검색은 일지 줄과 함께 **각 작업의 설명서 한 장을 통째로 한 건**(`tag`가 `설명서`)으로 돌려준다.
 - **파일 첨부** — 파일은 나무 서버가 아니라 **회원 본인의 동기화 저장소** `attach_file/`로 간다. 그 폴더는 각 PC에서 sparse-checkout으로 격리돼 몸통이 안 내려오고, 첨부 이력만 모든 기기에 남는다. 일회용 티켓 주소를 쓰면 파일 몸통이 AI의 출력을 아예 안 거친다. **파일 크기는 언제나 첨부 기록에서 읽지 저장소에 묻지 않는다** — 물으면 git이 빠진 몸통을 전부 내려받아 격리가 무너진다.
-- **MCP 도구 14종** — 기억: `namu_recall` · `namu_search` · `namu_record` · `namu_memo_remove` · `namu_task_pin` · `namu_task_unpin` · `namu_sync_setup` / 첨부: `namu_upload_file` · `namu_list_files` · `namu_download_file` · `namu_delete_file` · `namu_create_upload_ticket` · `namu_create_download_ticket` · `namu_check_ticket`. 웹(원격 MCP)에는 10종이 노출된다 — 플러그인 전용 4종(쪽지 떼기·책갈피 2종·동기화 설정)만 빠진다.
+- **나무 캐릭터** — 성격과 기억을 가진 캐릭터. 카드·일기·핵심 기억·원문은 다섯 그릇과 따로 `memory/character/<id>/` 아래에 항목 하나당 파일 하나로 쌓이고, `namu_record`·`namu_search`·`namu_recall`에는 나오지 않는다(칸막이). 플러그인에도 도구가 있지만 기록이 그 PC의 `~/.namu`에 쌓이므로, 웹 대화창과 같은 캐릭터를 쓰려면 나무 클라우드 주소를 쓴다. 상세는 [나무 캐릭터 설계서](docs/character_design.md).
+- **MCP 도구 23종** — 기억: `namu_recall` · `namu_search` · `namu_record` · `namu_memo_remove` · `namu_task_pin` · `namu_task_unpin` · `namu_task_move` · `namu_sync_setup` · `namu_record_session` / 첨부: `namu_upload_file` · `namu_list_files` · `namu_download_file` · `namu_delete_file` · `namu_create_upload_ticket` · `namu_create_download_ticket` · `namu_check_ticket` / 캐릭터: `namu_character_list` · `namu_character_schema` · `namu_character_save` · `namu_character_load` · `namu_character_diary` · `namu_character_core` · `namu_character_forget`. 나무 클라우드에는 18종이 노출된다 — 플러그인 전용 5종(쪽지 떼기·책갈피 2종·동기화 설정·세션 측정)만 빠진다. 직접 운영하는 HTTP 서버는 세션 측정을 더해 19종이다.
 - **워커 층** — `namu-coder`/`namu-reviewer` 서브에이전트가 각 엔진 네이티브 형식으로 이중 존재하되 시스템 프롬프트는 동일하다. 오케스트레이션은 `/namu-task` 스킬이 맡는다.
 - **세션 표면** — statusLine(하단 상시 한 줄) · `/namu`(직접 부르는 브리핑) · 세션 시작 자동 주입.
 

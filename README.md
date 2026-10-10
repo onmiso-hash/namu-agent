@@ -19,6 +19,7 @@ Just click — no code reading required. The guides are written in Korean.
 | [📐 Memory architecture](https://onmiso-hash.github.io/namu-agent/docs/memory_architecture.html) | Where memory lives and what shape it takes |
 | [⚙️ Workflow architecture](https://onmiso-hash.github.io/namu-agent/docs/workflow_architecture.html) | The other half — how work is ordered, and where it stops for you |
 | [📎 File attachments](docs/attach_files.md) | Uploading/downloading files to your own repo, and the isolation rule you must not break |
+| [🎭 NAMU characters](docs/character_design.md) | Characters with a personality and memory — cards, diaries, core memories, forgetting, kept apart from work memory |
 | [🔎 Unified search](docs/search_index_unify.md) | How all five bowls ended up behind one SQLite index |
 | [🖥️ OpenCode](docs/opencode_guide.md) | Attach it to OpenCode — plugin install, first task, update, and host limits |
 
@@ -45,18 +46,19 @@ flowchart LR
 
 ## Support status — where you can use NAMU today
 
-NAMU is two halves — **memory** (5 bowls + task journals + file attachments) and
+NAMU is two halves — **memory** (5 bowls + task journals + file attachments, plus character records
+kept apart from them) and
 **the working procedure** (session briefing, `/namu-task`, workers, statusLine,
 guard hooks). Memory attaches anywhere that accepts an MCP address; the
 procedure needs a **host-specific plugin envelope** built for it.
 
 | Client | How it attaches | 🧠 Memory | ⚙️ Working procedure | |
 |---|---|---|---|---|
-| **Claude Code** (terminal) | plugin | full (14 tools) | full | ✅ supported |
-| **agy** (terminal, Antigravity CLI) | plugin | full (14 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
+| **Claude Code** (terminal) | plugin | full (23 tools) | full | ✅ supported |
+| **agy** (terminal, Antigravity CLI) | plugin | full (23 tools) | nearly full — only the 2 guard hooks are missing | ✅ supported |
 | **Grok** (terminal) | plugin | full (same MCP server as the plugin) | nearly full — session-start text and standing reminders are not injected; call `/namu` | ✅ supported |
 | **OpenCode** (terminal) | plugin (one entry) | full (same memory server as the plugin) | nearly full — only session measurement and the 5h/7d usage in the status line are missing | ✅ supported |
-| **claude.ai** (web) | MCP address | full (5 bowls + journals + attachments, 10 tools) | not yet | ✅ supported |
+| **claude.ai** (web) | MCP address | full (5 bowls + journals + attachments + characters, 18 tools) | not yet | ✅ supported |
 | ChatGPT · Gemini (web) · Copilot · Cursor, etc. | — | not yet | not yet | ⏳ not wired up |
 
 - **"Not yet" does not mean the client can't do it — it means NAMU hasn't taken
@@ -74,10 +76,12 @@ procedure needs a **host-specific plugin envelope** built for it.
   re-injecting standing reminders (UserPromptSubmit). agy has no matching events,
   so only these two are missing (namu-62). Its session briefing ships separately
   as a PreInvocation hook and does work.
-- Over an MCP address 10 of the 14 tools are exposed: the three memory tools
-  (`namu_recall`/`namu_record`/`namu_search`) plus the seven attachment tools.
-  Removing sticky notes, bookmarks, and sync setup are plugin-only — but all
-  five bowls and the task journals are fully readable and writable.
+- Over the NAMU Cloud address 18 of the 23 tools are exposed: the three memory
+  tools (`namu_recall`/`namu_record`/`namu_search`), `namu_task_move`, the seven
+  attachment tools, and the seven character tools. Removing sticky notes, the two
+  bookmark tools, sync setup, and session measurement are plugin-only — but all
+  five bowls and the task journals are fully readable and writable. A self-hosted
+  HTTP server adds session measurement (`namu_record_session`) for 19.
 - The Claude Code row was measured directly (same folder, plugin on vs. off);
   the agy row reflects what the plugin ships.
 
@@ -142,14 +146,26 @@ that differs is the registration format each engine requires.
   through the AI's output at all. **File sizes are always read from the
   attachment log, never asked of the repository** — asking git makes it fetch
   every missing body and the isolation collapses.
-- **15 MCP tools** — memory: `namu_recall`, `namu_search`, `namu_record`,
+- **NAMU characters** — characters with a personality and memory. Cards,
+  diaries, core memories, and archived transcripts live apart from the five
+  bowls under `memory/character/<id>/`, one file per item, and never show up
+  in `namu_record`, `namu_search`, or `namu_recall`. The plugin has the tools
+  too, but its records stay in that PC's `~/.namu`; to use the same character
+  as a web chat, connect through the NAMU Cloud address. Details:
+  [character design](docs/character_design.md).
+- **23 MCP tools** — memory: `namu_recall`, `namu_search`, `namu_record`,
   `namu_memo_remove`, `namu_task_pin`, `namu_task_unpin`, `namu_task_move`,
-  `namu_sync_setup`;
+  `namu_sync_setup`, `namu_record_session`;
   attachments: `namu_upload_file`, `namu_list_files`, `namu_download_file`,
   `namu_delete_file`, `namu_create_upload_ticket`,
-  `namu_create_download_ticket`, `namu_check_ticket`. Remote MCP exposes 11 —
-  everything except the four plugin-only tools (`namu_memo_remove`,
-  `namu_task_pin`, `namu_task_unpin`, `namu_sync_setup`).
+  `namu_create_download_ticket`, `namu_check_ticket`;
+  characters: `namu_character_list`, `namu_character_schema`,
+  `namu_character_save`, `namu_character_load`, `namu_character_diary`,
+  `namu_character_core`, `namu_character_forget`. NAMU Cloud exposes 18 —
+  everything except the five plugin-only tools (`namu_memo_remove`,
+  `namu_task_pin`, `namu_task_unpin`, `namu_sync_setup`,
+  `namu_record_session`). A self-hosted HTTP server exposes 19 (it keeps
+  `namu_record_session`).
 - **Worker layer** — `namu-coder`/`namu-reviewer` subagents exist in each
   engine's native format with identical system prompts. The `/namu-task`
   skill orchestrates them.

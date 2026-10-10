@@ -8,7 +8,7 @@ OpenCode(터미널)에서도 NAMU 기억·작업 절차를 쓴다. Claude Code·
 
 ## 지원 범위
 
-- 기억: 전부. 로컬 stdio로 같은 기억 서버를 직접 띄우므로 도구 16개가
+- 기억: 전부. 로컬 stdio로 같은 기억 서버를 직접 띄우므로 도구 23개가
   그대로 노출된다.
 - 작업 절차: `/namu`(브리핑) · `/namu-task`(오케스트레이션) ·
   `/namu-update`(업데이트) · `namu-coder`/`namu-reviewer` 워커 ·
