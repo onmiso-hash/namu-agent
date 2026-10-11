@@ -25,7 +25,8 @@
      `{"type":"","command":..,"enabled":true}`
    - 기존 statusLine이 없으면 신규 설정.
    - 기존 statusLine이 NAMU 것(`namu_statusline.py` 포함)이면 자동 갱신(이미 동일하면
-     변경 없음으로 조용히 종료).
+     변경 없음으로 조용히 종료). 갱신은 줄 안의 "파이썬 + namu_statusline.py 경로"
+     부분만 바꾸고 그 앞뒤는 남긴다(`merge_command` 참고).
    - 기존 statusLine이 타 설정이면 기본 거부(exit≠0) — `--force`가 있어야 교체한다.
 5. 실제로 쓰기가 일어나는 경우에만, 쓰기 전 settings 파일을 타임스탬프 백업한다
    (해당 settings 파일 옆에 `<파일명>.bak.<timestamp>`로 생성).
@@ -250,6 +251,7 @@ def _grok_upsert_statusline(text: str, command: str, force: bool) -> tuple[str, 
             continue
         kept.append(line)
 
+    command = merge_command(existing_cmd, command)
     if existing_cmd == command:
         normalized = text if text.endswith("\n") else text + "\n"
         return normalized, "noop", existing_cmd
@@ -318,6 +320,30 @@ def build_command(install_path: str) -> Optional[str]:
     if os.name == "nt":
         return f"python -X utf8 {normalized}"
     return f"python3 {normalized}"
+
+
+# 기존 명령 줄에서 NAMU 상태줄을 부르는 부분 — 파이썬 실행 파일(있으면 `-X utf8`까지)과
+# namu_statusline.py 경로.
+_NAMU_PART_RE = re.compile(
+    r"(?:\S*python[\w.]*(?:\s+-X\s+utf8)?\s+)?\S*" + re.escape(STATUSLINE_MARKER)
+)
+
+
+def merge_command(old: Optional[str], new: str) -> str:
+    """기존 명령 줄에서 NAMU 부분만 새 명령으로 바꾸고 앞뒤는 그대로 둔다.
+
+    사용자가 상태줄 앞에 다른 프로그램을 끼워 둘 수 있다(예:
+    `usage-meter python3 .../namu_statusline.py` — 입력을 기록한 뒤 뒤에 적힌 명령에
+    넘긴다). 예전에는 줄을 통째로 새 명령으로 바꿔서 업데이트할 때마다 그 앞부분이
+    사라졌다(2026-10-11 실사고: 사용량 기록이 소리 없이 멈췄다). 기존 줄이 NAMU 것이
+    아니면(`--force` 교체) 새 명령을 그대로 쓴다.
+    """
+    if not old or STATUSLINE_MARKER not in old:
+        return new
+    match = _NAMU_PART_RE.search(old)
+    if match is None:
+        return new
+    return old[:match.start()] + new + old[match.end():]
 
 
 def load_settings(settings_path: Path) -> Optional[dict]:
@@ -407,6 +433,8 @@ def setup_one(host: Host, force: bool) -> HostResult:
             )
         # --force: 교체 진행 (아래 공통 경로)
 
+    old_command = existing.get("command") if isinstance(existing, dict) else None
+    command = merge_command(old_command, command)
     new_statusline = host.build_statusline(command)
 
     if isinstance(existing, dict) and existing == new_statusline:
@@ -415,8 +443,6 @@ def setup_one(host: Host, force: bool) -> HostResult:
             f"[{host.label}] [변경 없음] statusLine이 이미 최신 상태입니다: {command}",
             True,
         )
-
-    old_command = existing.get("command") if isinstance(existing, dict) else None
 
     backup_path = backup_settings(settings_path)
 

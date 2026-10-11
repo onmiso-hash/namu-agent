@@ -223,6 +223,64 @@ def test_updates_stale_namu_path_and_backs_up(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 3-1. 갱신할 때 NAMU 부분의 앞뒤는 남긴다
+#
+# 2026-10-11 실사고: 상태줄 앞에 끼워 둔 사용량 기록기(`usage-meter python3 ...`)가
+# 업데이트 때 줄째 바뀌어 사라졌고, 사용량 기록이 소리 없이 멈췄다.
+# ---------------------------------------------------------------------------
+
+def test_update_keeps_wrapper_around_namu_command(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    old_install = _make_install(tmp_path, "old_install")
+    new_install = _make_install(tmp_path, "new_install")
+    _write_installed_plugins(fake_home, _installed_plugins_json(new_install))
+
+    settings_path = _settings_path(fake_home)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    wrapper = "/home/u/.local/bin/usage-meter"
+    settings_path.write_text(json.dumps({"statusLine": {
+        "type": "command",
+        "command": f"{wrapper} {_expected_command(old_install)} --tail",
+        "padding": 0,
+    }}), encoding="utf-8")
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = f"{wrapper} {_expected_command(new_install)} --tail"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["statusLine"]["command"] == expected
+    assert f"이후: {expected}" in result.stdout
+
+    again = _run_cli(fake_home)        # 이미 맞으면 다시 쓰지 않는다
+    assert again.returncode == 0
+    assert "[변경 없음]" in again.stdout
+    assert len(list(settings_path.parent.glob("settings.json.bak.*"))) == 1
+
+
+def test_grok_update_keeps_wrapper_around_namu_command(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    old_install = _make_install(tmp_path, "grok_old")
+    new_install = _make_install(tmp_path, "grok_new")
+    _write_grok_registry(fake_home, new_install)
+    config = fake_home / ".grok" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[ui.status_line]\ntype = \"command\"\n"
+        f"command = \"meter {_expected_command(old_install)}\"\n",
+        encoding="utf-8",
+    )
+
+    result = _run_cli(fake_home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f'command = "meter {_expected_command(new_install)}"' in config.read_text(
+        encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # 4. 타 statusLine -> 기본 거부
 # ---------------------------------------------------------------------------
 
