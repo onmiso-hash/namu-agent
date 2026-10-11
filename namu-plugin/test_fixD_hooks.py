@@ -100,6 +100,7 @@ def test_판_어긋남_알림이_cp949_콘솔에서도_나온다(tmp_path):
     (home / ".cache").mkdir()
     (home / ".cache" / "claude-version-drift.json").write_text(json.dumps({
         "잰_때": time.time(), "기준": str(base),
+        "판": json.loads((Path(__file__).parent / "plugin.json").read_text(encoding="utf-8"))["version"],
         "줄": ["- **본체 사본**이 v0.1.1에 멈춰 있는데 본체 최신은 v0.1.2입니다 — 1판 뒤처졌습니다"],
     }, ensure_ascii=False), encoding="utf-8")
 
@@ -147,6 +148,80 @@ def test_다른_폴더에서_잰_캐시는_쓰지_않는다(tmp_path):
 
     캐시 = json.loads((home / ".cache" / "claude-version-drift.json").read_text(encoding="utf-8"))
     assert 캐시["기준"] == str(B)
+
+
+# ---------------------------------------------------------------------------
+# 2-1. 이 기계에 깔린 플러그인 판(2026-10-11 주간 점검 조치)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def 깔린_플러그인(tmp_path):
+    """v0.1.1·v0.1.2 태그가 있는 원격과, 훅을 품은 가짜 설치본을 만든다.
+
+    훅은 자기 파일 기준 ../plugin.json에서 깔린 판을 읽으므로 훅 파일을 복사해 둔다.
+    판을 바꾸려면 돌려준 함수에 판을 넘긴다.
+    """
+    원격 = tmp_path / "namu.git"
+    _git("init", "-q", "--bare", str(원격))
+    _git("clone", "-q", str(원격), str(tmp_path / "src"))
+    for 판 in ("v0.1.1", "v0.1.2"):
+        _git("commit", "-q", "--allow-empty", "-m", 판, cwd=tmp_path / "src")
+        _git("tag", 판, cwd=tmp_path / "src")
+    _git("push", "-q", "origin", "HEAD", "--tags", cwd=tmp_path / "src")
+
+    뿌리 = tmp_path / "cache" / "namu"
+    (뿌리 / "hooks").mkdir(parents=True)
+    (뿌리 / "hooks" / "version_drift_check.py").write_bytes(
+        (_HOOKS / "version_drift_check.py").read_bytes())
+
+    def 판_정하기(판):
+        (뿌리 / "plugin.json").write_text(json.dumps({"version": 판}), encoding="utf-8")
+
+    home = tmp_path / "home"
+    (home / ".namu" / "config").mkdir(parents=True)
+    (home / ".namu" / "config" / "version_targets.json").write_text(json.dumps(
+        {"깔린_플러그인": {"저장소_주소": str(원격), "이름": "이 기계의 나무 플러그인"}},
+        ensure_ascii=False), encoding="utf-8")
+    work = tmp_path / "work"
+    work.mkdir()
+
+    def 실행():
+        r = subprocess.run(
+            [sys.executable, str(뿌리 / "hooks" / "version_drift_check.py")],
+            capture_output=True, timeout=60,
+            env=_env(home, CLAUDE_PROJECT_DIR=str(work), PYTHONIOENCODING="utf-8"))
+        assert r.returncode == 0
+        return r.stdout.decode("utf-8")
+
+    return types.SimpleNamespace(판_정하기=판_정하기, 실행=실행, home=home)
+
+
+def test_깔린_플러그인이_뒤처지면_알린다(깔린_플러그인):
+    """2026-10-10: HP에 0.1.94가 깔려 있는데 기능은 0.1.98에 있어 한참 헤맨 사고."""
+    깔린_플러그인.판_정하기("0.1.1")
+    글 = 깔린_플러그인.실행()
+    assert "⚠ 배포된 판이 저장소 최신 판보다 뒤처져 있습니다" in 글
+    assert "**이 기계의 나무 플러그인**이 0.1.1로 깔려 있는데 저장소 최신은 v0.1.2입니다" in 글
+    assert "1판 뒤처졌습니다" in 글 and "/namu:update" in 글
+
+
+def test_깔린_플러그인이_최신이면_조용하다(깔린_플러그인):
+    깔린_플러그인.판_정하기("0.1.2")
+    assert 깔린_플러그인.실행().strip() == ""
+
+
+def test_깔린_플러그인_설정이_없으면_조용하다(깔린_플러그인):
+    깔린_플러그인.판_정하기("0.1.1")
+    (깔린_플러그인.home / ".namu" / "config" / "version_targets.json").write_text(
+        "{}", encoding="utf-8")
+    assert 깔린_플러그인.실행().strip() == ""
+
+
+def test_업데이트_직후에는_옛_경고_캐시를_쓰지_않는다(깔린_플러그인):
+    깔린_플러그인.판_정하기("0.1.1")
+    assert "1판 뒤처졌습니다" in 깔린_플러그인.실행()
+    깔린_플러그인.판_정하기("0.1.2")          # 30분이 안 지났어도 판이 바뀌었다
+    assert 깔린_플러그인.실행().strip() == ""
 
 
 # ---------------------------------------------------------------------------

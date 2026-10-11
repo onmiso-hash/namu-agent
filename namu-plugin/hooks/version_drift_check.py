@@ -27,6 +27,12 @@
   돌고 있는 판   미니PC의 컨테이너 이미지 꼬리표(docker ps에 그대로 찍힌다)
   저장소 판      그 서비스를 만드는 저장소의 원격 최신 태그
   빌린 본체 판   vendor/namu-agent가 붙들고 있는 태그 대 본체 원격 최신 태그
+  깔린 플러그인  이 기계에 설치된 이 플러그인의 판(plugin.json) 대 원격 최신 태그
+
+깔린 플러그인 판을 더한 까닭(2026-10-11 주간 점검): 2026-10-10에 HP에는 0.1.94가
+깔려 있는데 기능은 0.1.98에 들어가 있어 "고쳤는데 안 된다"를 한참 헤맸다. 컨테이너와
+빌린 본체만 보던 이 검사는 그것을 못 잡았다. 저장소 주소를 설정에 직접 적으므로
+어느 폴더에서 세션을 열든 검사한다.
 
 잣대는 반드시 원격 최신 태그다
 ------------------------------
@@ -47,6 +53,7 @@
 
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -57,6 +64,8 @@ SSH_TIMEOUT = 15            # 미니PC에 물어보는 데 기다릴 초
 CACHE_MAX_AGE = 1800        # 이 초보다 오래된 결과만 다시 잰다(30분)
 CACHE_PATH = os.path.expanduser("~/.cache/claude-version-drift.json")
 설정_경로 = os.path.expanduser("~/.namu/config/version_targets.json")
+# 이 훅이 든 플러그인의 뿌리. 설치본이면 플러그인 캐시 안의 그 판 폴더다.
+플러그인_뿌리 = Path(__file__).resolve().parent.parent
 
 TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
@@ -109,7 +118,30 @@ def 설정_읽기():
         "돌고_있는_판": 목록_읽기(데이터, "돌고_있는_판",
                                 ("컨테이너", "저장소", "이름")),
         "빌린_본체": 목록_읽기(데이터, "빌린_본체", ("사본", "저장소", "이름")),
+        "깔린_플러그인": 깔린_플러그인_설정(데이터.get("깔린_플러그인")),
     }
+
+
+def 깔린_플러그인_설정(항목):
+    """{"저장소_주소": ..., "이름": ...} 을 (주소, 이름) 으로. 없거나 모양이 다르면 None."""
+    if not isinstance(항목, dict):
+        return None
+    주소 = str(항목.get("저장소_주소") or "").strip()
+    이름 = str(항목.get("이름") or "").strip() or "이 기계의 나무 플러그인"
+    return (주소, 이름) if 주소 else None
+
+
+def 깔린_판():
+    """이 훅이 든 플러그인의 판. plugin.json이 없거나 읽을 수 없으면 None."""
+    for 경로 in (플러그인_뿌리 / "plugin.json",
+                 플러그인_뿌리 / ".claude-plugin" / "plugin.json"):
+        try:
+            판 = str(json.loads(경로.read_text(encoding="utf-8")).get("version") or "").strip()
+        except Exception:
+            continue
+        if 판_숫자(판):
+            return 판
+    return None
 
 
 def 판_숫자(tag):
@@ -137,9 +169,12 @@ def git(repo, *args, timeout=10):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def 원격_태그들(repo):
-    """원격이 갖고 있는 판 목록. 이것이 잣대다 — 로컬 태그는 믿지 않는다."""
-    out = git(repo, "ls-remote", "--tags", "origin", timeout=LS_REMOTE_TIMEOUT)
+def 원격_태그들(repo, 원격="origin"):
+    """원격이 갖고 있는 판 목록. 이것이 잣대다 — 로컬 태그는 믿지 않는다.
+
+    `원격`에 저장소 주소를 직접 주면 로컬 저장소 없이 묻는다(repo는 아무 폴더나 된다).
+    """
+    out = git(repo, "ls-remote", "--tags", 원격, timeout=LS_REMOTE_TIMEOUT)
     if out is None:
         return None
     태그 = set()
@@ -188,11 +223,16 @@ def 캐시_읽기(base):
     아래에서 찾기 때문이다. 캐시 파일은 기계에 하나뿐이라, 잰 폴더를 함께 적어 두고
     대조하지 않으면 다른 폴더에서 연 세션이 앞 폴더의 결과(경보든 침묵이든)를 30분
     동안 그대로 받는다. 폴더가 다르면 새로 잰다.
+
+    깔린 플러그인 판도 함께 대조한다 — 플러그인을 업데이트한 직후에 30분 동안
+    "뒤처졌다"는 옛 경고가 그대로 나오면 안 되기 때문이다. 판이 바뀌면 새로 잰다.
     """
     try:
         with open(CACHE_PATH, encoding="utf-8") as f:
             데이터 = json.load(f)
         if 데이터.get("기준") != os.path.abspath(base):
+            return None
+        if 데이터.get("판") != 깔린_판():
             return None
         if time.time() - 데이터.get("잰_때", 0) < CACHE_MAX_AGE:
             return 데이터.get("줄")
@@ -205,8 +245,8 @@ def 캐시_쓰기(base, 줄):
     try:
         os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
         with open(CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump({"잰_때": time.time(), "기준": os.path.abspath(base), "줄": 줄},
-                      f, ensure_ascii=False)
+            json.dump({"잰_때": time.time(), "기준": os.path.abspath(base),
+                       "판": 깔린_판(), "줄": 줄}, f, ensure_ascii=False)
     except Exception:
         pass
 
@@ -252,6 +292,19 @@ def 검사(base, 설정):
             어긋남.append(
                 "- **%s**%s %s에 멈춰 있는데 본체 최신은 %s입니다 — %d판 뒤처졌습니다"
                 % (이름, 조사(이름, "이", "가"), 핀, 목록[-1], n))
+
+    # 3. 이 기계에 깔린 플러그인 판 대 원격 최신 판
+    #    주소로 직접 물으므로 base 아래에 저장소가 없어도 된다
+    if 설정["깔린_플러그인"]:
+        주소, 이름 = 설정["깔린_플러그인"]
+        현재 = 깔린_판()
+        목록 = 원격_태그들(str(플러그인_뿌리), 주소) if 현재 else None
+        n = 뒤처진_판_수(현재, 목록) if 목록 else None
+        if n:
+            어긋남.append(
+                "- **%s**%s %s로 깔려 있는데 저장소 최신은 %s입니다 — %d판 뒤처졌습니다. "
+                "`/namu:update`로 올리십시오"
+                % (이름, 조사(이름, "이", "가"), 현재, 목록[-1], n))
     return 어긋남
 
 
