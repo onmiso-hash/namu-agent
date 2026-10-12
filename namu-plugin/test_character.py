@@ -239,7 +239,16 @@ def test_load_by_name_or_alias(paths, by):
     assert '사용자를 "허니"라고 부른다.' in out["persona"]
     assert "처음 만난 사이" in out["persona"]
     assert "자신이 AI라는 걸 숨기지 않는다." in out["persona"]
+    assert "대화 중 오래 가져갈 바람은 확인하고, 좋다고 하면 성격이나 규칙에 반영한다." in out["persona"]
     assert out["relationship"]["since_last_talk"] == "아직 대화한 적 없음"
+
+
+def test_persona_lists_every_fixed_promise(paths):
+    # 설정 글의 약속 줄은 PROMISES와 따로 적혀 있다 — 한쪽만 늘리면 여기서 걸린다.
+    character.save(_card(), paths=paths)
+    persona = character.load("하린", paths)["persona"]
+    block = persona.split("언제나 지키는 약속\n", 1)[1].split("\n\n", 1)[0]
+    assert len(block.splitlines()) == len(character.PROMISES)
 
 
 def test_load_by_id(paths):
@@ -295,7 +304,7 @@ def test_custom_rules_follow_the_fixed_promises_in_persona(paths):
     r = character.save(_card(custom_rules=_RULES), paths=paths)
     persona = character.load(r["id"], paths)["persona"].splitlines()
     head = "이 캐릭터가 따로 지키는 규칙 (위 약속과 어긋나면 위 약속을 따른다)"
-    last_promise = persona.index("- 확실하지 않은 기억은 지어내지 않고, 기억이 안 나면 솔직히 묻는다.")
+    last_promise = persona.index("- 대화 중 오래 가져갈 바람은 확인하고, 좋다고 하면 성격이나 규칙에 반영한다.")
     assert persona[last_promise + 1:last_promise + 5] == ["", head] + [f"- {x}" for x in _RULES]
     assert persona[last_promise + 5] == ""
 
