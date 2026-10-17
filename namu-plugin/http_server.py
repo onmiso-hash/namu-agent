@@ -89,6 +89,14 @@ HTTP_EXPOSED_TOOLS = frozenset({
 # threading.Lock으로 보호: uvicorn 워커 스레드/anyio 스레드 풀에서 동시에 갱신될 수 있음.
 _last_pull_lock = threading.Lock()
 _last_pull = 0.0  # time.monotonic() 기준. 0.0은 "아직 한 번도 안 당김"을 뜻하는 초기값.
+# 마지막 pull이 받아 왔는지(True/False). None은 아직 결과가 없음. 캐릭터 도구가 읽기 전에
+# 받아 오기를 다시 하지 않고 이 값을 빌려 상태를 밝힌다(mcp_server.set_read_pull).
+_last_pull_ok: "bool | None" = None
+
+
+def last_pull_ok() -> "bool | None":
+    """디바운스 미들웨어의 마지막 받아 오기 결과 — mcp_server의 읽기 전 받아 오기 자리에 끼운다."""
+    return _last_pull_ok
 
 
 def validate_settings(s: dict) -> None:
@@ -173,7 +181,7 @@ async def _maybe_pull(pull_interval: float) -> None:
     """마지막 pull에서 pull_interval초가 지났으면 sync_pull()을 스레드에서 실행한다.
     갱신은 성공/실패 무관 — sync 비활성 환경(sync_enabled False)에서 sync_pull이 즉시
     False를 반환해도 매 요청 재시도하지 않게 하기 위함(v4 §6)."""
-    global _last_pull
+    global _last_pull, _last_pull_ok
 
     now = time.monotonic()
     with _last_pull_lock:
@@ -186,8 +194,9 @@ async def _maybe_pull(pull_interval: float) -> None:
     try:
         # sync_pull 내부에서 sync_enabled 게이트·실패 로그(sync.log)를 이미 처리한다.
         # 여기서는 그 호출 자체가 http 요청 흐름을 절대 막지 않게만 감싼다.
-        await anyio.to_thread.run_sync(memory_sync.sync_pull)
+        _last_pull_ok = bool(await anyio.to_thread.run_sync(memory_sync.sync_pull))
     except Exception as exc:  # pragma: no cover - sync_pull 자체가 무예외 설계라 방어선일 뿐
+        _last_pull_ok = False
         logging.debug("디바운스 pull 중 예외(무해 처리): %s", exc)
 
 
@@ -345,6 +354,8 @@ def build_app(settings: dict):
 
     restrict_tools(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 설계 §8: sync_setup 등 원격 미노출
     set_instructions(mcp_server.mcp, HTTP_EXPOSED_TOOLS)  # 거른 목록 그대로 소개문에
+    # 미들웨어가 도구 호출 전에 이미 받아 오므로, 캐릭터 도구는 다시 받지 않고 그 결과를 빌린다.
+    mcp_server.set_read_pull(last_pull_ok)
 
     app = mcp_server.mcp.streamable_http_app(**http_app_options(settings))
     app = PullDebounceMiddleware(app, settings["pull_interval"])

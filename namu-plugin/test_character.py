@@ -861,3 +861,135 @@ def test_forget_whole_character(paths):
     assert [c["name"] for c in character.list_all(paths)] == ["다른 아이"]
     # 이름과 별명이 다시 비어 새 캐릭터가 쓸 수 있다.
     character.save(_card(), paths=paths)
+
+
+# ── 읽기 전 받아 오기(원격 pull) ─────────────────────────────────────────────
+# 세션을 연 뒤 다른 기기에서 쓴 일기가 원격에만 있을 때, 플러그인(stdio)이 그 사실을 모른 채
+# 낡은 사본을 "다 불러온" 모양으로 내던 일(2026-10-17)을 막는다.
+@pytest.fixture
+def tools(paths, monkeypatch):
+    import mcp_server
+
+    real = cfg.data_paths_for
+    # 도구는 paths 없이 부른다 — 기본 경로를 임시 폴더로 돌린다(실제 ~/.namu를 건드리지 않게).
+    monkeypatch.setattr(cfg, "data_paths_for", lambda root=None: paths if root is None else real(root))
+    monkeypatch.setattr(mcp_server, "_read_pull", None)
+    character.save(_card(), paths=paths)
+    return mcp_server
+
+
+def _sync(monkeypatch, enabled, pulled, calls):
+    monkeypatch.setattr(memory_sync, "sync_enabled", lambda: enabled)
+    monkeypatch.setattr(memory_sync, "sync_pull", lambda: calls.append(1) or pulled)
+
+
+def test_load_pulls_first_and_says_so(tools, paths, monkeypatch):
+    calls = []
+    _sync(monkeypatch, True, True, calls)
+    out = tools.namu_character_load("하린")
+    assert calls == [1]
+    assert out["sync"] == character.SYNC_PULLED == "최신으로 받아 옴"
+    # 성공일 때 display는 character.load가 만든 그대로다.
+    assert out["display"] == character.load("하린", paths)["display"]
+    assert "⚠️" not in out["display"]
+
+
+def test_load_warns_in_display_when_pull_failed(tools, paths, monkeypatch):
+    calls = []
+    _sync(monkeypatch, True, False, calls)
+    out = tools.namu_character_load("하린")
+    assert calls == [1]
+    assert out["sync"] == character.SYNC_FAILED
+    assert "이 PC에 있는 기록만" in out["sync"]
+    plain = character.load("하린", paths)["display"]
+    # 원래 상자는 그대로 두고 끝에 경고 한 줄만 붙는다(상자 모양 유지).
+    assert out["display"] == plain + "\n>\n" + character.SYNC_WARNING_LINE
+    assert out["display"].splitlines()[-1].startswith("> ⚠️")
+    assert all(line.startswith(">") for line in out["display"].splitlines())
+
+
+def test_load_pull_exception_counts_as_failure(tools, monkeypatch):
+    monkeypatch.setattr(memory_sync, "sync_enabled", lambda: True)
+
+    def boom():
+        raise RuntimeError("git 없음")
+
+    monkeypatch.setattr(memory_sync, "sync_pull", boom)
+    assert tools.namu_character_load("하린")["sync"] == character.SYNC_FAILED
+
+
+def test_load_with_sync_off_does_not_pull_or_warn(tools, paths, monkeypatch):
+    calls = []
+    _sync(monkeypatch, False, False, calls)
+    out = tools.namu_character_load("하린")
+    assert calls == []
+    assert out["sync"] == character.SYNC_OFF == "동기화 꺼짐"
+    assert out["display"] == character.load("하린", paths)["display"]
+
+
+def test_list_and_core_list_pull_first(tools, monkeypatch):
+    calls = []
+    _sync(monkeypatch, True, False, calls)
+    out = tools.namu_character_list()
+    assert out["sync"] == character.SYNC_FAILED and out["characters"][0]["name"] == "하린"
+    assert "display" not in out
+    assert calls == [1]
+    core = tools.namu_character_core("하린")
+    assert core["sync"] == character.SYNC_FAILED and calls == [1, 1]
+    # 확정·거절(쓰기)은 받아 오지 않는다 — 바로 앞의 목록 보기가 이미 받아 왔다.
+    with pytest.raises(ValueError):
+        tools.namu_character_core("하린", "confirm", ["없는 id"])
+    assert calls == [1, 1]
+
+
+def test_http_path_borrows_the_middleware_pull(tools, paths, monkeypatch):
+    """http 서버는 미들웨어가 도구 호출 전에 이미 받아 온다 — 도구가 또 받지 않는다."""
+    import http_server
+
+    calls = []
+    _sync(monkeypatch, True, True, calls)
+    monkeypatch.setattr(http_server, "_last_pull", 0.0)
+    monkeypatch.setattr(http_server, "_last_pull_ok", None)
+    tools.set_read_pull(http_server.last_pull_ok)
+
+    async def call_tool(scope, receive, send):
+        call_tool.out = tools.namu_character_load("하린")
+
+    app = http_server.PullDebounceMiddleware(call_tool, pull_interval=60.0)
+    anyio = pytest.importorskip("anyio")
+    anyio.run(app, {"type": "http"}, None, None)
+    assert calls == [1]  # 미들웨어 한 번뿐
+    assert call_tool.out["sync"] == character.SYNC_PULLED
+
+    # 디바운스 안의 다음 요청 — 아무도 다시 받지 않고, 직전 결과를 그대로 밝힌다.
+    anyio.run(app, {"type": "http"}, None, None)
+    assert calls == [1]
+    assert call_tool.out["sync"] == character.SYNC_PULLED
+
+    # 미들웨어의 받아 오기가 실패했으면 도구도 실패로 밝힌다.
+    monkeypatch.setattr(memory_sync, "sync_pull", lambda: calls.append(1) or False)
+    monkeypatch.setattr(http_server, "_last_pull", 0.0)
+    anyio.run(app, {"type": "http"}, None, None)
+    assert calls == [1, 1]
+    assert call_tool.out["sync"] == character.SYNC_FAILED
+    assert call_tool.out["display"].endswith(character.SYNC_WARNING_LINE)
+
+
+def test_build_app_plugs_in_the_middleware_result(monkeypatch):
+    import http_server
+    import mcp_server
+
+    monkeypatch.setattr(mcp_server, "_read_pull", None)
+    # 공용 mcp 인스턴스의 도구 목록·소개문을 다른 시험을 위해 건드리지 않는다.
+    monkeypatch.setattr(http_server, "restrict_tools", lambda *a: None)
+    monkeypatch.setattr(http_server, "set_instructions", lambda *a: None)
+    http_server.build_app({"token": "t", "path_secret": "", "pull_interval": 60.0,
+                           "allowed_hosts": [], "streamable_path": "/mcp"})
+    assert mcp_server._read_pull is http_server.last_pull_ok
+
+
+def test_guidance_puts_the_characters_words_before_display():
+    text = " ".join(character.GUIDANCE)
+    assert "그대로 먼저 보여" not in text
+    assert "캐릭터의 말로 먼저" in text and "display를 고치거나 줄이지 말고 그대로 붙인다" in text
+    assert "감추거나" in text and "사용자에게 알린다" in text

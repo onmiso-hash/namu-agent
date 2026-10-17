@@ -1851,14 +1851,48 @@ def namu_check_ticket(ticket_id: str, ctx: Context | None = None) -> dict:
 # 캐릭터(나무 캐릭터 v0.1) — 저장·읽기 로직은 전부 character.py에 있다. 클라우드
 # (namu-cloud-routing)도 같은 함수를 부르므로 여기는 얇은 껍데기만 둔다.
 # ---------------------------------------------------------------------------
+# 읽기 전 받아 오기(pull). 플러그인(stdio)에는 도구 호출마다 받아 오는 장치가 없고 세션 시작
+# 훅이 한 번 받아 올 뿐이라, 세션을 연 뒤 다른 기기에서 쓴 일기를 모른 채 읽게 된다. 그래서
+# 캐릭터를 읽는 도구가 읽기 직전에 직접 sync_pull을 부른다.
+# http 서버는 PullDebounceMiddleware가 도구 호출 전에 이미 받아 오므로(같은 요청에서 두 번
+# 받지 않게), build_app이 이 자리를 "미들웨어의 마지막 결과를 돌려주는 함수"로 바꿔 끼운다.
+# None이면 직접 받아 온다(stdio).
+_read_pull = None
+
+
+def set_read_pull(fn) -> None:
+    """읽기 전 받아 오기를 대신할 함수를 끼운다(http_server.build_app 전용). fn()은
+    받아 왔으면 True, 못 받았으면 False/None을 돌려준다."""
+    global _read_pull
+    _read_pull = fn
+
+
+def _character_pull() -> str:
+    """캐릭터를 읽기 직전에 원격을 받아 오고 그 상태(character.SYNC_*)를 돌려준다.
+
+    sync_pull은 꺼져 있어도, 실패해도 False라 둘을 가를 수 없다 — 그래서 sync_enabled를
+    먼저 본다. 받아 오기는 git 타임아웃(5초)만큼 불러오기를 늦출 수 있다."""
+    if not memory_sync.sync_enabled():
+        return character.SYNC_OFF
+    pull = _read_pull or memory_sync.sync_pull
+    try:
+        ok = pull()
+    except Exception:  # sync_pull은 무예외 설계지만 읽기를 막지 않도록 한 번 더 감싼다
+        ok = False
+    return character.SYNC_PULLED if ok else character.SYNC_FAILED
+
+
 @tool()
 def namu_character_list(ctx: Context | None = None) -> dict:
     """List this user's characters: id, name, aliases, relationship stage,
     affection score, last talk time and the current card version.
-    Returns: {"characters": [...]}.
+    Pulls the latest records from the remote first; `sync` says whether that
+    worked (if not, the list may miss changes made on another device).
+    Returns: {"characters": [...], "sync"}.
     """
     _resolve_via(ctx)
-    return {"characters": character.list_all()}
+    status = _character_pull()
+    return character.with_sync({"characters": character.list_all()}, status)
 
 
 @tool()
@@ -1914,10 +1948,14 @@ def namu_character_load(name: str, ctx: Context | None = None) -> dict:
     "relationship" (stage, affection, how the character calls the user now,
     time since the last talk), "recent_diary" (each with a readable `when`),
     "core_memories", "pending_memories", "display" (a ready-made markdown
-    quote box to show the user as is), "guidance", "card"}.
+    quote box to show the user under the character's first words), "guidance",
+    "card", "sync"}. The latest records are pulled from the remote first;
+    `sync` says whether that worked, and if it did not, `display` ends with a
+    warning line that must be shown to the user, not hidden.
     """
     _resolve_via(ctx)
-    return character.load(name)
+    status = _character_pull()
+    return character.with_sync(character.load(name), status)
 
 
 @tool()
@@ -1976,9 +2014,13 @@ def namu_character_core(
     to core memories) or "reject" (delete the pending entries in `ids`).
     Only pending entries can be confirmed; if any id is not pending, nothing
     is changed. Returns {"character", "action", "pending", "core"} plus
-    "confirmed" or "rejected".
+    "confirmed" or "rejected". With action "list" the latest records are
+    pulled from the remote first and `sync` says whether that worked.
     """
     via = _resolve_via(ctx)
+    if action == "list":
+        status = _character_pull()
+        return character.with_sync(character.core(name, action, ids, via=via), status)
     result = character.core(name, action, ids, via=via)
     if action != "list":
         memory_sync.sync_push(f"character core: {result['character']} ({cfg.NAMU_MACHINE})")
